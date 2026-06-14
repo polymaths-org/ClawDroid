@@ -67,6 +67,39 @@ object ToolSchemaRegistry {
             putString("body", "Notification body.")
             required("title", "body")
         })
+        .put(tool("gmail_list_messages", "List or search the user's Gmail messages.") {
+            putString("query", "Search query (same format as Gmail search bar, optional).")
+            putInteger("max_results", "Maximum number of results to fetch (default: 10, optional).")
+        })
+        .put(tool("gmail_get_message", "Retrieve detail and body of a specific email message.") {
+            putString("id", "The unique email message ID.")
+            required("id")
+        })
+        .put(tool("gmail_send_message", "Send an email message to a recipient.") {
+            putString("to", "Recipient email address.")
+            putString("subject", "Email subject.")
+            putString("body", "Email body content.")
+            required("to", "subject", "body")
+        })
+        .put(tool("gmail_create_draft", "Create a draft email message.") {
+            putString("to", "Recipient email address.")
+            putString("subject", "Email subject.")
+            putString("body", "Email body content.")
+            required("to", "subject", "body")
+        })
+        .put(tool("calendar_list_events", "List upcoming calendar events.") {
+            putString("time_min", "Lower bound (exclusive) for an event's start time in ISO-8601 format (optional).")
+            putString("time_max", "Upper bound (exclusive) for an event's end time in ISO-8601 format (optional).")
+            putInteger("max_results", "Maximum number of events to return (default: 15, optional).")
+        })
+        .put(tool("calendar_create_event", "Create a new event on the primary calendar.") {
+            putString("summary", "Title of the calendar event.")
+            putString("description", "Description of the calendar event (optional).")
+            putString("start_time", "Start time in ISO-8601 format (e.g. 2026-06-15T15:00:00+05:30).")
+            putString("end_time", "End time in ISO-8601 format (e.g. 2026-06-15T16:00:00+05:30).")
+            required("summary", "start_time", "end_time")
+        })
+
 
     private fun tool(
         name: String,
