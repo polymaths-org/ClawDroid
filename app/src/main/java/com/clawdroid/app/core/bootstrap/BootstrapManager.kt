@@ -38,30 +38,36 @@ object BootstrapManager {
             .onFailure { Log.w(TAG, "Unable to create shared folders", it) }
 
         val bash = File(env.prefix, "bin/bash")
-        if (!bash.exists()) {
-            onProgress(BootstrapProgress("Downloading", "Fetching Termux bootstrap"))
-            val archive = File(context.cacheDir, "bootstrap-aarch64.zip")
-            downloadBootstrap(archive, onProgress)
+        if (bash.exists()) {
+            return@withContext BootstrapResult(
+                prefixDir = env.prefix.absolutePath,
+                homeDir = env.home.absolutePath,
+                bashOutput = "ALREADY_BOOTSTRAPPED"
+            )
+        }
 
-            onProgress(BootstrapProgress("Extracting", "Unpacking Linux runtime"))
-            val staging = File(context.filesDir, "usr-bootstrap")
-            staging.deleteRecursively()
-            check(staging.mkdirs()) { "Unable to create ${staging.absolutePath}" }
-            extractBootstrap(archive, staging)
+        onProgress(BootstrapProgress("Downloading", "Fetching Termux bootstrap"))
+        val archive = File(context.cacheDir, "bootstrap-aarch64.zip")
+        downloadBootstrap(archive, onProgress)
 
-            onProgress(BootstrapProgress("Linking", "Rebuilding bootstrap symlinks"))
-            restoreSymlinks(staging, env.prefix)
+        onProgress(BootstrapProgress("Extracting", "Unpacking Linux runtime"))
+        val staging = File(context.filesDir, "usr-bootstrap")
+        staging.deleteRecursively()
+        check(staging.mkdirs()) { "Unable to create ${staging.absolutePath}" }
+        extractBootstrap(archive, staging)
 
-            onProgress(BootstrapProgress("Preparing", "Patching paths, permissions, and apt sources"))
-            patchTermuxShebangs(staging, env.prefix)
-            applyPermissions(staging)
-            writeAptSources(staging, env.prefix)
+        onProgress(BootstrapProgress("Linking", "Rebuilding bootstrap symlinks"))
+        restoreSymlinks(staging, env.prefix)
 
-            onProgress(BootstrapProgress("Installing", "Moving runtime into place"))
-            env.prefix.deleteRecursively()
-            check(staging.renameTo(env.prefix)) {
-                "Unable to move ${staging.absolutePath} to ${env.prefix.absolutePath}"
-            }
+        onProgress(BootstrapProgress("Preparing", "Patching paths, permissions, and apt sources"))
+        patchTermuxShebangs(staging, env.prefix)
+        applyPermissions(staging)
+        writeAptSources(staging, env.prefix)
+
+        onProgress(BootstrapProgress("Installing", "Moving runtime into place"))
+        env.prefix.deleteRecursively()
+        check(staging.renameTo(env.prefix)) {
+            "Unable to move ${staging.absolutePath} to ${env.prefix.absolutePath}"
         }
 
         onProgress(BootstrapProgress("Verifying", "Running bash probe"))
@@ -92,40 +98,127 @@ object BootstrapManager {
         }
     }
 
+    private fun getRemoteContentLength(urlString: String): Long {
+        var currentUrl = urlString
+        var redirectCount = 0
+        while (redirectCount < 5) {
+            try {
+                val connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    requestMethod = "GET"
+                    instanceFollowRedirects = false
+                }
+                val status = connection.responseCode
+                if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == 307 || status == 308) {
+                    val location = connection.getHeaderField("Location")
+                    if (location != null) {
+                        currentUrl = if (location.startsWith("http")) location else URL(URL(currentUrl), location).toString()
+                        redirectCount++
+                        connection.disconnect()
+                        continue
+                    }
+                }
+                val length = connection.contentLengthLong
+                connection.disconnect()
+                return length
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get remote content length for $currentUrl", e)
+                return -1L
+            }
+        }
+        return -1L
+    }
+
     private fun downloadBootstrap(
         destination: File,
         onProgress: (BootstrapProgress) -> Unit,
     ) {
-        if (destination.exists() && destination.length() > 1_000_000L) return
-
-        val connection = (URL(BOOTSTRAP_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 60_000
-            requestMethod = "GET"
+        if (destination.exists()) {
+            val expectedLength = getRemoteContentLength(BOOTSTRAP_URL)
+            if (expectedLength > 0 && destination.length() == expectedLength) {
+                Log.i(TAG, "Bootstrap archive already downloaded and matches expected size ($expectedLength bytes). Skipping download.")
+                return
+            } else {
+                Log.w(TAG, "Bootstrap archive size mismatch or content length unavailable. Expected: $expectedLength, Actual: ${destination.length()}. Deleting and re-downloading.")
+                destination.delete()
+            }
         }
 
-        connection.inputStream.use { input ->
-            destination.outputStream().use { output ->
-                val total = connection.contentLengthLong.takeIf { it > 0L }
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var downloaded = 0L
-                var nextReportAt = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read == -1) break
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    if (downloaded >= nextReportAt) {
-                        val detail = if (total != null) {
-                            "${downloaded / 1_000_000} MB / ${total / 1_000_000} MB"
-                        } else {
-                            "${downloaded / 1_000_000} MB"
+        val tempFile = File(destination.absolutePath + ".tmp")
+        tempFile.delete() // clean up any previous failed temp download
+
+        try {
+            var currentUrl = BOOTSTRAP_URL
+            var redirectCount = 0
+            var connection: HttpURLConnection? = null
+            while (redirectCount < 5) {
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 60_000
+                    requestMethod = "GET"
+                    instanceFollowRedirects = false
+                }
+                val status = conn.responseCode
+                if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == 307 || status == 308) {
+                    val location = conn.getHeaderField("Location")
+                    if (location != null) {
+                        currentUrl = if (location.startsWith("http")) location else URL(URL(currentUrl), location).toString()
+                        redirectCount++
+                        conn.disconnect()
+                        continue
+                    }
+                }
+                connection = conn
+                break
+            }
+
+            if (connection == null) {
+                error("Failed to connect after redirects")
+            }
+
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                error("Server returned status $status")
+            }
+
+            val total = connection.contentLengthLong.takeIf { it > 0L }
+            connection.inputStream.use { input ->
+                tempFile.outputStream().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var downloaded = 0L
+                    var nextReportAt = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (downloaded >= nextReportAt) {
+                            val detail = if (total != null) {
+                                "${downloaded / 1_000_000} MB / ${total / 1_000_000} MB"
+                            } else {
+                                "${downloaded / 1_000_000} MB"
+                            }
+                            onProgress(BootstrapProgress("Downloading", detail))
+                            nextReportAt = downloaded + 2_000_000L
                         }
-                        onProgress(BootstrapProgress("Downloading", detail))
-                        nextReportAt = downloaded + 2_000_000L
                     }
                 }
             }
+            connection.disconnect()
+
+            // Verify size if total was known
+            if (total != null && tempFile.length() != total) {
+                error("Downloaded file size (${tempFile.length()}) does not match content length ($total)")
+            }
+
+            // Rename temp to final destination
+            if (!tempFile.renameTo(destination)) {
+                error("Failed to rename temp file to ${destination.absolutePath}")
+            }
+        } catch (e: Exception) {
+            tempFile.delete() // clean up partial file
+            throw e
         }
     }
 

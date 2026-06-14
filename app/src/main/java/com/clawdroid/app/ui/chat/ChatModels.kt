@@ -22,6 +22,8 @@ enum class FilePreviewType {
 data class UserChatItem(
     override val id: String = UUID.randomUUID().toString(),
     val text: String,
+    val mediaPath: String? = null,
+    val mediaMimeType: String? = null,
 ) : ChatItem
 
 data class AgentChatItem(
