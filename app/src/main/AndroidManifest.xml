@@ -70,6 +70,15 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <intent-filter android:label="ClawDroid Auth Callback">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="clawdroid" android:host="github-auth" />
+                <data android:scheme="clawdroid" android:host="notion-auth" />
+                <data android:scheme="clawdroid" android:host="spotify-auth" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
