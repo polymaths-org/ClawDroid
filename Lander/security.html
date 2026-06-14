@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Notice - ClawDroid</title>
+  <meta name="description" content="Security Notice for the ClawDroid beta Android app." />
+  <meta name="theme-color" content="#0c1016" />
+  <link rel="icon" type="image/png" href="02EGGopen.png" />
+  <style>
+    :root {
+      --bg: #f4f5f1;
+      --surface: rgba(255,255,255,0.86);
+      --ink: #10141a;
+      --muted: #68707d;
+      --line: rgba(16,20,26,0.12);
+      --shadow: 0 20px 50px rgba(16,20,26,0.08);
+      --radius: 24px;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      line-height: 1.65;
+      background: linear-gradient(180deg, #fbfcf8 0%, var(--bg) 100%);
+    }
+
+    a { color: inherit; }
+    .wrap { width: min(var(--max), calc(100% - 32px)); margin: 0 auto; }
+    .nav {
+      border-bottom: 1px solid var(--line);
+      background: rgba(244,245,241,0.86);
+      backdrop-filter: blur(18px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .nav-links a,
+    .back-link {
+      text-decoration: none;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.74);
+      font-weight: 800;
+      font-size: 0.92rem;
+    }
+
+    main { padding: 46px 0 56px; }
+    .hero {
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    h1, h2 {
+      margin: 0 0 14px;
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+    }
+
+    h1 { font-size: clamp(2.4rem, 8vw, 4.8rem); }
+    h2 { font-size: clamp(1.45rem, 4vw, 2.1rem); margin-top: 34px; }
+    p { margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+
+    .notice {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,93,108,0.22);
+      background: rgba(255,255,255,0.74);
+      font-weight: 700;
+    }
+
+    .content {
+      margin-top: 24px;
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow);
+    }
+
+    ul { padding-left: 1.2rem; }
+    li { margin: 0 0 10px; }
+    strong { font-weight: 900; }
+    footer { padding: 0 0 44px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .footer-links a { color: var(--muted); font-weight: 800; }
+
+    @media (max-width: 700px) {
+      .nav-inner { align-items: flex-start; flex-direction: column; }
+      .hero, .content { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="ClawDroid home">
+        <img src="02EGGopen.png" alt="" />
+        <span>ClawDroid</span>
+      </a>
+      <div class="nav-links">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="disclaimer.html">Disclaimer</a>
+        <a href="security.html">Security</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="eyebrow">Legal</span>
+      <h1>Security Notice</h1>
+      <p class="muted">Effective date: June 15, 2026</p>
+      <p>This notice explains the security assumptions and limits for the ClawDroid beta Android app.</p>
+      <p class="notice">Security is a shared responsibility. ClawDroid can reduce risk through sandboxing and transparency, but it cannot remove all risk.</p>
+    </section>
+
+    <section class="content">
+      <h2>Security Model</h2>
+      <p>ClawDroid is designed around visible agent activity, sandboxed execution, user-controlled configuration, and explicit connected-service permissions. These controls help users understand what the agent is doing, but they do not guarantee safety.</p>
+
+      <h2>Sandbox Limits</h2>
+      <p>A sandbox reduces blast radius, but a sandboxed agent can still damage files it can access, leak information to configured providers, consume API credits, trigger connected-service actions, or produce unsafe output if misused or compromised.</p>
+
+      <h2>Credential Handling</h2>
+      <p>Only add API keys, OAuth tokens, and account credentials you are willing to use with beta software. Revoke credentials immediately if you suspect exposure. Prefer limited-scope keys and accounts where possible.</p>
+
+      <h2>Downloads And Releases</h2>
+      <p>Only download ClawDroid from the official repository or release channels you trust. Verify that a download matches the expected project source before installing it on a personal device.</p>
+
+      <h2>Model Provider And Service Risk</h2>
+      <p>Prompts, files, terminal output, screenshots, app content, and connected-service data may be sent to model providers or services you configure. Review provider settings, retention controls, account permissions, and billing limits.</p>
+
+      <h2>Safe Use Recommendations</h2>
+      <ul>
+        <li>Start with non-sensitive test projects before using real data.</li>
+        <li>Back up important files before asking the agent to edit, delete, or transform them.</li>
+        <li>Use least-privilege API keys and service permissions.</li>
+        <li>Keep Android, WebView, dependencies, and the app updated.</li>
+        <li>Review activity logs before trusting high-impact actions.</li>
+        <li>Do not use the beta app for regulated, emergency, or safety-critical workflows.</li>
+      </ul>
+
+      <h2>Vulnerability Reports</h2>
+      <p>If you find a security issue, report it through the official GitHub repository: <a href="https://github.com/Wraient/ClawDroid" target="_blank" rel="noopener noreferrer">github.com/Wraient/ClawDroid</a>. Avoid posting exploitable secrets or private user data in public issues.</p>
+
+      <h2>No Security Warranty</h2>
+      <p>ClawDroid is provided without any warranty that it is secure, free of vulnerabilities, resistant to misuse, or suitable for your threat model. Use it at your own risk.</p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Use</a>
+      <a href="disclaimer.html">Risk Disclaimer</a>
+    </div>
+  </footer>
+</body>
+</html>
