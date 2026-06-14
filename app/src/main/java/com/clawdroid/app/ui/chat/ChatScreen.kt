@@ -63,9 +63,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
+import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.ui.markdown.MarkdownText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import org.json.JSONObject
+import android.widget.Toast
 
 @Composable
 fun ChatScreen(modifier: Modifier = Modifier) {
@@ -79,6 +86,23 @@ fun ChatScreen(modifier: Modifier = Modifier) {
     var runJob by remember { mutableStateOf<Job?>(null) }
     var runningAgentMessageId by remember { mutableStateOf<String?>(null) }
     var runningActivityId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        val db = ClawDroidDatabase.get(context.applicationContext)
+        val recentConv = db.conversations().getMostRecent()
+        if (recentConv != null) {
+            val messages = db.messages().getAll(recentConv.id)
+            for (msg in messages) {
+                // Ignore special system prompts and compaction summaries in the raw list,
+                // or load them nicely. We only want to load user and assistant text bubbles.
+                if (msg.role == "user" && !msg.content.startsWith("Previous conversation summary:")) {
+                    items += UserChatItem(text = msg.content)
+                } else if (msg.role == "assistant" && !msg.content.startsWith("[Compacted Summary]")) {
+                    items += AgentChatItem(text = msg.content, streaming = false)
+                }
+            }
+        }
+    }
 
     fun ensureAgentMessage(): String {
         val existingId = runningAgentMessageId
@@ -153,9 +177,11 @@ fun ChatScreen(modifier: Modifier = Modifier) {
                         is AgentRunEvent.ToolCallRequested -> {
                             finishCurrentAgentText()
                             val step = ActivityStepItem(
+                                callId = event.call.id,
                                 type = event.call.name.toActivityStepType(),
                                 summary = event.call.name.readableToolName(),
                                 detail = event.call.arguments,
+                                arguments = event.call.arguments,
                                 running = true,
                             )
                             val activityId = runningActivityId
@@ -170,10 +196,32 @@ fun ChatScreen(modifier: Modifier = Modifier) {
                             }
                         }
 
-                        is AgentRunEvent.ToolResultReceived -> {
+                        is AgentRunEvent.ToolOutputUpdated -> {
                             runningActivityId?.let { id ->
                                 items.replaceActivityItem(id) { current ->
-                                    current.copy(running = true, steps = current.steps.markLastComplete(event.result.content))
+                                    current.copy(
+                                        steps = current.steps.map { step ->
+                                            if (step.callId == event.callId) {
+                                                val mockResult = JSONObject().put("output", event.output).toString()
+                                                step.copy(result = mockResult)
+                                            } else {
+                                                step
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        is AgentRunEvent.ToolResultReceived -> {
+                            val isError = event.result.isError || runCatching {
+                                val obj = JSONObject(event.result.content)
+                                obj.optInt("exit_code", 0) != 0 || obj.has("error")
+                            }.getOrDefault(false)
+
+                            runningActivityId?.let { id ->
+                                items.replaceActivityItem(id) { current ->
+                                    current.copy(running = true, steps = current.steps.markLastComplete(event.result.content, isError = isError))
                                 }
                             }
                         }
@@ -245,7 +293,7 @@ fun ChatScreen(modifier: Modifier = Modifier) {
                 }
                 runningActivityId?.let { id ->
                     items.replaceActivityItem(id) { current ->
-                        current.copy(running = false, steps = current.steps.markLastComplete(error.message ?: "Run failed"))
+                        current.copy(running = false, steps = current.steps.markLastComplete(error.message ?: "Run failed", isError = true))
                     }
                 }
                 runtimeState = AgentRuntimeState.Idle
@@ -502,22 +550,101 @@ private fun InlineActivityStep(step: ActivityStepItem) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
             )
+            if (step.isError) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "❌",
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
         AnimatedVisibility(visible = expanded) {
-            Text(
-                text = step.detail,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 112.dp)
-                    .verticalScroll(rememberScrollState())
                     .padding(top = 4.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp,
-                ),
-            )
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val parsed = formatStepContent(step)
+
+                // Input section (Command, Path, URL, etc.)
+                if (parsed.copyText != null || parsed.displayText.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            if (parsed.title.isNotEmpty()) {
+                                Text(
+                                    text = parsed.title,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                            }
+                            Text(
+                                text = parsed.displayText,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        if (parsed.copyText != null) {
+                            val clipboardManager = LocalClipboardManager.current
+                            val context = LocalContext.current
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(parsed.copyText))
+                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = "Copy text",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Output section
+                if (parsed.outputText.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .verticalScroll(rememberScrollState())
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerLowest,
+                                shape = RoundedCornerShape(6.dp)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = parsed.outputText,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -736,9 +863,15 @@ private fun MutableList<ChatItem>.replaceActivityItem(id: String, transform: (Ac
     if (index >= 0) this[index] = transform(this[index] as ActivityChatItem)
 }
 
-private fun List<ActivityStepItem>.markLastComplete(detail: String): List<ActivityStepItem> {
+private fun List<ActivityStepItem>.markLastComplete(detail: String, isError: Boolean = false): List<ActivityStepItem> {
     if (isEmpty()) return this
-    return dropLast(1) + last().copy(detail = detail, running = false)
+    val last = last()
+    return dropLast(1) + last.copy(
+        detail = detail,
+        result = detail,
+        running = false,
+        isError = isError
+    )
 }
 
 private fun List<ActivityStepItem>.markAllComplete(): List<ActivityStepItem> = map { it.copy(running = false) }
@@ -754,3 +887,305 @@ private fun String.toActivityStepType(): ActivityStepType = when (this) {
 
 private fun String.readableToolName(): String = split('_')
     .joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
+
+private data class StepDetails(
+    val title: String,
+    val copyText: String?,
+    val displayText: String,
+    val outputText: String
+)
+
+private fun formatStepContent(step: ActivityStepItem): StepDetails {
+    val argsObj = runCatching { JSONObject(step.arguments) }.getOrNull()
+    val resultObj = if (!step.result.isNullOrBlank()) {
+        runCatching { JSONObject(step.result) }.getOrNull()
+    } else {
+        null
+    }
+
+    var title = "Input:"
+    var copyText: String? = null
+    var displayText = ""
+    var outputText = ""
+
+    val isError = resultObj?.has("error") == true || step.isError
+    val errorMessage = resultObj?.optString("error")?.takeIf { it.isNotBlank() }
+        ?: if (step.isError && step.result != null && !step.result.startsWith("{")) step.result else null
+
+    val toolName = step.summary.lowercase().replace(" ", "_")
+
+    when {
+        toolName == "execute_command" || toolName == "start_process" -> {
+            title = "Command:"
+            val cmd = argsObj?.optString("command") ?: ""
+            copyText = cmd
+            displayText = cmd
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    if (toolName == "execute_command") {
+                        val exitCode = resultObj.optInt("exit_code", 0)
+                        val out = resultObj.optString("output") ?: ""
+                        if (exitCode != 0) {
+                            "Exit Code: $exitCode\n$out".trim()
+                        } else {
+                            out
+                        }
+                    } else {
+                        val procId = resultObj.optString("process_id") ?: ""
+                        val initOut = resultObj.optString("initial_output") ?: ""
+                        "Process Started (ID: $procId)\n$initOut".trim()
+                    }
+                }
+                step.running -> "Executing..."
+                else -> ""
+            }
+        }
+        
+        toolName == "check_process" || toolName == "kill_process" -> {
+            title = "Process ID:"
+            val procId = argsObj?.optString("process_id") ?: ""
+            copyText = procId
+            displayText = procId
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val cmd = resultObj.optString("command") ?: ""
+                    val state = resultObj.optString("state") ?: ""
+                    val exitCode = resultObj.optInt("exit_code", -1)
+                    val recent = resultObj.optString("recent_output") ?: ""
+                    buildString {
+                        append("Command: $cmd\n")
+                        append("State: $state")
+                        if (exitCode != -1) append(" (Exit Code: $exitCode)")
+                        if (recent.isNotEmpty()) append("\n\nOutput:\n$recent")
+                    }
+                }
+                step.running -> "Checking process..."
+                else -> ""
+            }
+        }
+
+        toolName == "send_input" -> {
+            title = "Send Input:"
+            val procId = argsObj?.optString("process_id") ?: ""
+            val inputVal = argsObj?.optString("input") ?: ""
+            copyText = inputVal
+            displayText = "Process ID: $procId\nInput: $inputVal"
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val state = resultObj.optString("state") ?: ""
+                    val recent = resultObj.optString("recent_output") ?: ""
+                    buildString {
+                        append("State: $state\n\nRecent Output:\n$recent")
+                    }
+                }
+                step.running -> "Sending input..."
+                else -> ""
+            }
+        }
+
+        toolName == "list_processes" -> {
+            title = ""
+            copyText = null
+            displayText = "Listing active processes"
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val array = resultObj.optJSONArray("processes")
+                    if (array != null && array.length() > 0) {
+                        buildString {
+                            for (i in 0 until array.length()) {
+                                val proc = array.optJSONObject(i) ?: continue
+                                val pid = proc.optString("process_id")
+                                val cmd = proc.optString("command")
+                                val state = proc.optString("state")
+                                append("[$pid] $state: $cmd\n")
+                            }
+                        }.trim()
+                    } else {
+                        "No active processes found."
+                    }
+                }
+                step.running -> "Retrieving process list..."
+                else -> ""
+            }
+        }
+
+        toolName == "read_file" -> {
+            title = "Read File Path:"
+            val path = argsObj?.optString("path") ?: ""
+            copyText = path
+            displayText = path
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> resultObj.optString("content") ?: ""
+                step.running -> "Reading file..."
+                else -> ""
+            }
+        }
+
+        toolName == "write_file" -> {
+            title = "Write File Path:"
+            val path = argsObj?.optString("path") ?: ""
+            val content = argsObj?.optString("content") ?: ""
+            copyText = path
+            displayText = path
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val bytes = resultObj.optLong("bytes", 0)
+                    "Successfully wrote $bytes bytes."
+                }
+                step.running -> "Writing file..."
+                else -> content
+            }
+        }
+
+        toolName == "edit_file" -> {
+            title = "Edit File Path:"
+            val path = argsObj?.optString("path") ?: ""
+            val search = argsObj?.optString("search") ?: ""
+            val replace = argsObj?.optString("replace") ?: ""
+            copyText = path
+            displayText = path
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val replacements = resultObj.optInt("replacements", 0)
+                    "Made $replacements replacement(s)."
+                }
+                step.running -> "Editing file...\nSearch:\n$search\n\nReplace:\n$replace"
+                else -> ""
+            }
+        }
+
+        toolName == "list_directory" -> {
+            title = "Directory Path:"
+            val path = argsObj?.optString("path") ?: ""
+            copyText = path
+            displayText = path
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val entries = resultObj.optJSONArray("entries")
+                    if (entries != null && entries.length() > 0) {
+                        buildString {
+                            for (i in 0 until entries.length()) {
+                                val entry = entries.optJSONObject(i) ?: continue
+                                val name = entry.optString("name")
+                                val type = entry.optString("type")
+                                val bytes = entry.optLong("bytes", -1)
+                                val sizeStr = if (type == "file" && bytes != -1L) {
+                                    formatBytes(bytes)
+                                } else ""
+                                append("- [${type.capitalize()}] $name${if (sizeStr.isNotEmpty()) " ($sizeStr)" else ""}\n")
+                            }
+                        }.trim()
+                    } else {
+                        "Directory is empty."
+                    }
+                }
+                step.running -> "Listing directory contents..."
+                else -> ""
+            }
+        }
+
+        toolName == "browse_web" -> {
+            title = "Browse URL:"
+            val url = argsObj?.optString("url") ?: ""
+            copyText = url
+            displayText = url
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> resultObj.optString("content") ?: ""
+                step.running -> "Browsing webpage..."
+                else -> ""
+            }
+        }
+
+        toolName == "web_search" -> {
+            title = "Search Query:"
+            val query = argsObj?.optString("query") ?: ""
+            copyText = query
+            displayText = query
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> {
+                    val results = resultObj.optJSONArray("results")
+                    if (results != null && results.length() > 0) {
+                        buildString {
+                            for (i in 0 until results.length()) {
+                                val item = results.optJSONObject(i) ?: continue
+                                val titleText = item.optString("title")
+                                val url = item.optString("url")
+                                val snippet = item.optString("snippet")
+                                append("${i + 1}. $titleText\n   $url\n   $snippet\n\n")
+                            }
+                        }.trim()
+                    } else {
+                        "No search results found."
+                    }
+                }
+                step.running -> "Searching DuckDuckGo..."
+                else -> ""
+            }
+        }
+
+        toolName == "send_notification" -> {
+            title = "Notification:"
+            val noteTitle = argsObj?.optString("title") ?: ""
+            val noteBody = argsObj?.optString("body") ?: ""
+            copyText = null
+            displayText = "Title: $noteTitle\nBody: $noteBody"
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> "Notification sent successfully."
+                step.running -> "Sending notification..."
+                else -> ""
+            }
+        }
+
+        else -> {
+            title = "Arguments:"
+            copyText = step.arguments
+            displayText = step.arguments
+            
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> step.result ?: ""
+                step.detail.isNotEmpty() -> step.detail
+                else -> ""
+            }
+        }
+    }
+
+    if (errorMessage != null) {
+        outputText = "Error: $errorMessage"
+    }
+
+    return StepDetails(title, copyText, displayText, outputText)
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+    val pre = "KMGTPE"[exp - 1]
+    val formattedVal = (bytes * 10 / Math.pow(1024.0, exp.toDouble())).toLong() / 10.0
+    return "$formattedVal ${pre}B"
+}
+
+private fun String.capitalize(): String = replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
