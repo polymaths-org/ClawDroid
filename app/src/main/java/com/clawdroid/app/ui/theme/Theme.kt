@@ -1,46 +1,55 @@
 package com.clawdroid.app.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val LightColors = lightColorScheme(
-    primary = TealPrimary,
-    secondary = VioletSecondary,
-    tertiary = CoralTertiary
-)
+private val ClawDroidDarkScheme = darkColorScheme(
+    primary            = FireRed,
+    onPrimary          = SoftWhite,
+    primaryContainer   = CardDark,
+    onPrimaryContainer = SoftWhite,
 
-private val DarkColors = darkColorScheme(
-    primary = TealPrimaryDark,
-    secondary = VioletSecondaryDark,
-    tertiary = CoralTertiaryDark
+    secondary          = EmberOrange,
+    onSecondary        = DeepBlack,
+    secondaryContainer = ElevatedDark,
+    onSecondaryContainer = SoftWhite,
+
+    tertiary           = MoltenYellow,
+    onTertiary         = DeepBlack,
+    tertiaryContainer  = CardDark,
+    onTertiaryContainer = MoltenYellow,
+
+    background         = DeepBlack,
+    onBackground       = SoftWhite,
+
+    surface            = NightSurface,
+    onSurface          = SoftWhite,
+    surfaceVariant     = CardDark,
+    onSurfaceVariant   = MutedGray,
+
+    outline            = DimGray,
+    outlineVariant     = GlassBorderDim,
+
+    error              = ErrorRed,
+    onError            = DeepBlack,
+    errorContainer     = DeepEmber,
+    onErrorContainer   = SoftWhite,
+
+    inverseSurface     = SoftWhite,
+    inverseOnSurface   = DeepBlack,
+    inversePrimary     = DeepEmber,
+
+    scrim              = DeepBlack,
 )
 
 @Composable
 fun ClawDroidTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColors
-        else -> LightColors
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = ClawDroidDarkScheme,
         typography = ClawDroidTypography,
-        content = content
+        content = content,
     )
 }
