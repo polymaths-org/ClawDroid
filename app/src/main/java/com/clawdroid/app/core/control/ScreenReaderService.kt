@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -59,7 +60,7 @@ class ScreenReaderService : AccessibilityService() {
         lastDumpTime = System.currentTimeMillis()
 
         val root = withContext(Dispatchers.Main) {
-            rootInActiveWindow?.also { it.refresh() }
+            getUsableRoot()
         } ?: return@withContext JSONObject()
             .put("truncated", false)
             .put("nodes", JSONArray())
@@ -211,7 +212,7 @@ class ScreenReaderService : AccessibilityService() {
     }
 
     fun scroll(direction: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+        val root = getUsableRoot() ?: return false
         return try {
             val scrollable = findScrollableNode(root) ?: return false
             val action = when (direction.lowercase()) {
@@ -237,7 +238,7 @@ class ScreenReaderService : AccessibilityService() {
     }
 
     fun tapByText(label: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+        val root = getUsableRoot() ?: return false
         return try {
             val node = findNodeByText(root, label) ?: return false
             node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -247,7 +248,7 @@ class ScreenReaderService : AccessibilityService() {
     }
 
     fun tapByResourceId(id: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+        val root = getUsableRoot() ?: return false
         return try {
             val nodes = root.findAccessibilityNodeInfosByViewId(id)
             if (nodes.isNullOrEmpty()) return false
@@ -276,7 +277,7 @@ class ScreenReaderService : AccessibilityService() {
     }
 
     fun typeText(text: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+        val root = getUsableRoot() ?: return false
         return try {
             val editable = findFocusedEditable(root) ?: findEditableNode(root) ?: return false
             val args = android.os.Bundle().apply {
@@ -325,5 +326,30 @@ class ScreenReaderService : AccessibilityService() {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
         return true
+    }
+
+    private fun getUsableRoot(): AccessibilityNodeInfo? {
+        val ownPackage = packageName
+        val windowRoots = windows
+            .asSequence()
+            .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            .mapNotNull { window -> window.root?.also { it.refresh() } }
+            .toList()
+
+        val preferred = windowRoots.firstOrNull { root ->
+            val pkg = root.packageName?.toString()
+            !pkg.isNullOrBlank() && pkg != ownPackage
+        }
+        if (preferred != null) {
+            windowRoots.filter { it !== preferred }.forEach { it.recycle() }
+            Log.d(TAG, "getUsableRoot selected package=${preferred.packageName} from windows=${windowRoots.size}")
+            return preferred
+        }
+
+        windowRoots.forEach { it.recycle() }
+        return rootInActiveWindow?.also {
+            it.refresh()
+            Log.d(TAG, "getUsableRoot fallback package=${it.packageName}")
+        }
     }
 }

@@ -121,6 +121,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.clawdroid.app.core.assistant.AssistantInvocationRouter
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
@@ -185,6 +186,7 @@ fun ChatScreen(
 
     // Run Manager States
     val activeRunsState by AgentRunManager.activeRuns.collectAsState()
+    val activeAssistantConversationId by AssistantInvocationRouter.activeConversationId.collectAsState()
     val currentRunState = activeRunsState[currentConversationId]
 
     val isAgentRunning by remember(currentConversationId, currentRunState) {
@@ -199,7 +201,9 @@ fun ChatScreen(
         currentRunState?.agentResponseText ?: kotlinx.coroutines.flow.MutableStateFlow("")
     }.collectAsState()
 
-    val runtimeState = if (isAgentRunning) AgentRuntimeState.Running else AgentRuntimeState.Idle
+    val isAssistantConversationRunning = currentConversationId != null &&
+        currentConversationId == activeAssistantConversationId
+    val runtimeState = if (isAgentRunning || isAssistantConversationRunning) AgentRuntimeState.Running else AgentRuntimeState.Idle
     val engine = remember(currentConversationId, isAgentRunning, currentRunState) {
         currentRunState?.engine
     }
@@ -318,7 +322,9 @@ fun ChatScreen(
     }
 
     fun stopCurrentRun(reason: String = "Stopped") {
-        AgentRunManager.stopRun(currentConversationId)
+        if (!AssistantInvocationRouter.stopIfActiveConversation(currentConversationId)) {
+            AgentRunManager.stopRun(currentConversationId)
+        }
         listenTrigger++
     }
 
