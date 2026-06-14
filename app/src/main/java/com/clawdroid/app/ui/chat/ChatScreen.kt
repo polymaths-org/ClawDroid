@@ -126,6 +126,7 @@ import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
+import com.clawdroid.app.core.voice.OpenAIRealtimeClient
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
 import com.clawdroid.app.data.db.ClawDroidDatabase
@@ -218,6 +219,7 @@ fun ChatScreen(
     // Voice & Call states
     val voiceManager = remember { VoiceManager(context.applicationContext) }
     val voiceRecognizer = remember { SpeechRecognizerClient(context.applicationContext) }
+    val realtimeClient = remember { OpenAIRealtimeClient() }
     var isCallModeActive by remember { mutableStateOf(false) }
     var isCallMuted by remember { mutableStateOf(false) }
     var orbState by remember { mutableStateOf(OrbState.Idle) }
@@ -422,6 +424,22 @@ fun ChatScreen(
             voiceOverlayText = ""
             userPartialText = ""
             ServiceManager.start(context.applicationContext)
+            if (AppConfigManager.realtimeVoiceEnabled) {
+                voiceOverlayText = "Preparing Realtime voice..."
+                scope.launch {
+                    val result = realtimeClient.createClientSecret()
+                    result.onSuccess {
+                        voiceOverlayText = "Realtime voice ready. Native WebRTC audio transport is not connected in this build yet, so standard voice mode will continue for now."
+                    }.onFailure { error ->
+                        voiceOverlayText = ""
+                        Toast.makeText(
+                            context,
+                            "Realtime voice unavailable: ${error.message ?: "token request failed"}",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }
         } else {
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
@@ -2647,4 +2665,3 @@ private fun AttachmentPreviewRow(
         }
     }
 }
-
