@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 sealed interface AgentRunEvent {
     data class TextDelta(val text: String) : AgentRunEvent
     data class ToolCallRequested(val call: CompletedToolCall) : AgentRunEvent
+    data class ToolCallStreaming(val callId: String, val name: String, val arguments: String) : AgentRunEvent
     data class ToolOutputUpdated(val callId: String, val output: String) : AgentRunEvent
     data class ToolResultReceived(val result: ToolExecutionResult) : AgentRunEvent
     data class SteeringApplied(val message: String) : AgentRunEvent
@@ -85,8 +86,12 @@ class AgentEngine(
         val compactionManager = CompactionManager(conversationDao, messageDao, client)
         val costTracker = CostTracker()
 
-        // 2. Save current user prompt to DB
-        contextBuilder.saveUserMessage(conversationId, prompt)
+        // 2. Save current user prompt to DB if not already present as the last message
+        val existingMessages = messageDao.getAll(conversationId)
+        val lastMsg = existingMessages.lastOrNull()
+        if (lastMsg == null || lastMsg.role != "user" || lastMsg.content != prompt) {
+            contextBuilder.saveUserMessage(conversationId, prompt)
+        }
 
         val finalText = StringBuilder()
 
@@ -124,6 +129,15 @@ class AgentEngine(
                         turnText.append(event.text)
                         finalText.append(event.text)
                         send(AgentRunEvent.TextDelta(event.text))
+                    }
+                    is StreamEvent.ToolCallDeltaReceived -> {
+                        if (event.id.isNotEmpty() && event.name.isNotEmpty()) {
+                            send(AgentRunEvent.ToolCallStreaming(
+                                callId = event.id,
+                                name = event.name,
+                                arguments = event.arguments
+                            ))
+                        }
                     }
                     is StreamEvent.ToolCallComplete -> toolCalls += event.call
                     is StreamEvent.Usage -> tokenUsage = event.usage
