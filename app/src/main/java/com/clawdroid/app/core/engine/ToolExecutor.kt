@@ -20,6 +20,7 @@ import com.clawdroid.app.core.tools.GithubTools
 import com.clawdroid.app.core.tools.NotionTools
 import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
+import com.clawdroid.app.core.control.AndroidControlTools
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
 import org.json.JSONObject
@@ -210,6 +211,35 @@ object ToolExecutor {
                     else -> error("Unreachable")
                 }
             }
+            "get_screen" -> AndroidControlTools.getScreen(context)
+            "tap" -> AndroidControlTools.tap(
+                args.getDouble("x").toFloat(),
+                args.getDouble("y").toFloat(),
+            )
+            "tap_text" -> AndroidControlTools.tapText(args.getString("label"))
+            "tap_resource_id" -> AndroidControlTools.tapResourceId(args.getString("id"))
+            "long_press" -> AndroidControlTools.longPress(
+                args.getDouble("x").toFloat(),
+                args.getDouble("y").toFloat(),
+            )
+            "swipe" -> AndroidControlTools.swipe(
+                x1 = args.getDouble("x1").toFloat(),
+                y1 = args.getDouble("y1").toFloat(),
+                x2 = args.getDouble("x2").toFloat(),
+                y2 = args.getDouble("y2").toFloat(),
+                durationMs = args.optInt("duration_ms", 400),
+            )
+            "scroll" -> AndroidControlTools.scroll(args.getString("direction"))
+            "type_text" -> AndroidControlTools.typeText(args.getString("text"))
+            "clear_text" -> AndroidControlTools.clearText()
+            "press_back" -> AndroidControlTools.pressBack()
+            "press_home" -> AndroidControlTools.pressHome()
+            "press_recents" -> AndroidControlTools.pressRecents()
+            "open_notifications" -> AndroidControlTools.openNotifications()
+            "launch_app" -> AndroidControlTools.launchApp(args.getString("package_name"))
+            "get_installed_apps" -> AndroidControlTools.getInstalledApps(context)
+            "screenshot" -> AndroidControlTools.screenshot(context)
+            "wait" -> AndroidControlTools.wait(args.optInt("ms", 500))
             else -> {
                 McpServerLauncher.executeMcpTool(call.name, args)?.toString()
                     ?: error("Unsupported tool: ${call.name}")
