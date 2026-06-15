@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,8 +25,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.AlertDialog
@@ -57,6 +62,8 @@ import androidx.compose.ui.unit.sp
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.ProjectEntity
+import com.clawdroid.app.ui.components.ClawSkin
+import com.clawdroid.app.ui.components.currentClawSkin
 import com.clawdroid.app.ui.theme.Dimens
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -91,40 +98,83 @@ fun SidebarContent(
     var newProjectName by remember { mutableStateOf("") }
     var showAllChats by remember { mutableStateOf(false) }
     var showAllProjects by remember { mutableStateOf(false) }
+    val skin = currentClawSkin()
+    val isMagic = skin == ClawSkin.ClawMagic
 
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(
+                if (isMagic) MaterialTheme.colorScheme.background
+                else MaterialTheme.colorScheme.surface
+            )
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = Dimens.md, vertical = Dimens.md),
+            .padding(
+                start = if (isMagic) 20.dp else Dimens.md,
+                end = if (isMagic) 20.dp else Dimens.md,
+                top = if (isMagic) 52.dp else 22.dp,
+                bottom = 22.dp,
+            ),
     ) {
-        Spacer(modifier = Modifier.height(Dimens.sm))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row {
+                Text(
+                    text = "Claw",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp, letterSpacing = 0.sp),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                )
+                Text(
+                    text = "Droid",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp, letterSpacing = 0.sp),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            IconButton(
+                onClick = onNavigateToSettings,
+                modifier = Modifier
+                    .size(if (isMagic) 34.dp else 44.dp)
+                    .clip(CircleShape)
+                    .background(if (isMagic) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.74f))
+                    .border(1.dp, Color.White.copy(alpha = if (isMagic) 0.08f else 0f), CircleShape),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isMagic) 0.60f else 1f),
+                    modifier = Modifier.size(if (isMagic) 18.dp else 24.dp),
+                )
+            }
+        }
 
-        Text(
-            text = "🐙 ClawDroid",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+        Spacer(modifier = Modifier.height(28.dp))
+
+        NavRow(
+            item = NavItem("New chat", Icons.Rounded.Add) { onNewConversation(null) },
+            prominent = true,
         )
-
-        Spacer(modifier = Modifier.height(Dimens.xl))
-
-        SectionLabel("NAVIGATION")
-        Spacer(modifier = Modifier.height(Dimens.sm))
-
+        Spacer(modifier = Modifier.height(12.dp))
+        NavRow(item = NavItem("Chats", Icons.Rounded.ChatBubble) { onNewConversation(null) }, selected = isMagic)
+        NavRow(item = NavItem("Projects", Icons.Rounded.Folder) { showCreateProject = true })
+        NavRow(item = NavItem("Skills", Icons.Rounded.AutoAwesome, onNavigateToSkills))
+        NavRow(item = NavItem("Channels", Icons.Rounded.Hub, onNavigateToChannels))
+        NavRow(item = NavItem("Automations", Icons.Rounded.Schedule, onNavigateToAutomations))
+        NavRow(item = NavItem("MCP", Icons.Rounded.Extension, onNavigateToMcp))
         NavRow(item = NavItem("Terminal", Icons.Rounded.Terminal, onNavigateToTerminal))
 
-        Spacer(modifier = Modifier.height(Dimens.md))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(modifier = Modifier.height(Dimens.md))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SectionLabel("CHATS")
+            SectionLabel("Recents")
             IconButton(
                 onClick = { onNewConversation(null) },
                 modifier = Modifier.size(28.dp),
@@ -137,11 +187,11 @@ fun SidebarContent(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(Dimens.sm))
+        Spacer(modifier = Modifier.height(10.dp))
 
         val standaloneChats = conversations.filter { it.projectId == null }.sortedByDescending { it.updatedAt }
         if (standaloneChats.isEmpty()) {
-            EmptyLabel("No chats yet. Tap + to start.")
+            EmptyLabel("No chats yet")
         } else {
             val visibleChats = if (showAllChats) standaloneChats else standaloneChats.take(4)
             visibleChats.forEach { chat ->
@@ -164,16 +214,14 @@ fun SidebarContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.md))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(modifier = Modifier.height(Dimens.md))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SectionLabel("PROJECTS")
+            SectionLabel("Projects")
             IconButton(
                 onClick = { showCreateProject = true },
                 modifier = Modifier.size(28.dp),
@@ -186,7 +234,7 @@ fun SidebarContent(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(Dimens.sm))
+        Spacer(modifier = Modifier.height(10.dp))
 
         if (projects.isEmpty()) {
             EmptyLabel("No projects yet.")
@@ -215,9 +263,50 @@ fun SidebarContent(
         }
 
         Spacer(modifier = Modifier.weight(1f))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(modifier = Modifier.height(Dimens.sm))
-        NavRow(item = NavItem("Settings", Icons.Rounded.Settings, onNavigateToSettings))
+        HorizontalDivider(color = Color.White.copy(alpha = if (isMagic) 0.05f else 0.28f))
+        Spacer(modifier = Modifier.height(if (isMagic) 14.dp else 12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable(onClick = onNavigateToSettings)
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "N",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "ClawDroid",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, letterSpacing = 0.sp),
+                )
+                Text(
+                    "Workspace · ${com.clawdroid.app.core.config.AppConfigManager.agentName.ifBlank { "WhiteRose" }}",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, letterSpacing = 0.sp),
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.Settings,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
+                modifier = Modifier.size(20.dp),
+            )
+        }
         Spacer(modifier = Modifier.height(Dimens.xxl))
     }
 
@@ -255,12 +344,12 @@ fun SidebarContent(
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text = text,
+        text = text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+        fontWeight = FontWeight.SemiBold,
         letterSpacing = 1.sp,
-        modifier = Modifier.padding(start = 4.dp),
+        modifier = Modifier.padding(start = 16.dp),
     )
 }
 
@@ -270,32 +359,65 @@ private fun EmptyLabel(text: String) {
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.padding(start = Dimens.md),
+        modifier = Modifier.padding(start = 16.dp),
     )
 }
 
 @Composable
-private fun NavRow(item: NavItem) {
+private fun NavRow(item: NavItem, prominent: Boolean = false, selected: Boolean = false) {
+    val isMagic = currentClawSkin() == ClawSkin.ClawMagic
+    val shape = RoundedCornerShape(if (prominent) 14.dp else 12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
+            .height(if (prominent && isMagic) 48.dp else if (isMagic) 44.dp else 48.dp)
+            .clip(shape)
+            .background(
+                when {
+                    prominent && isMagic -> Color.White.copy(alpha = 0.05f)
+                    selected && isMagic -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    prominent -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.74f)
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                1.dp,
+                when {
+                    prominent && isMagic -> Color.White.copy(alpha = 0.10f)
+                    selected && isMagic -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    else -> Color.Transparent
+                },
+                shape,
+            )
             .clickable(onClick = item.onClick)
-            .padding(horizontal = Dimens.md, vertical = Dimens.sm),
+            .padding(horizontal = if (isMagic) 12.dp else if (prominent) 18.dp else 2.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (prominent && isMagic) Arrangement.Center else Arrangement.Start,
     ) {
         Icon(
             imageVector = item.icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(Dimens.iconSize),
+            tint = when {
+                selected -> MaterialTheme.colorScheme.primary
+                isMagic -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier.size(if (isMagic) 20.dp else if (prominent) 24.dp else 26.dp),
         )
-        Spacer(modifier = Modifier.width(Dimens.md))
+        Spacer(modifier = Modifier.width(if (isMagic) 13.dp else 18.dp))
         Text(
             text = item.label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                letterSpacing = 0.sp,
+            ),
+            color = when {
+                selected -> MaterialTheme.colorScheme.primary
+                isMagic -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f)
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            fontWeight = if (prominent || selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }
@@ -307,36 +429,42 @@ private fun ChatRow(
     onClick: () -> Unit,
 ) {
     val bgColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
-            .copy(alpha = 0.5f) else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent,
         label = "chat_bg",
     )
+    val shape = RoundedCornerShape(10.dp)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
+            .height(42.dp)
+            .clip(shape)
             .background(bgColor)
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                shape,
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = Dimens.md, vertical = Dimens.sm),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.ChatBubble,
-            contentDescription = null,
-            tint = if (selected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(16.dp),
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f)),
         )
-        Spacer(modifier = Modifier.width(Dimens.sm))
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (selected) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
+            color = if (selected) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f)
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }

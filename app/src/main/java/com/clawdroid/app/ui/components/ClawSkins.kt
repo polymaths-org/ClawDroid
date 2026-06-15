@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -28,6 +29,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -38,6 +41,7 @@ import com.clawdroid.app.core.config.AppConfigManager
 import kotlin.math.max
 
 enum class ClawSkin {
+    ClawMagic,
     Material,
     Minimalist,
     LiquidGlass,
@@ -50,11 +54,13 @@ fun currentClawSkin(): ClawSkin {
     val themeKey by AppConfigManager.appThemeFlow.collectAsState()
     return remember(themeKey) {
         when (themeKey) {
+            "claw_magic" -> ClawSkin.ClawMagic
             "minimalist" -> ClawSkin.Minimalist
             "liquid_glass_light", "liquid_glass_dark" -> ClawSkin.LiquidGlass
             "cyberpunk" -> ClawSkin.Cyberpunk
             "jarvis" -> ClawSkin.Jarvis
-            else -> ClawSkin.Material
+            "dark", "light" -> ClawSkin.Material
+            else -> ClawSkin.ClawMagic
         }
     }
 }
@@ -69,6 +75,7 @@ fun ClawSkinBackground(
     val skin = currentClawSkin()
     val colors = MaterialTheme.colorScheme
     val backgroundBrush = when (skin) {
+        ClawSkin.ClawMagic -> Brush.verticalGradient(listOf(colors.background, colors.background))
         ClawSkin.LiquidGlass -> Brush.linearGradient(
             colors = listOf(
                 colors.background.copy(alpha = 0.85f),
@@ -120,6 +127,7 @@ fun ClawSkinBackground(
                 .background(backgroundBrush)
         )
         when (skin) {
+            ClawSkin.ClawMagic -> ClawMagicAmbient(Modifier.matchParentSize())
             ClawSkin.LiquidGlass -> LiquidGlassAmbient(Modifier.matchParentSize())
             ClawSkin.Cyberpunk, ClawSkin.Jarvis -> HudAmbient(skin = skin, modifier = Modifier.matchParentSize())
             else -> Unit
@@ -140,6 +148,12 @@ fun ClawPanel(
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(if (skin.isHud()) max(8f, cornerRadius.value - 8f).dp else cornerRadius)
     val panelBrush = when (skin) {
+        ClawSkin.ClawMagic -> Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.030f + emphasis * 0.018f),
+                Color.White.copy(alpha = 0.024f + emphasis * 0.014f),
+            ),
+        )
         ClawSkin.LiquidGlass -> Brush.verticalGradient(
             listOf(
                 colors.surfaceContainerLowest.copy(alpha = 0.76f + emphasis * 0.10f),
@@ -179,6 +193,13 @@ fun ClawPanel(
         )
     }
     val borderBrush = when (skin) {
+        ClawSkin.ClawMagic -> Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.070f),
+                colors.primary.copy(alpha = 0.08f + emphasis * 0.08f),
+                Color.White.copy(alpha = 0.050f),
+            ),
+        )
         ClawSkin.Cyberpunk -> Brush.horizontalGradient(
             listOf(
                 Color(0xFF00E5FF).copy(alpha = 0.92f),
@@ -208,6 +229,7 @@ fun ClawPanel(
         )
     }
     val glow = when (skin) {
+        ClawSkin.ClawMagic -> colors.primary.copy(alpha = 0.08f + emphasis * 0.04f)
         ClawSkin.Cyberpunk -> colors.secondary.copy(alpha = 0.30f)
         ClawSkin.Jarvis -> colors.primary.copy(alpha = 0.28f)
         ClawSkin.LiquidGlass -> Color.White.copy(alpha = 0.18f)
@@ -218,6 +240,7 @@ fun ClawPanel(
         modifier = modifier
             .shadow(
                 elevation = when (skin) {
+                    ClawSkin.ClawMagic -> if (emphasis > 0.25f) 4.dp else 0.dp
                     ClawSkin.Cyberpunk, ClawSkin.Jarvis -> 14.dp
                     ClawSkin.LiquidGlass -> 10.dp
                     else -> 3.dp
@@ -248,11 +271,105 @@ fun ClawInputPanel(
     val skin = currentClawSkin()
     ClawPanel(
         modifier = modifier,
-        cornerRadius = if (skin.isHud()) 14.dp else 28.dp,
+        cornerRadius = if (skin.isHud()) 14.dp else if (skin == ClawSkin.ClawMagic) 18.dp else 28.dp,
         contentPadding = PaddingValues(0.dp),
         emphasis = 0.35f,
         content = content,
     )
+}
+
+@Composable
+fun ClawMagicMark(
+    modifier: Modifier = Modifier,
+    animated: Boolean = true,
+) {
+    val colors = MaterialTheme.colorScheme
+    val transition = rememberInfiniteTransition(label = "claw_magic_mark")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (animated) 360f else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(9000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "claw_magic_mark_rotation",
+    )
+    Canvas(modifier = modifier.size(42.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val long = size.minDimension * 0.42f
+        val short = size.minDimension * 0.18f
+        val stroke = size.minDimension * 0.085f
+        rotate(rotation, pivot = center) {
+            for (i in 0 until 8) {
+                val angle = Math.toRadians((i * 45).toDouble())
+                val startRadius = if (i % 2 == 0) short * 0.35f else short * 0.65f
+                val endRadius = if (i % 2 == 0) long else long * 0.70f
+                val color = when (i % 4) {
+                    0 -> colors.primary
+                    1 -> colors.tertiary
+                    2 -> Color(0xFF79F2D0)
+                    else -> Color(0xFFFF7B91)
+                }
+                drawLine(
+                    color = color.copy(alpha = if (i % 2 == 0) 0.94f else 0.64f),
+                    start = Offset(
+                        x = center.x + kotlin.math.cos(angle).toFloat() * startRadius,
+                        y = center.y + kotlin.math.sin(angle).toFloat() * startRadius,
+                    ),
+                    end = Offset(
+                        x = center.x + kotlin.math.cos(angle).toFloat() * endRadius,
+                        y = center.y + kotlin.math.sin(angle).toFloat() * endRadius,
+                    ),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClawMagicAmbient(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "claw_magic_ambient")
+    val pulse by transition.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(7200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "claw_magic_pulse",
+    )
+    val primary = MaterialTheme.colorScheme.primary
+    val tertiary = MaterialTheme.colorScheme.tertiary
+    Canvas(modifier = modifier) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color.Transparent,
+                    primary.copy(alpha = 0.035f * pulse),
+                ),
+                startY = size.height * 0.76f,
+                endY = size.height,
+            ),
+            topLeft = Offset(0f, size.height * 0.70f),
+            size = Size(size.width, size.height * 0.30f),
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    primary.copy(alpha = 0.035f * pulse),
+                    tertiary.copy(alpha = 0.018f * pulse),
+                    Color.Transparent,
+                ),
+                center = Offset(size.width * 0.50f, size.height * 0.22f),
+                radius = size.width * 0.80f,
+            ),
+            radius = size.width * 0.80f,
+            center = Offset(size.width * 0.50f, size.height * 0.22f),
+        )
+    }
 }
 
 @Composable

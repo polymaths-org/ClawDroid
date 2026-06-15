@@ -19,7 +19,7 @@ object AppConfigManager {
     private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
     private var prefs: SharedPreferences? = null
-    private val _appThemeFlow = MutableStateFlow("dark")
+    private val _appThemeFlow = MutableStateFlow("claw_magic")
     val appThemeFlow: StateFlow<String> = _appThemeFlow.asStateFlow()
 
     fun init(context: Context) {
@@ -178,7 +178,7 @@ object AppConfigManager {
         set(value) = p.edit().putString("approval_mode", value).apply()
 
     var appTheme: String
-        get() = p.getString("app_theme", "dark") ?: "dark"
+        get() = p.getString("app_theme", "claw_magic") ?: "claw_magic"
         set(value) {
             p.edit().putString("app_theme", value).apply()
             _appThemeFlow.value = value

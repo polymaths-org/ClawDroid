@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +54,8 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -62,7 +65,9 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
@@ -102,6 +107,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -146,6 +152,7 @@ import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
 import com.clawdroid.app.ui.components.ClawInputPanel
+import com.clawdroid.app.ui.components.ClawMagicMark
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkin
 import com.clawdroid.app.ui.components.ClawSkinBackground
@@ -844,8 +851,16 @@ fun ChatScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                modifier = Modifier.width(280.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                modifier = if (currentClawSkin() == ClawSkin.ClawMagic) {
+                    Modifier.fillMaxWidth(0.88f).widthIn(max = 360.dp)
+                } else {
+                    Modifier.width(280.dp)
+                },
+                drawerContainerColor = if (currentClawSkin() == ClawSkin.ClawMagic) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                },
                 drawerContentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 SidebarContent(
@@ -918,71 +933,37 @@ fun ChatScreen(
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
-                    val topShape = RoundedCornerShape(if (skin.isHud()) 8.dp else 0.dp)
-                    TopAppBar(
-                        modifier = if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
-                            Modifier
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                                .clip(topShape)
-                        } else {
-                            Modifier
-                        },
-                        title = {
-                            Column {
+                    if (skin == ClawSkin.ClawMagic) {
+                        ReferenceChatTopBar(
+                            provider = AppConfigManager.provider,
+                            model = AppConfigManager.model,
+                            onOpenDrawer = { scope.launch { drawerState.open() } },
+                            onVoice = ::startVoiceSession,
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
                                 Text(
                                     text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.sp,
-                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
-                                if (skin == ClawSkin.Jarvis) {
-                                    Text(
-                                        text = "AI ASSISTANT SYSTEM",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 0.sp,
-                                        ),
-                                    )
-                                }
-                            }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Menu,
-                                    contentDescription = "Open navigation",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = ::startVoiceSession,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(44.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Call,
-                                    contentDescription = "Voice Call",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = when {
-                                skin.isHud() -> MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.74f)
-                                skin == ClawSkin.LiquidGlass -> MaterialTheme.colorScheme.surface.copy(alpha = 0.52f)
-                                else -> MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
                             },
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    )
+                            navigationIcon = {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Rounded.Menu, contentDescription = "Open navigation")
+                                }
+                            },
+                            actions = {
+                                IconButton(onClick = ::startVoiceSession) {
+                                    Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                            ),
+                        )
+                    }
                 },
                 modifier = modifier,
             ) { paddingValues ->
@@ -1073,6 +1054,7 @@ fun ChatScreen(
                         state = runtimeState,
                         onSubmit = ::submit,
                         onStop = { stopCurrentRun() },
+                        onVoiceInput = ::startVoiceSession,
                         selectedMediaUri = selectedMediaUri,
                         selectedMediaName = selectedMediaName,
                         selectedMediaMimeType = selectedMediaMimeType,
@@ -1204,7 +1186,10 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
+        if (skin == ClawSkin.ClawMagic) {
+            ClawMagicMark(modifier = Modifier.size(48.dp))
+            Spacer(modifier = Modifier.height(18.dp))
+        } else if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
             AudioVisualizerOrb(
                 state = OrbState.Idle,
                 amplitude = 0f,
@@ -1216,22 +1201,26 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
             text = "Hello $name,",
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineLarge.copy(
-                fontSize = 32.sp,
-                lineHeight = 40.sp,
+                fontSize = if (skin == ClawSkin.ClawMagic) 30.sp else 32.sp,
+                lineHeight = if (skin == ClawSkin.ClawMagic) 36.sp else 40.sp,
                 letterSpacing = 0.sp,
             ),
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
         StaggeredWordsText(
-            text = "what's on your mind?",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = if (skin == ClawSkin.ClawMagic) "what's the move?" else "what's on your mind?",
+            color = if (skin == ClawSkin.ClawMagic) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             style = MaterialTheme.typography.headlineLarge.copy(
-                fontSize = 32.sp,
-                lineHeight = 42.sp,
+                fontSize = if (skin == ClawSkin.ClawMagic) 30.sp else 32.sp,
+                lineHeight = if (skin == ClawSkin.ClawMagic) 36.sp else 42.sp,
                 letterSpacing = 0.sp,
             ),
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center,
             delayStepMs = 58L,
         )
@@ -1239,16 +1228,337 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun ReferenceChatTopBar(
+    provider: String,
+    model: String,
+    onOpenDrawer: () -> Unit,
+    onVoice: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 52.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ReferenceRoundIconButton(onClick = onOpenDrawer) {
+            Icon(
+                imageVector = Icons.Rounded.Menu,
+                contentDescription = "Open navigation",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .height(38.dp)
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = provider.replaceFirstChar { it.uppercaseChar() },
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.sp,
+                    ),
+                )
+                Text(
+                    text = model.substringAfterLast('/').take(18),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        letterSpacing = 0.sp,
+                    ),
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+
+        ReferenceRoundIconButton(onClick = onVoice) {
+            Icon(
+                imageVector = Icons.Rounded.Call,
+                contentDescription = "Voice call",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReferenceRoundIconButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(38.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
+        ),
+        content = { Box(contentAlignment = Alignment.Center) { content() } },
+    )
+}
+
+@Composable
+private fun AgentIdentityTag() {
+    Row(
+        modifier = Modifier.padding(bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+        Text(
+            text = AppConfigManager.agentName.ifBlank { "WhiteRose" }.uppercase(),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ReferenceActivityCard(item: ActivityChatItem) {
+    var expanded by remember(item.running, item.steps.size) { mutableStateOf(true) }
+    val statusText = if (item.running) "RUNNING" else if (item.steps.any { it.isError }) "ERROR" else "DONE"
+    val title = "${item.steps.size.coerceAtLeast(1)} step${if (item.steps.size == 1) "" else "s"} ${if (item.running) "running" else "completed"}"
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth(0.90f),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(Color.White.copy(alpha = 0.03f), shape)
+                .border(1.dp, Color.White.copy(alpha = 0.07f), shape),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Bolt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                    Text(
+                        text = title,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.sp,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = statusText,
+                        color = if (item.steps.any { it.isError }) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp,
+                        ),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(
+                                if (item.steps.any { it.isError }) MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                            )
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                AnimatedVisibility(visible = expanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.20f))
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.05f),
+                                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
+                            )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        item.steps.takeLast(5).forEach { step ->
+                            ReferenceActivityStep(step)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceActivityStep(step: ActivityStepItem) {
+    val parsed = formatStepContent(step)
+    val detail = parsed.displayText
+        .ifBlank { step.result.orEmpty() }
+        .ifBlank { step.detail }
+        .lineSequence()
+        .firstOrNull()
+        .orEmpty()
+        .take(64)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .border(
+                    1.dp,
+                    if (step.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    CircleShape,
+                )
+                .background(
+                    if (step.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = if (step.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(10.dp),
+            )
+        }
+        Text(
+            text = referenceStepLabel(step),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                letterSpacing = 0.sp,
+            ),
+            maxLines = 1,
+        )
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(18.dp)
+                .background(Color.White.copy(alpha = 0.10f)),
+        )
+        Text(
+            text = detail.ifBlank { if (step.running) "working" else "complete" },
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                letterSpacing = 0.sp,
+            ),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+private fun referenceStepLabel(step: ActivityStepItem): String {
+    val name = step.summary
+        .replace("Write File", "write_file")
+        .replace("Edit File", "edit_file")
+        .replace("Execute Command", "execute_command")
+        .replace("Run Command", "execute_command")
+        .substringBefore(" (")
+        .substringBefore(":")
+        .trim()
+    return name.ifBlank { step.type.name.lowercase() }
+}
+
+@Composable
 private fun UserMessageBubble(item: UserChatItem) {
     val skin = currentClawSkin()
     val context = LocalContext.current
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        ClawPanel(
+        val bubbleShape = if (skin == ClawSkin.ClawMagic) {
+            RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+        } else {
+            RoundedCornerShape(if (skin.isHud()) 14.dp else 22.dp)
+        }
+        Box(
             modifier = Modifier
-                .fillMaxWidth(0.84f),
-            cornerRadius = if (skin.isHud()) 14.dp else 22.dp,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-            emphasis = 0.45f,
+                .fillMaxWidth(0.85f)
+                .clip(bubbleShape)
+                .background(
+                    if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
+                    else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                    bubbleShape,
+                )
+                .border(
+                    1.dp,
+                    if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
+                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                    bubbleShape,
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (item.mediaPath != null && item.mediaMimeType != null) {
@@ -1300,8 +1610,12 @@ private fun UserMessageBubble(item: UserChatItem) {
                 if (item.text.isNotBlank()) {
                     Text(
                         text = item.text,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 23.sp,
+                            letterSpacing = 0.sp,
+                        ),
                     )
                 }
             }
@@ -1328,13 +1642,16 @@ private fun AgentMessageCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(end = 32.dp),
+            .padding(end = if (skin == ClawSkin.ClawMagic) 34.dp else 32.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
 
         if (item.text.isBlank() && item.streaming) {
             CustomProcessingLoader()
         } else if (item.text.isNotBlank()) {
+            if (skin == ClawSkin.ClawMagic) {
+                AgentIdentityTag()
+            }
             val contentModifier = Modifier.graphicsLayer {
                 this.alpha = alpha.value
                 translationY = offsetY.value
@@ -1373,6 +1690,10 @@ private fun AgentMessageCard(
 
 @Composable
 private fun ActivityMessageCard(item: ActivityChatItem) {
+    if (currentClawSkin() == ClawSkin.ClawMagic) {
+        ReferenceActivityCard(item)
+        return
+    }
     val context = LocalContext.current
     val previews = remember(item.steps) { buildFilePreviews(item.steps, context) }
     var previewFile by remember { mutableStateOf<FilePreview?>(null) }
@@ -1588,12 +1909,153 @@ private fun InlineActivityStep(step: ActivityStepItem) {
 }
 
 @Composable
+private fun ReferenceInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    state: AgentRuntimeState,
+    onSubmit: () -> Unit,
+    onStop: () -> Unit,
+    onVoiceInput: () -> Unit,
+    selectedMediaUri: Uri?,
+    selectedMediaName: String?,
+    selectedMediaMimeType: String?,
+    onMediaSelected: (Uri?, String?, String?) -> Unit,
+    onAttach: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Transparent,
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                        MaterialTheme.colorScheme.background,
+                    ),
+                ),
+            )
+            .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 6.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White.copy(alpha = 0.07f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f), RoundedCornerShape(18.dp))
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (selectedMediaUri != null) {
+                AttachmentPreviewRow(
+                    uri = selectedMediaUri,
+                    name = selectedMediaName ?: "File",
+                    mimeType = selectedMediaMimeType,
+                    onClear = { onMediaSelected(null, null, null) },
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 38.dp, max = 112.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    letterSpacing = 0.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Send,
+                    capitalization = KeyboardCapitalization.Sentences,
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (value.isNotBlank() || selectedMediaUri != null) onSubmit()
+                    },
+                ),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = if (state == AgentRuntimeState.Running) {
+                                    "Steer ${AppConfigManager.agentName.ifBlank { "WhiteRose" }}..."
+                                } else {
+                                    "Message ${AppConfigManager.agentName.ifBlank { "WhiteRose" }}..."
+                                },
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 15.sp,
+                                    letterSpacing = 0.sp,
+                                ),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    CompactIconButton(onClick = onAttach) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Attach file",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    CompactIconButton(onClick = onVoiceInput) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = "Voice input",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Surface(
+                    onClick = if (state == AgentRuntimeState.Running) onStop else onSubmit,
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = if (state == AgentRuntimeState.Running) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    contentColor = if (state == AgentRuntimeState.Running) {
+                        MaterialTheme.colorScheme.onError
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
+                    shadowElevation = 6.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (state == AgentRuntimeState.Running) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = if (state == AgentRuntimeState.Running) "Stop" else "Send",
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PremiumInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     state: AgentRuntimeState,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
+    onVoiceInput: () -> Unit,
     selectedMediaUri: Uri?,
     selectedMediaName: String?,
     selectedMediaMimeType: String?,
@@ -1612,6 +2074,23 @@ private fun PremiumInputBar(
         },
     )
     val showCommandButton = value.isEmpty()
+
+    if (skin == ClawSkin.ClawMagic) {
+        ReferenceInputBar(
+            value = value,
+            onValueChange = onValueChange,
+            state = state,
+            onSubmit = onSubmit,
+            onStop = onStop,
+            onVoiceInput = onVoiceInput,
+            selectedMediaUri = selectedMediaUri,
+            selectedMediaName = selectedMediaName,
+            selectedMediaMimeType = selectedMediaMimeType,
+            onMediaSelected = onMediaSelected,
+            onAttach = { attachmentPicker.launch("*/*") },
+        )
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -1666,6 +2145,16 @@ private fun PremiumInputBar(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    AnimatedVisibility(visible = value.isEmpty() && state == AgentRuntimeState.Idle) {
+                        CompactIconButton(onClick = onVoiceInput) {
+                            Icon(
+                                imageVector = Icons.Rounded.Mic,
+                                contentDescription = "Voice input",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     BasicTextField(
                         value = value,
                         onValueChange = {
@@ -1696,7 +2185,7 @@ private fun PremiumInputBar(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (value.isEmpty()) {
                                     Text(
-                                        text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Message ClawDroid...",
+                                        text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Ask ClawDroid",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f),
                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                     )
@@ -1716,8 +2205,6 @@ private fun PremiumInputBar(
                             ),
                         ) {
                             Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Stop", fontSize = 13.sp)
                         }
                     } else {
                         Surface(
