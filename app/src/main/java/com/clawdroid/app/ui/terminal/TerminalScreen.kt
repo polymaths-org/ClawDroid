@@ -90,7 +90,11 @@ fun TerminalScreen(onBack: () -> Unit) {
 
     fun submitCommand(command: String = input) {
         val text = command.trim()
-        if (text.isBlank() || processId == null || state in terminalStates) return
+        if (text.isBlank()) return
+        if (processId == null || state in terminalStates) {
+            lines.add("Shell not running. Press ↻ to restart.")
+            return
+        }
         input = ""
         history.add(text)
         historyIndex = history.size
@@ -239,7 +243,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    enabled = processId != null && state !in terminalStates,
+                    enabled = true,
                     placeholder = { Text("Run a Linux command...", color = Color(0xFF7D8790)) },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
@@ -321,18 +325,21 @@ private fun TerminalChip(
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = label,
-        color = if (danger) Color(0xFFFFB4AB) else Color(0xFFE7ECEF),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp,
+    Box(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(if (danger) Color(0xFF35161A) else Color(0xFF18212A))
             .border(1.dp, if (danger) Color(0xFF6C2A32) else Color(0xFF2E3A45), RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Text(
+            text = label,
+            color = if (danger) Color(0xFFFFB4AB) else Color(0xFFE7ECEF),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+    }
 }
 
 @Composable

@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
@@ -21,6 +22,12 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.clawdroid.app.ui.theme.ClawDroidTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
@@ -36,6 +43,7 @@ class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     private var windowManager: WindowManager? = null
     private var composeView: ComposeView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private val overlayScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +91,12 @@ class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         }
 
         windowManager?.addView(composeView, params)
+
+        overlayScope.launch {
+            AssistantOverlayCoordinator.visible.collect { isVisible ->
+                composeView?.visibility = if (isVisible) View.VISIBLE else View.GONE
+            }
+        }
     }
 
     private fun moveWindowBy(dx: Float, dy: Float) {
@@ -97,6 +111,7 @@ class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
     }
 
     override fun onDestroy() {
+        overlayScope.cancel()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)

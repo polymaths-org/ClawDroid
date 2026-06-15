@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +25,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material3.Icon
@@ -44,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,16 +49,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.clawdroid.app.ui.components.GlowText
-import com.clawdroid.app.ui.theme.ActivePurple
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.GlassBorderDim
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassFillMedium
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.NeonBlue
-import com.clawdroid.app.ui.theme.NeonCyan
-import com.clawdroid.app.ui.theme.SoftWhite
+import com.clawdroid.app.ui.components.ClawPanel
+import com.clawdroid.app.ui.components.ClawSkin
+import com.clawdroid.app.ui.components.ClawSkinBackground
+import com.clawdroid.app.ui.components.currentClawSkin
+import com.clawdroid.app.ui.components.isHud
 
 @Composable
 fun VoiceOverlay(
@@ -75,23 +67,22 @@ fun VoiceOverlay(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val skin = currentClawSkin()
+    val primaryGlow = MaterialTheme.colorScheme.primary
+    val secondaryGlow = MaterialTheme.colorScheme.secondary
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(400)),
         exit = fadeOut(tween(350)),
         modifier = modifier,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(DeepBlack),
-        ) {
+        ClawSkinBackground(modifier = Modifier.fillMaxSize()) {
             // ── Background Glows ───────────────────────────────────────────
             Canvas(modifier = Modifier.fillMaxSize()) {
                 // Top Right Cyan Glow
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(NeonCyan.copy(alpha = 0.08f), Color.Transparent),
+                        colors = listOf(primaryGlow.copy(alpha = 0.08f), Color.Transparent),
                         center = Offset(size.width * 0.8f, size.height * 0.2f),
                         radius = size.maxDimension * 0.5f,
                     ),
@@ -101,7 +92,7 @@ fun VoiceOverlay(
                 // Bottom Left Blue Glow
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(NeonBlue.copy(alpha = 0.08f), Color.Transparent),
+                        colors = listOf(secondaryGlow.copy(alpha = 0.08f), Color.Transparent),
                         center = Offset(size.width * 0.2f, size.height * 0.8f),
                         radius = size.maxDimension * 0.5f,
                     ),
@@ -129,13 +120,13 @@ fun VoiceOverlay(
                         onClick = onBack,
                         modifier = Modifier
                             .size(44.dp)
-                            .background(GlassFill, CircleShape)
-                            .border(1.dp, GlassBorderDim, CircleShape),
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape),
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = SoftWhite,
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
 
@@ -146,9 +137,20 @@ fun VoiceOverlay(
                             text = AppConfigManager.agentName,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = SoftWhite,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                letterSpacing = 0.sp,
                             )
                         )
+                        if (skin == ClawSkin.Jarvis) {
+                            Text(
+                                text = "AI ASSISTANT SYSTEM",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val dotTransition = rememberInfiniteTransition(label = "pulse_dot")
                             val dotAlpha by dotTransition.animateFloat(
@@ -165,13 +167,13 @@ fun VoiceOverlay(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .alpha(dotAlpha)
-                                    .background(if (isMuted) Color.Red else NeonCyan, CircleShape)
+                                    .background(if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, CircleShape)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = if (isMuted) "Microphone Muted" else "Listening...",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedGray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -197,15 +199,12 @@ fun VoiceOverlay(
                     scrollState.animateScrollTo(scrollState.maxValue)
                 }
 
-                val transcriptShape = RoundedCornerShape(20.dp)
-                Box(
+                ClawPanel(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(transcriptShape)
-                        .background(GlassFill, transcriptShape)
-                        .border(1.dp, GlassBorderDim, transcriptShape)
-                        .padding(16.dp)
+                        .height(180.dp),
+                    cornerRadius = if (skin.isHud()) 12.dp else 20.dp,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 ) {
                     Column(
                         modifier = Modifier
@@ -217,7 +216,7 @@ fun VoiceOverlay(
                             Text(
                                 text = "Start speaking to ClawDroid...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MutedGray.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(top = 40.dp)
                             )
@@ -227,13 +226,13 @@ fun VoiceOverlay(
                                     Text(
                                         text = "You",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = NeonCyan,
+                                        color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         text = userPartialText,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = SoftWhite,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }
@@ -243,13 +242,13 @@ fun VoiceOverlay(
                                     Text(
                                         text = "ClawDroid",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = ActivePurple,
+                                        color = MaterialTheme.colorScheme.secondary,
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         text = agentResponseText,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = SoftWhite,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }
@@ -268,9 +267,17 @@ fun VoiceOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Mute Button
-                    val muteBg = if (isMuted) Color.Red.copy(alpha = 0.2f) else GlassFill
-                    val muteBorder = if (isMuted) Color.Red.copy(alpha = 0.4f) else GlassBorderDim
-                    val muteIconColor = if (isMuted) Color.Red else SoftWhite
+                    val muteBg = if (isMuted) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f)
+                    }
+                    val muteBorder = if (isMuted) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    }
+                    val muteIconColor = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
 
                     IconButton(
                         onClick = onMuteToggle,
@@ -294,7 +301,7 @@ fun VoiceOverlay(
                         onClick = onBack,
                         modifier = Modifier
                             .size(60.dp)
-                            .background(Color.Red.copy(alpha = 0.8f), CircleShape)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.86f), CircleShape)
                             .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
                     ) {
                         Icon(

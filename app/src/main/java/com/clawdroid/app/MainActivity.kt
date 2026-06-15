@@ -32,6 +32,7 @@ import com.clawdroid.app.ui.settings.ConfigFileType
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.McpScreen
 import com.clawdroid.app.ui.settings.PermissionManagerScreen
+import com.clawdroid.app.ui.settings.ProviderConfigScreen
 import com.clawdroid.app.ui.settings.SkillsConfigScreen
 import com.clawdroid.app.ui.settings.ThemeConfigScreen
 import com.clawdroid.app.ui.setup.SetupScreen
@@ -134,9 +135,11 @@ enum class Screen {
     PostSetup,
     Chat,
     Settings,
+    Provider,
     Audio,
     Agent,
     Automations,
+    Connections,
     Channels,
     Skills,
     Mcp,
@@ -210,8 +213,10 @@ private fun ClawDroidApp(
             Screen.Settings -> {
                 SettingsScreen(
                     onBack = { currentScreen = Screen.Chat },
+                    onNavigateToProvider = { currentScreen = Screen.Provider },
                     onNavigateToAudio = { currentScreen = Screen.Audio },
                     onNavigateToAutomations = { currentScreen = Screen.Automations },
+                    onNavigateToConnections = { currentScreen = Screen.Connections },
                     onNavigateToChannels = { currentScreen = Screen.Channels },
                     onNavigateToSkills = { currentScreen = Screen.Skills },
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
@@ -227,16 +232,32 @@ private fun ClawDroidApp(
 
             Screen.Audio -> AudioConfigScreen(onBack = { currentScreen = Screen.Settings })
 
+            Screen.Provider -> ProviderConfigScreen(onBack = { currentScreen = Screen.Settings })
+
             Screen.Agent -> AgentConfigScreen(onBack = { currentScreen = Screen.Settings })
 
             Screen.Automations -> AutomationsConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Connections -> {
+                McpScreen(
+                    onBack = { currentScreen = Screen.Settings },
+                    title = "Connections",
+                    showConnectors = true,
+                    showServers = false,
+                )
+            }
 
             Screen.Channels -> ChannelsConfigScreen(onBack = { currentScreen = Screen.Settings })
 
             Screen.Skills -> SkillsConfigScreen(onBack = { currentScreen = Screen.Settings })
 
             Screen.Mcp -> {
-                McpScreen(onBack = { currentScreen = Screen.Settings })
+                McpScreen(
+                    onBack = { currentScreen = Screen.Settings },
+                    title = "MCP Servers",
+                    showConnectors = false,
+                    showServers = true,
+                )
             }
 
             Screen.Themes -> ThemeConfigScreen(onBack = { currentScreen = Screen.Settings })

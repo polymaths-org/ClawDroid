@@ -237,7 +237,7 @@ object ToolExecutor {
             "press_home" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressHome() }
             "press_recents" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressRecents() }
             "open_notifications" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.openNotifications() }
-            "launch_app" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.launchApp(args.getString("package_name")) }
+            "launch_app" -> AndroidControlTools.launchApp(args.getString("package_name"), context)
             "get_installed_apps" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getInstalledApps(context) }
             "screenshot" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.screenshot(context) }
             "wait" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.wait(args.optInt("ms", 500)) }

@@ -213,13 +213,15 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
             ThemePreset("minimalist", "Minimalist", "Quiet grayscale controls with reduced visual noise.", listOf(Color(0xFF101112), Color(0xFF2B2F32), Color(0xFFE8EAED))),
             ThemePreset("liquid_glass_light", "Liquid Glass Light", "Apple-style translucent white glass with blue system accents.", listOf(Color(0xFFFFFFFF), Color(0xFFEAF4FF), Color(0xFF007AFF), Color(0xFFAF52DE))),
             ThemePreset("liquid_glass_dark", "Liquid Glass Dark", "Deep translucent glass with luminous blue, violet, and soft highlights.", listOf(Color(0xFF05070A), Color(0xFF1C1C1E), Color(0xFF64D2FF), Color(0xFFBF5AF2))),
+            ThemePreset("cyberpunk", "Cyberpunk", "Neon magenta/cyan HUD surfaces, scanlines, and high-contrast agent chrome.", listOf(Color(0xFF04010A), Color(0xFF18E6FF), Color(0xFFFF4FDB), Color(0xFFFFD166))),
+            ThemePreset("jarvis", "JARVIS", "Precision cyan interface with tactical HUD framing and holographic panels.", listOf(Color(0xFF01080B), Color(0xFF23E7FF), Color(0xFF8BD7E6), Color(0xFFFFC857))),
         )
     }
 
     ConfigScaffold("Themes", onBack) {
         InfoCard(
             title = "Application Theme",
-            body = "Choose the visual treatment for ClawDroid. The selected theme is persisted and used by UI surfaces as theme support expands.",
+            body = "Choose the visual treatment for ClawDroid. Theme changes apply immediately and persist for future launches.",
         )
 
         GlassCard {
@@ -229,7 +231,10 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
                     ThemeChoiceCard(
                         preset = preset,
                         selected = selectedTheme == preset.id,
-                        onClick = { selectedTheme = preset.id },
+                        onClick = {
+                            selectedTheme = preset.id
+                            AppConfigManager.appTheme = preset.id
+                        },
                     )
                 }
             }

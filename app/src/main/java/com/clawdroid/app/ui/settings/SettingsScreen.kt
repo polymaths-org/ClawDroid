@@ -45,13 +45,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.ui.components.ClawPanel
+import com.clawdroid.app.ui.components.ClawSkinBackground
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onNavigateToProvider: () -> Unit = {},
     onNavigateToAudio: () -> Unit = {},
     onNavigateToAutomations: () -> Unit = {},
+    onNavigateToConnections: () -> Unit = {},
     onNavigateToChannels: () -> Unit = {},
     onNavigateToSkills: () -> Unit = {},
     onNavigateToMcp: () -> Unit = {},
@@ -69,65 +73,63 @@ fun SettingsScreen(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Scaffold(
-        modifier = modifier,
-        containerColor = background,
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings", color = onSurface, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = onSurface)
+    ClawSkinBackground(modifier = modifier) {
+        Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { Text("Settings", color = onSurface, fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = onSurface)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = background.copy(alpha = 0.72f)),
+                )
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                SettingsHeader(onSurface = onSurface, onVariant = onVariant)
+
+                SettingsGroup("Core", surface, border, accent) {
+                    SettingsRow(Icons.Outlined.Security, "Agent", "Identity, prompts, approvals, max turns", accent, onSurface, onVariant, onNavigateToAgentConfig)
+                    SettingsRow(Icons.Outlined.Security, "Permissions", "Android permissions and special access", accent, onSurface, onVariant, onNavigateToPermissions)
+                    SettingsRow(Icons.Outlined.SettingsInputComponent, "Provider", "${AppConfigManager.provider} · ${AppConfigManager.model}", accent, onSurface, onVariant, onNavigateToProvider)
+                    SettingsRow(Icons.Outlined.Headphones, "Audio", "Cloud TTS, realtime voice, speech behavior", accent, onSurface, onVariant, onNavigateToAudio)
+                    SettingsRow(Icons.Outlined.ColorLens, "Themes", "Light, glass, cyberpunk, JARVIS", accent, onSurface, onVariant, onNavigateToThemes)
+                }
+
+                SettingsGroup("Capabilities", surface, border, accent) {
+                    SettingsRow(Icons.Outlined.Link, "Connections", "Google, GitHub, Notion, Spotify and service auth", accent, onSurface, onVariant, onNavigateToConnections)
+                    SettingsRow(Icons.Outlined.Extension, "MCP", "Local MCP servers and custom tools", accent, onSurface, onVariant, onNavigateToMcp)
+                    SettingsRow(Icons.Outlined.Link, "Channels", "WhatsApp, SMS, Telegram, Slack, email, webhooks", accent, onSurface, onVariant, onNavigateToChannels)
+                    SettingsRow(Icons.Outlined.Extension, "Skills", "Installable behaviors and skill sources", accent, onSurface, onVariant, onNavigateToSkills)
+                    SettingsRow(Icons.Outlined.Timer, "Automations", "Heartbeat, background service, approval mode", accent, onSurface, onVariant, onNavigateToAutomations)
+                }
+
+                SettingsGroup("Prompt Files", surface, border, accent) {
+                    SettingsRow(Icons.Outlined.Code, "AGENTS.md", "High-level behavior and project rules", accent, onSurface, onVariant) {
+                        onNavigateToConfigEditor(ConfigFileType.AGENTS)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = background),
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(background)
-                .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            SettingsHeader(onSurface = onSurface, onVariant = onVariant)
-
-            SettingsGroup("Core", surface, border, accent) {
-                SettingsRow(Icons.Outlined.Security, "Agent", "Identity, prompts, approvals, max turns", accent, onSurface, onVariant, onNavigateToAgentConfig)
-                SettingsRow(Icons.Outlined.Security, "Permissions", "Android permissions and special access", accent, onSurface, onVariant, onNavigateToPermissions)
-                SettingsRow(Icons.Outlined.SettingsInputComponent, "Provider", "${AppConfigManager.provider} · ${AppConfigManager.model}", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.AGENTS)
-                }
-                SettingsRow(Icons.Outlined.Headphones, "Audio", "Cloud TTS, realtime voice, speech behavior", accent, onSurface, onVariant, onNavigateToAudio)
-                SettingsRow(Icons.Outlined.ColorLens, "Themes", "Light, dark, minimalist, liquid glass", accent, onSurface, onVariant, onNavigateToThemes)
-            }
-
-            SettingsGroup("Capabilities", surface, border, accent) {
-                SettingsRow(Icons.Outlined.Link, "Connections", "Google, GitHub, Notion, Spotify and service auth", accent, onSurface, onVariant, onNavigateToMcp)
-                SettingsRow(Icons.Outlined.Extension, "MCP", "Connector runtime and server tools", accent, onSurface, onVariant, onNavigateToMcp)
-                SettingsRow(Icons.Outlined.Link, "Channels", "WhatsApp, SMS, Telegram, Slack, email, webhooks", accent, onSurface, onVariant, onNavigateToChannels)
-                SettingsRow(Icons.Outlined.Extension, "Skills", "Installable behaviors and skill sources", accent, onSurface, onVariant, onNavigateToSkills)
-                SettingsRow(Icons.Outlined.Timer, "Automations", "Heartbeat, background service, approval mode", accent, onSurface, onVariant, onNavigateToAutomations)
-            }
-
-            SettingsGroup("Prompt Files", surface, border, accent) {
-                SettingsRow(Icons.Outlined.Code, "AGENTS.md", "High-level behavior and project rules", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.AGENTS)
-                }
-                SettingsRow(Icons.Outlined.Code, "SOUL.md", "Tone, ethics, and personality", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.SOUL)
-                }
-                SettingsRow(Icons.Outlined.Code, "TOOLS.md", "Tool-use policy and execution rules", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.TOOLS)
-                }
-                SettingsRow(Icons.Outlined.Code, "SKILL.md", "Core skills and domain instructions", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.SKILL)
-                }
-                SettingsRow(Icons.Outlined.Code, "SYSTEM.md", "System-level base prompt overrides", accent, onSurface, onVariant) {
-                    onNavigateToConfigEditor(ConfigFileType.SYSTEM)
+                    SettingsRow(Icons.Outlined.Code, "SOUL.md", "Tone, ethics, and personality", accent, onSurface, onVariant) {
+                        onNavigateToConfigEditor(ConfigFileType.SOUL)
+                    }
+                    SettingsRow(Icons.Outlined.Code, "TOOLS.md", "Tool-use policy and execution rules", accent, onSurface, onVariant) {
+                        onNavigateToConfigEditor(ConfigFileType.TOOLS)
+                    }
+                    SettingsRow(Icons.Outlined.Code, "SKILL.md", "Core skills and domain instructions", accent, onSurface, onVariant) {
+                        onNavigateToConfigEditor(ConfigFileType.SKILL)
+                    }
+                    SettingsRow(Icons.Outlined.Code, "SYSTEM.md", "System-level base prompt overrides", accent, onSurface, onVariant) {
+                        onNavigateToConfigEditor(ConfigFileType.SYSTEM)
+                    }
                 }
             }
         }
@@ -170,15 +172,16 @@ private fun SettingsGroup(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(start = 4.dp),
         )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(surface)
-                .border(1.dp, border, RoundedCornerShape(16.dp))
-                .padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            content = content,
+        ClawPanel(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 16.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
+            content = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    content = content,
+                )
+            },
         )
     }
 }
