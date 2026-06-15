@@ -3,12 +3,11 @@ package com.clawdroid.app.ui.setup
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,314 +16,390 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.EmberOrange
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.SoftWhite
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassBorderDim
+import com.clawdroid.app.ui.components.StaggeredWordsText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
+import java.time.LocalTime
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun PostSetupScreen(onComplete: () -> Unit) {
     val context = LocalContext.current
-    var step by remember { mutableStateOf(0) }
-    var ownerName by remember { mutableStateOf(AppConfigManager.ownerName) }
-    var ownerRole by remember { mutableStateOf("") }
-    var ownerUseCases by remember { mutableStateOf(AppConfigManager.ownerInfo) }
-    var ownerPreferences by remember { mutableStateOf("") }
-    var recurringTasks by remember { mutableStateOf("") }
-    var writingProgress by remember { mutableStateOf(0f) }
-    var writingFiles by remember { mutableStateOf(listOf<String>()) }
-    var done by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val agentName = AppConfigManager.agentName.ifBlank { "ClawDroid" }
+    val ownerName = AppConfigManager.ownerName.ifBlank { "the human who hatched me" }
+    val timeGreeting = remember { currentDayPart() }
+    val generatedFiles = remember { mutableStateListOf<String>() }
+
+    var userResponse by remember { mutableStateOf("") }
+    var isWriting by remember { mutableStateOf(false) }
+    var isDone by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+
+    fun submit() {
+        val response = userResponse.trim()
+        if (response.isBlank() || isWriting) return
+        isWriting = true
+        scope.launch {
+            val files = writePostHatchMarkdowns(
+                root = context.filesDir,
+                agentName = agentName,
+                ownerName = AppConfigManager.ownerName.ifBlank { ownerName },
+                ownerResponse = response,
+            ) { fileName, done, total ->
+                generatedFiles += fileName
+                progress = done.toFloat() / total.toFloat()
+            }
+            AppConfigManager.ownerInfo = response
+            AppConfigManager.hasCompletedPostHatchIntro = true
+            AppConfigManager.syncToSandbox(context)
+            if (files.isEmpty()) {
+                generatedFiles += "No files written"
+            }
+            delay(450)
+            isDone = true
+        }
+    }
 
     Column(
-        Modifier.fillMaxSize().background(DeepBlack).padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Spacer(Modifier.height(48.dp))
-        Text("OpenClaw", fontSize = MaterialTheme.typography.headlineLarge.fontSize, color = EmberOrange)
-        Spacer(Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(18.dp))
         Text(
-            if (step < 2) "Personalize Your Agent" else "Writing Agent Memory",
-            style = MaterialTheme.typography.headlineSmall,
-            color = SoftWhite, fontWeight = FontWeight.Bold,
+            "First Wake",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(24.dp))
+        StaggeredWordsText(
+            "Claw Droid",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+        )
 
-        when (step) {
-            0 -> {
-                Text("Give the agent enough context to understand who you are, what you do, and what it should optimize for.",
-                    color = MutedGray, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(20.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StyledField("Your Name", ownerName, { ownerName = it })
-                    StyledField("Your Role / Work", ownerRole, { ownerRole = it }, singleLine = false)
-                    StyledField("What will you use ClawDroid for?", ownerUseCases, { ownerUseCases = it }, singleLine = false)
-                    StyledField("Preferences and working style", ownerPreferences, { ownerPreferences = it }, singleLine = false)
-                    StyledField("Recurring checks or automations", recurringTasks, { recurringTasks = it }, singleLine = false)
-                }
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { step = 1 },
-                    enabled = ownerName.isNotBlank() && ownerUseCases.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = EmberOrange),
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) { Text("Review Context", fontWeight = FontWeight.Bold) }
-            }
-            1 -> {
-                Text("This context is saved into the sandbox so the agent can start future chats with useful memory.",
-                    color = MutedGray, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(16.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    InfoRow("Name", ownerName)
-                    InfoRow("Role / Work", ownerRole)
-                    InfoRow("Use Cases", ownerUseCases)
-                    InfoRow("Preferences", ownerPreferences)
-                    InfoRow("Recurring Tasks", recurringTasks)
-                }
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { step = 2 },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmberOrange),
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) { Text("Write Agent Files", fontWeight = FontWeight.Bold) }
-            }
-            2 -> {
-                Text("Creating memory, identity, tool, and heartbeat files...",
-                    color = MutedGray, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(20.dp))
-                val progress by animateFloatAsState(
-                    targetValue = writingProgress,
-                    animationSpec = tween(500), label = "progress"
-                )
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = EmberOrange,
-                    trackColor = GlassFill,
-                )
-                Spacer(Modifier.height(16.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    writingFiles.forEach { file ->
-                        AnimatedVisibility(
-                            visible = true,
-                            enter = fadeIn(tween(400)) + slideInVertically(tween(300)),
-                        ) {
-                            Text("✓ $file", color = if (file.startsWith("✓")) SoftWhite else MutedGray,
-                                fontSize = 14.sp)
-                        }
-                    }
-                }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            AgentBubble(
+                "Ohh, it's $timeGreeting. I just woke up. My name is $agentName, and I guess you are $ownerName. Can you tell me more about yourself, how you work, what you want me to remember, and what kind of help you expect from me?"
+            )
 
-                LaunchedEffect(step) {
-                    val sandboxDir = context.filesDir
-                    val homeDir = File(sandboxDir, "home").also { it.mkdirs() }
-                    val memoryDir = File(homeDir, ".memory").also { it.mkdirs() }
-                    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
-                    val files = listOf(
-                        homeDir.resolve("AGENTS.md") to buildString {
-                            appendLine("# AGENTS.md")
-                            appendLine()
-                            appendLine(AppConfigManager.agentsMd.ifBlank { "Use project context, memory, and visible tool results before acting." })
-                            appendLine()
-                            appendLine("## Owner")
-                            appendLine("- Name: $ownerName")
-                            appendLine("- Role / Work: $ownerRole")
-                            appendLine("- Main Use Cases: $ownerUseCases")
-                        },
-                        homeDir.resolve("SOUL.md") to buildString {
-                            appendLine("# SOUL.md")
-                            appendLine()
-                            appendLine(AppConfigManager.soulMd.ifBlank { "Be transparent, practical, autonomous inside the sandbox, and easy to interrupt." })
-                            appendLine()
-                            appendLine("## Communication")
-                            appendLine("- Keep activity visible.")
-                            appendLine("- Keep spoken output clean: no emoji names, dividers, or filler lines.")
-                        },
-                        homeDir.resolve("TOOLS.md") to buildString {
-                            appendLine("# TOOLS.md")
-                            appendLine()
-                            appendLine(AppConfigManager.toolsMd.ifBlank { "Use shell, file, browser, notification, and process tools deliberately." })
-                            appendLine()
-                            appendLine("## Constraints")
-                            appendLine("- Prefer non-interactive commands.")
-                            appendLine("- Ask before connected-service actions unless approval settings allow it.")
-                        },
-                        memoryDir.resolve("user.md") to buildString {
-                            appendLine("# User")
-                            appendLine()
-                            appendLine("Name: $ownerName")
-                            appendLine("Role / Work: $ownerRole")
-                            appendLine("Use Cases: $ownerUseCases")
-                            appendLine("Preferences: $ownerPreferences")
-                            appendLine("Recurring Tasks: $recurringTasks")
-                        },
-                        memoryDir.resolve("Identity.md") to buildString {
-                            appendLine("# Owner Identity")
-                            appendLine()
-                            appendLine("**Name:** $ownerName")
-                            appendLine("**Role / Work:** $ownerRole")
-                            appendLine("**Use Cases:** $ownerUseCases")
-                            appendLine("**Preferences:** $ownerPreferences")
-                            appendLine("**Recurring Tasks:** $recurringTasks")
-                        },
-                        memoryDir.resolve("Agent.md") to buildString {
-                            appendLine("# Agent Configuration")
-                            appendLine()
-                            appendLine("**Name:** ${AppConfigManager.agentName}")
-                            appendLine("**Personality:** ${AppConfigManager.agentPersonality}")
-                            appendLine("**Purpose:** ${AppConfigManager.agentPurpose}")
-                            appendLine("**Platform:** Android (Linux sandbox)")
-                            appendLine("**Approval Mode:** ${AppConfigManager.approvalMode}")
-                        },
-                        memoryDir.resolve("soul.md") to buildString {
-                            appendLine("# Agent Soul — Guiding Principles")
-                            appendLine()
-                            appendLine("## Values")
-                            appendLine("- Transparency: never hide actions, always show what you did")
-                            appendLine("- Autonomy: figure things out before asking for help")
-                            appendLine("- Precision: be exact, avoid vague answers")
-                            appendLine("- Growth: learn from every interaction")
-                            appendLine()
-                            appendLine("## Rules")
-                            appendLine("- Keep the user informed of progress")
-                            appendLine("- Show tool calls and their results")
-                            appendLine("- Never execute destructive commands without confirmation")
-                            appendLine("- Respect the sandbox boundary")
-                        },
-                        memoryDir.resolve("tools.md") to buildString {
-                            appendLine("# Available Tools")
-                            appendLine()
-                            appendLine("The agent has access to:")
-                            appendLine("- execute_command: Run shell commands")
-                            appendLine("- start_process: Background processes")
-                            appendLine("- read_file / write_file / edit_file: File operations")
-                            appendLine("- list_directory: Explore filesystem")
-                            appendLine("- browse_web: Visit URLs")
-                            appendLine("- web_search: Search the web")
-                            appendLine("- send_notification: Send alerts")
-                            appendLine("- Process management: check/kill/list processes, send input")
-                        },
-                        memoryDir.resolve("heartbeat.md") to buildString {
-                            appendLine("# Heartbeat & Automation Schedule")
-                            appendLine()
-                            appendLine("**Status:** ${if (AppConfigManager.heartbeatEnabled) "Active" else "Paused"}")
-                            appendLine("**Check Interval:** ${AppConfigManager.heartbeatIntervalMin} minutes")
-                            appendLine("**Last Updated:** $timestamp")
-                            appendLine()
-                            appendLine("## Requested Recurring Work")
-                            appendLine(recurringTasks.ifBlank { "- None yet. Ask the user before adding recurring automations." })
-                        },
-                        memoryDir.resolve("memory.md") to buildString {
-                            appendLine("# ClawDroid Agent Memory")
-                            appendLine()
-                            appendLine("## Known Facts")
-                            appendLine("- **Agent Name:** ${AppConfigManager.agentName}")
-                            appendLine("- **Personality:** ${AppConfigManager.agentPersonality}")
-                            appendLine("- **Purpose:** ${AppConfigManager.agentPurpose}")
-                            appendLine("- **Platform:** Android (Linux sandbox)")
-                            appendLine("- **Owner:** $ownerName")
-                            appendLine("- **Owner Role / Work:** $ownerRole")
-                            appendLine("- **Owner Use Cases:** $ownerUseCases")
-                            appendLine("- **Owner Preferences:** $ownerPreferences")
-                            appendLine("- **Recurring Tasks:** $recurringTasks")
-                        },
+            if (userResponse.isNotBlank()) {
+                UserBubble(userResponse)
+            }
+
+            AnimatedVisibility(visible = isWriting) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AgentBubble("Got it. I am writing my memory and operating files from what you told me.")
+                    val animatedProgress by animateFloatAsState(progress, tween(250), label = "post_setup_progress")
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     )
-
-                    val totalFiles = files.size
-                    files.forEachIndexed { i, (file, content) ->
-                        file.parentFile?.mkdirs()
-                        file.writeText(content)
-                        writingFiles = writingFiles + file.name
-                        writingProgress = (i + 1).toFloat() / totalFiles
-                        kotlinx.coroutines.delay(300)
+                    generatedFiles.forEach { file ->
+                        Text(
+                            text = "+ $file",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        )
                     }
+                }
+            }
 
-                    AppConfigManager.ownerName = ownerName
-                    AppConfigManager.ownerInfo = buildString {
-                        appendLine("Role / Work: $ownerRole")
-                        appendLine("Use Cases: $ownerUseCases")
-                        appendLine("Preferences: $ownerPreferences")
-                        appendLine("Recurring Tasks: $recurringTasks")
+            AnimatedVisibility(visible = isDone) {
+                AgentBubble("Memory is written. I know enough to begin. You can refine these markdown files later from Settings.")
+            }
+        }
+
+        if (!isDone) {
+            OutlinedTextField(
+                value = userResponse,
+                onValueChange = { userResponse = it },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isWriting,
+                minLines = 4,
+                maxLines = 8,
+                placeholder = {
+                    Text("Tell me about your work, preferences, recurring tasks, tools, style, and what I should remember.")
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submit() }),
+                trailingIcon = {
+                    IconButton(enabled = userResponse.isNotBlank() && !isWriting, onClick = ::submit) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
                     }
-                    kotlinx.coroutines.delay(500)
-                    done = true
-                }
-
-                if (done) {
-                    Spacer(Modifier.height(16.dp))
-                    Button(
-                        onClick = onComplete,
-                        colors = ButtonDefaults.buttonColors(containerColor = EmberOrange),
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                    ) { Text("Start Chatting →", fontWeight = FontWeight.Bold) }
-                }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+        } else {
+            Button(
+                onClick = onComplete,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("Enter ClawDroid", fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun StyledField(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    singleLine: Boolean = true,
-) {
-    Column {
-        Text(label, color = MutedGray, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(4.dp))
-        OutlinedTextField(
-            value = value, onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = SoftWhite, unfocusedTextColor = SoftWhite,
-                focusedBorderColor = EmberOrange, unfocusedBorderColor = GlassBorderDim,
-                cursorColor = EmberOrange,
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 3,
-            maxLines = if (singleLine) 1 else 5,
+private fun AgentBubble(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp))
+            .padding(14.dp),
+        color = MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
+private fun UserBubble(text: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Text(
+            text = text,
+            modifier = Modifier
+                .fillMaxWidth(0.86f)
+                .clip(RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .padding(14.dp),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }
 
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(GlassFill).padding(12.dp)
-    ) {
-        Text(label, color = EmberOrange, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        Text(if (value.isBlank()) "—" else value, color = SoftWhite, fontSize = 14.sp)
+private fun currentDayPart(): String {
+    val hour = LocalTime.now().hour
+    return when (hour) {
+        in 5..11 -> "morning"
+        in 12..16 -> "afternoon"
+        in 17..20 -> "evening"
+        else -> "night"
     }
+}
+
+private suspend fun writePostHatchMarkdowns(
+    root: File,
+    agentName: String,
+    ownerName: String,
+    ownerResponse: String,
+    onFile: (String, Int, Int) -> Unit,
+): List<String> {
+    val home = File(root, "home").also { it.mkdirs() }
+    val memory = File(home, ".memory").also { it.mkdirs() }
+    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
+    val ownerBlock = ownerResponse.trim()
+    val generated = generatedMarkdowns(agentName, ownerName, ownerBlock, timestamp)
+    val files = listOf(
+        File(root, "AGENTS.md") to generated.agents,
+        File(home, "AGENTS.md") to generated.agents,
+        File(root, "SOUL.md") to generated.soul,
+        File(home, "SOUL.md") to generated.soul,
+        File(root, "SOULD.md") to generated.soul,
+        File(home, "SOULD.md") to generated.soul,
+        File(root, "TOOLS.md") to generated.tools,
+        File(home, "TOOLS.md") to generated.tools,
+        File(root, "SKILL.md") to generated.skill,
+        File(home, "SKILL.md") to generated.skill,
+        File(root, "CLAUDE.md") to generated.claude,
+        File(home, "CLAUDE.md") to generated.claude,
+        File(memory, "Agent.md") to generated.agentMemory,
+        File(memory, "user.md") to generated.userMemory,
+        File(memory, "heartbeat.md") to generated.heartbeat,
+        File(memory, "memory.md") to generated.memory,
+    )
+
+    AppConfigManager.agentsMd = generated.agents
+    AppConfigManager.soulMd = generated.soul
+    AppConfigManager.toolsMd = generated.tools
+    AppConfigManager.skillMd = generated.skill
+    AppConfigManager.claudeMd = generated.claude
+
+    files.forEachIndexed { index, (file, content) ->
+        withContext(Dispatchers.IO) {
+            file.parentFile?.mkdirs()
+            file.writeText(content)
+        }
+        onFile(file.name, index + 1, files.size)
+        delay(90)
+    }
+    return files.map { it.first.name }.distinct()
+}
+
+private data class GeneratedMarkdowns(
+    val agents: String,
+    val soul: String,
+    val tools: String,
+    val skill: String,
+    val claude: String,
+    val agentMemory: String,
+    val userMemory: String,
+    val heartbeat: String,
+    val memory: String,
+)
+
+private fun generatedMarkdowns(
+    agentName: String,
+    ownerName: String,
+    ownerResponse: String,
+    timestamp: String,
+): GeneratedMarkdowns {
+    val facts = ownerResponse.lines().joinToString("\n") { line -> "- ${line.trim()}" }
+        .ifBlank { "- User has not provided extra detail yet." }
+    val agents = """
+        # AGENTS.md
+
+        You are $agentName, the ClawDroid Android agent for $ownerName.
+
+        ## Operating Rules
+        - Be transparent: every tool action should be understandable after the fact.
+        - Be autonomous inside the sandbox, but keep the user in control.
+        - Prefer direct useful work over long explanations.
+        - For device/app actions, show overlay status and keep updates short.
+
+        ## User Context
+        $facts
+    """.trimIndent()
+    val soul = """
+        # SOUL.md
+
+        ## Identity
+        Name: $agentName
+        Relationship: pocket agent for $ownerName
+
+        ## Style
+        - Calm, practical, observant.
+        - Short when the user is moving fast.
+        - Detailed when explaining decisions, risks, or automation.
+        - Never hide uncertainty.
+
+        ## Memory From First Wake
+        $facts
+    """.trimIndent()
+    val tools = """
+        # TOOLS.md
+
+        ## Tool Policy
+        - Use terminal/process tools for Linux work.
+        - Use Android control tools for app actions.
+        - Hide the overlay before screen capture or touch actions so coordinates target the real app.
+        - Prefer non-interactive commands and clear outputs.
+        - Ask before external service actions unless the current approval mode permits it.
+    """.trimIndent()
+    val skill = """
+        # SKILL.md
+
+        ## Core Skills
+        - Android app control and screen-aware assistance.
+        - Linux sandbox command execution.
+        - File processing, coding, research, and automation.
+        - Connected-service workflows when configured.
+
+        ## User-Specific Direction
+        $facts
+    """.trimIndent()
+    val claude = """
+        # CLAUDE.md
+
+        $agentName should act like a visible Android-native agent: clear, interruptible, and precise.
+        Keep the UX calm. Use the overlay for ongoing device actions and concise status.
+    """.trimIndent()
+    val agentMemory = """
+        # Agent.md
+
+        Name: $agentName
+        Owner: $ownerName
+        Created: $timestamp
+        Approval Mode: ${AppConfigManager.approvalMode}
+        Behavior Mode: ${AppConfigManager.agentBehaviorMode}
+    """.trimIndent()
+    val userMemory = """
+        # User
+
+        Name: $ownerName
+
+        ## First Wake Response
+        $ownerResponse
+    """.trimIndent()
+    val heartbeat = """
+        # Heartbeat
+
+        Status: ${if (AppConfigManager.heartbeatEnabled) "Active" else "Paused"}
+        Interval: ${AppConfigManager.heartbeatIntervalMin} minutes
+        Last Updated: $timestamp
+
+        Add recurring tasks here when the user asks.
+    """.trimIndent()
+    val memory = """
+        # Memory
+
+        ## Known User Context
+        $facts
+
+        ## Agent
+        - Name: $agentName
+        - Platform: Android + Linux sandbox
+        - Created: $timestamp
+    """.trimIndent()
+    return GeneratedMarkdowns(agents, soul, tools, skill, claude, agentMemory, userMemory, heartbeat, memory)
 }

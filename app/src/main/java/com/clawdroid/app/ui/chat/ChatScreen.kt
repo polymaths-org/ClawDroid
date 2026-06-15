@@ -13,6 +13,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -97,6 +99,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.expandVertically
@@ -121,7 +124,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.clawdroid.app.core.assistant.AssistantInvocation
+import com.clawdroid.app.core.assistant.AssistantInvocationSource
+import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
+import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
@@ -130,6 +137,7 @@ import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.OpenAIRealtimeClient
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
@@ -137,6 +145,7 @@ import com.clawdroid.app.data.db.ToolCallEntity
 import com.clawdroid.app.ui.components.BlueGradientHorizontal
 import com.clawdroid.app.ui.components.CustomProcessingLoader
 import com.clawdroid.app.ui.components.PiperDownloadDialog
+import com.clawdroid.app.ui.components.StaggeredWordsText
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
 import com.clawdroid.app.ui.theme.CardDark
@@ -156,11 +165,36 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.UUID
 
+private fun shouldUseOverlayForTask(text: String): Boolean {
+    val lower = text.lowercase()
+    return listOf(
+        "open app",
+        "open ",
+        "go to ",
+        "tap ",
+        "click ",
+        "scroll",
+        "swipe",
+        "type ",
+        "send message",
+        "reply to",
+        "perform",
+        "in instagram",
+        "in whatsapp",
+        "in spotify",
+        "in gmail",
+        "in chrome",
+        "on screen",
+        "current app",
+    ).any { lower.contains(it) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
+    onNavigateToTerminal: () -> Unit = {},
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -349,18 +383,43 @@ fun ChatScreen(
                 )
             )
             val conv = db.conversations().getById(convId)
-            if (conv?.title == "New Agent Chat") {
-                db.conversations().update(
-                    conv.copy(
-                        title = text.take(30) + if (text.length > 30) "..." else "",
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
-            } else if (conv != null) {
+            if (conv != null) {
                 db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
             // Start the run after database insert finishes so context is built correctly
-            AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
+            if (mediaPath == null && shouldUseOverlayForTask(text)) {
+                val canOverlay = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                    android.provider.Settings.canDrawOverlays(context)
+                if (canOverlay) {
+                    context.startService(Intent(context, OverlayWindowService::class.java))
+                    AssistantInvocationRouter.invoke(
+                        context = context.applicationContext,
+                        invocation = AssistantInvocation(
+                            id = UUID.randomUUID().toString(),
+                            source = AssistantInvocationSource.ANDROID_CONTROL_TASK,
+                            mode = AssistantMode.AUTOMATE,
+                            userText = text,
+                            contextSnapshot = null,
+                            mediaPath = null,
+                            mediaMimeType = null,
+                            projectId = AppConfigManager.activeProjectId,
+                            conversationId = convId,
+                            createdAt = System.currentTimeMillis(),
+                        ),
+                    )
+                } else {
+                    Toast.makeText(context, "Enable overlay permission so I can show live app-control status.", Toast.LENGTH_LONG).show()
+                    overlayPermissionLauncher.launch(
+                        Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}"),
+                        ),
+                    )
+                    AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
+                }
+            } else {
+                AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
+            }
         }
 
         if (isCallModeActive) {
@@ -508,7 +567,9 @@ fun ChatScreen(
                 val msg = msgWithTools.message
                 val toolCalls = msgWithTools.toolCalls
                 if (msg.role == "user") {
-                    if (!msg.content.startsWith("Previous conversation summary:")) {
+                    if (!msg.content.startsWith("Previous conversation summary:")
+                        && !msg.content.startsWith(INTERNAL_USER_PROMPT_PREFIX)
+                    ) {
                         list += UserChatItem(
                             id = msg.id,
                             text = msg.content,
@@ -846,21 +907,21 @@ fun ChatScreen(
                     },
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
-                        Toast.makeText(context, "Terminal Screen coming soon!", Toast.LENGTH_SHORT).show()
+                        onNavigateToTerminal()
                     }
                 )
             }
         },
     ) {
         Scaffold(
-            containerColor = DeepBlack,
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(
                     title = {
                         Text(
                             text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
                             style = MaterialTheme.typography.titleLarge.copy(
-                                color = SoftWhite,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                             ),
                         )
@@ -870,7 +931,7 @@ fun ChatScreen(
                             Icon(
                                 imageVector = Icons.Rounded.Menu,
                                 contentDescription = "Open navigation",
-                                tint = SoftWhite,
+                                tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     },
@@ -880,19 +941,19 @@ fun ChatScreen(
                             modifier = Modifier
                                 .padding(end = 8.dp)
                                 .size(40.dp)
-                                .background(GlassFill, CircleShape)
-                                .border(1.dp, GlassBorderDim, CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Call,
                                 contentDescription = "Voice Call",
-                                tint = EmberOrange,
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = DeepBlack,
-                        titleContentColor = SoftWhite,
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
                     ),
                 )
             },
@@ -901,7 +962,7 @@ fun ChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(DeepBlack)
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(top = paddingValues.calculateTopPadding()),
             ) {
                 if (displayItems.isEmpty()) {
@@ -1115,27 +1176,28 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
+        StaggeredWordsText(
             text = "Hello $name,",
-            color = SoftWhite,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = 32.sp,
                 lineHeight = 40.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = (-0.7).sp,
+                letterSpacing = 0.sp,
             ),
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
         )
-        Text(
+        StaggeredWordsText(
             text = "what's on your mind?",
-            color = MutedGray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = 32.sp,
                 lineHeight = 42.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = (-0.7).sp,
+                letterSpacing = 0.sp,
             ),
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
+            delayStepMs = 58L,
         )
     }
 }
@@ -1149,8 +1211,8 @@ private fun UserMessageBubble(item: UserChatItem) {
             modifier = Modifier
                 .fillMaxWidth(0.82f)
                 .clip(shape)
-                .background(GlassFillMedium, shape)
-                .border(1.dp, GlassBorderDim, shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.70f), shape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), shape)
                 .padding(14.dp, 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1177,7 +1239,7 @@ private fun UserMessageBubble(item: UserChatItem) {
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1193,7 +1255,7 @@ private fun UserMessageBubble(item: UserChatItem) {
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = mediaFile.name,
-                                color = SoftWhite,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -1206,7 +1268,7 @@ private fun UserMessageBubble(item: UserChatItem) {
             if (item.text.isNotBlank()) {
                 Text(
                     text = item.text,
-                    color = SoftWhite,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
@@ -1222,6 +1284,13 @@ private fun AgentMessageCard(
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
 ) {
+    val alpha = remember(item.id) { Animatable(0f) }
+    val offsetY = remember(item.id) { Animatable(12f) }
+    LaunchedEffect(item.id) {
+        launch { alpha.animateTo(1f, tween(260, easing = FastOutSlowInEasing)) }
+        offsetY.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1234,7 +1303,11 @@ private fun AgentMessageCard(
         } else if (item.text.isNotBlank()) {
             MarkdownText(
                 markdown = item.text,
-                color = SoftWhite,
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = alpha.value
+                    translationY = offsetY.value
+                },
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
 

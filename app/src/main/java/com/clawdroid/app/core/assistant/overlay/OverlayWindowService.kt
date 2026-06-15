@@ -20,6 +20,8 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.clawdroid.app.ui.theme.ClawDroidTheme
+import kotlin.math.roundToInt
 
 class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
@@ -33,6 +35,7 @@ class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
 
     private var windowManager: WindowManager? = null
     private var composeView: ComposeView? = null
+    private var layoutParams: WindowManager.LayoutParams? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -54,25 +57,43 @@ class OverlayWindowService : Service(), LifecycleOwner, ViewModelStoreOwner, Sav
         }
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.TOP or Gravity.START
+            x = 18
+            y = 140
         }
+        layoutParams = params
 
         composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@OverlayWindowService)
             setViewTreeViewModelStoreOwner(this@OverlayWindowService)
             setViewTreeSavedStateRegistryOwner(this@OverlayWindowService)
             setContent {
-                AssistantOverlayCoordinator.ContentOverlay()
+                ClawDroidTheme {
+                    AssistantOverlayCoordinator.ContentOverlay(
+                        onWindowDrag = { dx, dy -> moveWindowBy(dx, dy) },
+                    )
+                }
             }
         }
 
         windowManager?.addView(composeView, params)
+    }
+
+    private fun moveWindowBy(dx: Float, dy: Float) {
+        val view = composeView ?: return
+        val params = layoutParams ?: return
+        val displayMetrics = resources.displayMetrics
+        params.x = (params.x + dx.roundToInt()).coerceIn(0, (displayMetrics.widthPixels - 72).coerceAtLeast(0))
+        params.y = (params.y + dy.roundToInt()).coerceIn(0, (displayMetrics.heightPixels - 96).coerceAtLeast(0))
+        runCatching {
+            windowManager?.updateViewLayout(view, params)
+        }
     }
 
     override fun onDestroy() {

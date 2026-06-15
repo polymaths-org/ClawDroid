@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.assistant.overlay
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -9,10 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
 import com.clawdroid.app.core.assistant.AssistantMode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.withContext
 
 object AssistantOverlayCoordinator {
     private const val TAG = "AssistantOverlayCoordinator"
@@ -23,6 +21,7 @@ object AssistantOverlayCoordinator {
     val shortLine = MutableStateFlow("")
     val answer = MutableStateFlow("")
     val error = MutableStateFlow("")
+    val actionLog = MutableStateFlow<List<String>>(emptyList())
     val currentInvocation = MutableStateFlow<AssistantInvocation?>(null)
     private var sessionUiController: ((Boolean) -> Unit)? = null
 
@@ -39,6 +38,7 @@ object AssistantOverlayCoordinator {
         shortLine.value = "Ask about this screen or choose an action."
         answer.value = ""
         error.value = ""
+        actionLog.value = emptyList()
         visible.value = true
     }
 
@@ -50,6 +50,7 @@ object AssistantOverlayCoordinator {
         shortLine.value = "Thinking about your request..."
         answer.value = ""
         error.value = ""
+        actionLog.value = listOf("Started task")
         visible.value = true
     }
 
@@ -69,6 +70,28 @@ object AssistantOverlayCoordinator {
         Log.i(TAG, "updateStatus message=$message")
         status.value = message
         shortLine.value = message
+    }
+
+    fun recordAction(message: String) {
+        val clean = message.trim()
+        if (clean.isBlank()) return
+        val existing = actionLog.value
+        actionLog.value = (existing + clean)
+            .fold(emptyList<String>()) { acc, item ->
+                if (acc.lastOrNull() == item) acc else acc + item
+            }
+            .takeLast(5)
+    }
+
+    fun updateProgress(message: String) {
+        val clean = message
+            .replace('\n', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(120)
+        if (clean.isNotBlank()) {
+            shortLine.value = clean
+        }
     }
 
     fun showAnswer(finalText: String) {
@@ -95,39 +118,17 @@ object AssistantOverlayCoordinator {
         settleMs: Long,
         block: suspend () -> T,
     ): T {
-        val wasVisible = visible.value
-        Log.i(TAG, "withOverlayHidden start reason=$reason wasVisible=$wasVisible settleMs=$settleMs currentId=${currentInvocation.value?.id}")
-        if (wasVisible) {
-            visible.value = false
-            withContext(Dispatchers.Main) {
-                runCatching {
-                    sessionUiController?.invoke(false)
-                }.onFailure { error ->
-                    Log.w(TAG, "sessionUi hide failed reason=$reason", error)
-                }
-            }
-            delay(settleMs)
+        Log.i(TAG, "withOverlayHidden bypassed reason=$reason keepVisible=${visible.value} settleMs=$settleMs currentId=${currentInvocation.value?.id}")
+        if (currentInvocation.value != null) {
+            visible.value = true
         }
-        return try {
-            block()
-        } finally {
-            if (wasVisible) {
-                delay(150)
-                withContext(Dispatchers.Main) {
-                    runCatching {
-                        sessionUiController?.invoke(true)
-                    }.onFailure { error ->
-                        Log.w(TAG, "sessionUi restore failed reason=$reason", error)
-                    }
-                }
-                visible.value = true
-                Log.i(TAG, "withOverlayHidden restored reason=$reason currentId=${currentInvocation.value?.id}")
-            }
-        }
+        return block()
     }
 
     @Composable
-    fun ContentOverlay() {
+    fun ContentOverlay(
+        onWindowDrag: (Float, Float) -> Unit = { _, _ -> },
+    ) {
         val isVisible by visible.collectAsState()
         if (isVisible) {
             val context = LocalContext.current
@@ -137,6 +138,7 @@ object AssistantOverlayCoordinator {
             val line by shortLine.collectAsState()
             val ans by answer.collectAsState()
             val err by error.collectAsState()
+            val actions by actionLog.collectAsState()
 
             AssistantOverlayView(
                 invocation = invocation,
@@ -145,6 +147,8 @@ object AssistantOverlayCoordinator {
                 textDelta = delta,
                 answer = ans,
                 error = err,
+                actionLog = actions,
+                onWindowDrag = onWindowDrag,
                 onSubmit = { text ->
                     val activeInvocation = invocation ?: return@AssistantOverlayView
                     AssistantInvocationRouter.submit(context, activeInvocation, text)
@@ -159,7 +163,12 @@ object AssistantOverlayCoordinator {
                     )
                 },
                 onStop = { AssistantInvocationRouter.stopActive() },
-                onDismiss = { hideOverlay() }
+                onDismiss = {
+                    hideOverlay()
+                    runCatching {
+                        context.stopService(Intent(context, OverlayWindowService::class.java))
+                    }
+                }
             )
         }
     }

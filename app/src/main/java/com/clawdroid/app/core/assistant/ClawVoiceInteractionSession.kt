@@ -22,6 +22,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.clawdroid.app.core.assistant.context.ScreenContextManager
 import com.clawdroid.app.core.assistant.overlay.AssistantOverlayCoordinator
+import com.clawdroid.app.ui.theme.ClawDroidTheme
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -101,7 +102,9 @@ class ClawVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
             setViewTreeViewModelStoreOwner(this@ClawVoiceInteractionSession)
             setViewTreeSavedStateRegistryOwner(this@ClawVoiceInteractionSession)
             setContent {
-                AssistantOverlayCoordinator.ContentOverlay()
+                ClawDroidTheme {
+                    AssistantOverlayCoordinator.ContentOverlay()
+                }
             }
         }
     }

@@ -14,6 +14,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,13 +61,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.clawdroid.app.R
 import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.voice.OpenAIRealtimeClient
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
@@ -79,6 +85,8 @@ fun AssistantOverlayView(
     textDelta: String,
     answer: String,
     error: String,
+    actionLog: List<String>,
+    onWindowDrag: (Float, Float) -> Unit,
     onSubmit: (String) -> Unit,
     onTranslate: () -> Unit,
     onStop: () -> Unit,
@@ -118,6 +126,34 @@ fun AssistantOverlayView(
             ?.let { BitmapFactory.decodeFile(it) }
             ?.asImageBitmap()
     }
+
+    FloatingAssistantWidget(
+        status = status,
+        shortLine = shortLine,
+        textDelta = textDelta,
+        answer = answer,
+        error = error,
+        actionLog = actionLog,
+        prompt = prompt,
+        onPromptChange = {
+            prompt = it
+            helperText = "Ready when you are."
+        },
+        isRunning = isRunning,
+        pulseAlpha = pulseAlpha,
+        onWindowDrag = onWindowDrag,
+        onSubmit = {
+            val text = prompt.trim()
+            if (text.isNotEmpty()) {
+                Log.i(tag, "floating submit invocationId=${invocation?.id} len=${text.length}")
+                prompt = ""
+                onSubmit(text)
+            }
+        },
+        onStop = onStop,
+        onDismiss = onDismiss,
+    )
+    return
 
     Box(
         modifier = Modifier
@@ -365,6 +401,205 @@ fun AssistantOverlayView(
                         },
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatingAssistantWidget(
+    status: String,
+    shortLine: String,
+    textDelta: String,
+    answer: String,
+    error: String,
+    actionLog: List<String>,
+    prompt: String,
+    onPromptChange: (String) -> Unit,
+    isRunning: Boolean,
+    pulseAlpha: Float,
+    onWindowDrag: (Float, Float) -> Unit,
+    onSubmit: () -> Unit,
+    onStop: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(true) }
+    val displayLine = when {
+        error.isNotBlank() -> error
+        answer.isNotBlank() -> answer
+        textDelta.isNotBlank() -> textDelta
+        shortLine.isNotBlank() -> shortLine
+        else -> "Watching the screen and planning the next move."
+    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(180)
+
+    Row(
+        modifier = Modifier.padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+            Box(
+                modifier = Modifier
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.94f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                            ),
+                        ),
+                        CircleShape,
+                    )
+                    .border(
+                        2.dp,
+                        when {
+                            error.isNotBlank() -> MaterialTheme.colorScheme.error
+                            isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                        CircleShape,
+                    )
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onWindowDrag(dragAmount.x, dragAmount.y)
+                        }
+                    }
+                    .clickable { expanded = !expanded }
+                    .padding(9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.clawdroid_logo),
+                    contentDescription = "ClawDroid overlay",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Surface(
+                    modifier = Modifier.width(286.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    tonalElevation = 4.dp,
+                    shadowElevation = 5.dp,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (status == "Ready") "ClawDroid" else status,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = if (isRunning) "Acting on the current screen" else "Ready for follow-up",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            if (isRunning) {
+                                IconButton(onClick = onStop, modifier = Modifier.size(34.dp)) {
+                                    Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Text(
+                            text = displayLine.ifBlank { "Thinking..." },
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                            color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 4,
+                        )
+
+                        ActionTimeline(
+                            actions = actionLog,
+                            isRunning = isRunning,
+                            pulseAlpha = pulseAlpha,
+                        )
+
+                        OutlinedTextField(
+                            value = prompt,
+                            onValueChange = onPromptChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isRunning,
+                            placeholder = { Text(if (isRunning) "Working..." else "Type a follow-up") },
+                            minLines = 1,
+                            maxLines = 3,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { onSubmit() }),
+                            trailingIcon = {
+                                IconButton(enabled = !isRunning && prompt.isNotBlank(), onClick = onSubmit) {
+                                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+    }
+}
+
+@Composable
+private fun ActionTimeline(
+    actions: List<String>,
+    isRunning: Boolean,
+    pulseAlpha: Float,
+) {
+    val visibleActions = actions.takeLast(4)
+    if (visibleActions.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.50f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        visibleActions.forEachIndexed { index, action ->
+            val active = index == visibleActions.lastIndex && isRunning
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(if (active) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (active) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f)
+                            },
+                        ),
+                )
+                Text(
+                    text = action,
+                    color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                )
             }
         }
     }

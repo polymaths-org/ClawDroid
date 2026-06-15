@@ -38,14 +38,6 @@ import androidx.compose.ui.unit.dp
 import com.clawdroid.app.ui.components.GlassButton
 import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.EmberOrange
-import com.clawdroid.app.ui.theme.GlassBorderDim
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassFillStrong
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.NeonCyan
-import com.clawdroid.app.ui.theme.SoftWhite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,7 +45,10 @@ import java.io.File
 
 enum class ConfigFileType(val fileName: String, val label: String) {
     AGENTS("AGENTS.md", "AGENTS.md — Agent Instructions"),
-    SOULD("SOULD.md", "SOULD.md — Agent Identity"),
+    SOUL("SOUL.md", "SOUL.md — Agent Identity"),
+    TOOLS("TOOLS.md", "TOOLS.md — Tool Rules"),
+    SKILL("SKILL.md", "SKILL.md — Core Skills"),
+    CLAUDE("CLAUDE.md", "CLAUDE.md — Base Prompt"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,24 +75,24 @@ fun ConfigEditorScreen(
     }
 
     Scaffold(
-        containerColor = DeepBlack,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(fileType.label, color = SoftWhite, fontWeight = FontWeight.SemiBold) },
+                title = { Text(fileType.label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = SoftWhite)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DeepBlack),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
             )
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().background(DeepBlack).padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding).padding(16.dp),
         ) {
             if (loading) {
-                Text("Loading...", color = MutedGray)
+                Text("Loading...", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column(
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
@@ -107,13 +102,13 @@ fun ConfigEditorScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 "Edit ${fileType.fileName}",
-                                color = EmberOrange,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
                                 "Changes are saved to the app's internal storage. The agent reads these files at startup.",
-                                color = MutedGray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -146,8 +141,8 @@ fun ConfigEditorScreen(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     enabled = content != originalContent,
                 ) {
-                    Icon(Icons.Rounded.Save, contentDescription = null, tint = SoftWhite, modifier = Modifier.padding(end = 8.dp))
-                    Text("Save Changes", color = SoftWhite, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Rounded.Save, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(end = 8.dp))
+                    Text("Save Changes", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         }
