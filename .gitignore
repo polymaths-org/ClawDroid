@@ -10,6 +10,13 @@ local.properties
 *.dex
 *.class
 
+release/*.apk
+release/*.idsig
+release/*.sha256
+signing/
+*.jks
+*.keystore
+
 .idea/
 *.iml
 
@@ -22,3 +29,4 @@ clawdroid_icon_1781132416221-compressd.png
 context.md
 meow_feature_brainstorm.md
 clawdroid.db
+CLAW DROID*.png
