@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.terminal.ProcessManagerProvider
 import com.clawdroid.app.core.terminal.ProcessState
+import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.theme.Dimens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -146,8 +147,9 @@ fun TerminalScreen(onBack: () -> Unit) {
         }
     }
 
+    ClawSkinBackground {
     Scaffold(
-        containerColor = Color(0xFF090B0D),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -189,7 +191,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         Icon(Icons.Rounded.Stop, contentDescription = "Interrupt")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF090B0D)),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.62f)),
             )
         },
     ) { padding ->
@@ -197,7 +199,6 @@ fun TerminalScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFF090B0D)),
         ) {
             StatusStrip(state = state)
 
@@ -213,7 +214,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                 items(lines.size) { index ->
                     Text(
                         text = lines[index],
-                        color = Color(0xFFE7ECEF),
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
@@ -232,22 +233,22 @@ fun TerminalScreen(onBack: () -> Unit) {
                     .fillMaxWidth()
                     .padding(12.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF11161A))
-                    .border(1.dp, Color(0xFF2B3339), RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f), RoundedCornerShape(14.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("$", color = Color(0xFFA8C7FA), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                Text("$", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.width(Dimens.sm))
                 TextField(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
                     enabled = true,
-                    placeholder = { Text("Run a Linux command...", color = Color(0xFF7D8790)) },
+                    placeholder = { Text("Run a Linux command...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.66f)) },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFE7ECEF),
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -260,7 +261,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        cursorColor = Color(0xFFA8C7FA),
+                        cursorColor = MaterialTheme.colorScheme.primary,
                     ),
                 )
                 Spacer(modifier = Modifier.width(Dimens.sm))
@@ -276,7 +277,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         }
                     },
                 ) {
-                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous command", tint = Color(0xFFB8C7D9))
+                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous command", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(
                     onClick = {
@@ -286,15 +287,16 @@ fun TerminalScreen(onBack: () -> Unit) {
                         }
                     },
                 ) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next command", tint = Color(0xFFB8C7D9))
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next command", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(
                     onClick = { submitCommand() },
                 ) {
-                    Icon(Icons.Rounded.KeyboardReturn, contentDescription = "Send", tint = Color(0xFFA8C7FA))
+                    Icon(Icons.Rounded.KeyboardReturn, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
+    }
     }
 }
 
@@ -328,14 +330,22 @@ private fun TerminalChip(
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (danger) Color(0xFF35161A) else Color(0xFF18212A))
-            .border(1.dp, if (danger) Color(0xFF6C2A32) else Color(0xFF2E3A45), RoundedCornerShape(10.dp))
+            .background(
+                if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.82f)
+            )
+            .border(
+                1.dp,
+                if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.36f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
+                RoundedCornerShape(10.dp),
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clickable(onClick = onClick),
     ) {
         Text(
             text = label,
-            color = if (danger) Color(0xFFFFB4AB) else Color(0xFFE7ECEF),
+            color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
         )
@@ -346,13 +356,13 @@ private fun TerminalChip(
 private fun StatusStrip(state: ProcessState) {
     val color = when (state) {
         ProcessState.RUNNING, ProcessState.WAITING_FOR_INPUT -> Color(0xFF81C784)
-        ProcessState.COMPLETED -> Color(0xFFA8C7FA)
-        else -> Color(0xFFFFB4AB)
+        ProcessState.COMPLETED -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF11161A))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

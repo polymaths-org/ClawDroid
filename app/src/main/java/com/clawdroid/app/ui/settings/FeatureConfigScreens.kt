@@ -100,6 +100,7 @@ import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.ui.components.AnimatedPresetCard
 import com.clawdroid.app.ui.components.ChannelConnectionStatus
 import com.clawdroid.app.ui.components.ChannelStatusCard
+import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassButton
 import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
@@ -161,7 +162,7 @@ fun AudioConfigScreen(onBack: () -> Unit) {
                 )
                 Text(
                     "Speech Speed: ${String.format("%.1fx", ttsSpeed)}",
-                    color = EmberOrange,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Slider(
@@ -208,6 +209,7 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
     var selectedTheme by remember { mutableStateOf(AppConfigManager.appTheme) }
     val themes = remember {
         listOf(
+            ThemePreset("claw_magic", "Material You", "Adaptive phone-color accents, deep AI surfaces, and soft glass controls.", listOf(Color(0xFF090909), Color(0xFF161D1E), Color(0xFF44D8F1), Color(0xFFFFB87B))),
             ThemePreset("light", "Light", "Bright Material 3 surfaces for daytime use.", listOf(Color(0xFFF7F9FC), Color(0xFFD6E3FF), Color(0xFF245FA8))),
             ThemePreset("dark", "Dark", "Default focused dark surface.", listOf(Color(0xFF111416), Color(0xFF323537), Color(0xFFD3E2FF))),
             ThemePreset("minimalist", "Minimalist", "Quiet grayscale controls with reduced visual noise.", listOf(Color(0xFF101112), Color(0xFF2B2F32), Color(0xFFE8EAED))),
@@ -272,8 +274,8 @@ private fun ThemeChoiceCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.46f) else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.68f))
-            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), shape)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.74f) else Color.White.copy(alpha = 0.08f), shape)
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -445,7 +447,7 @@ fun PermissionManagerScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 GlassButton(onClick = ::openAppSettings, modifier = Modifier.fillMaxWidth().height(44.dp)) {
-                    Text("Open App Permission Settings", color = SoftWhite, fontWeight = FontWeight.Bold)
+                    Text("Open App Permission Settings", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -464,8 +466,8 @@ private fun PermissionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (granted) GlassFillStrong else GlassFill)
-            .border(1.dp, if (granted) NeonCyan.copy(alpha = 0.35f) else GlassBorderDim, RoundedCornerShape(12.dp))
+            .background(if (granted) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.04f))
+            .border(1.dp, if (granted) MaterialTheme.colorScheme.primary.copy(alpha = 0.58f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -473,7 +475,7 @@ private fun PermissionRow(
             modifier = Modifier
                 .size(10.dp)
                 .clip(CircleShape)
-                .background(if (granted) NeonCyan else MutedGray.copy(alpha = 0.5f)),
+                .background(if (granted) MaterialTheme.colorScheme.primary else MutedGray.copy(alpha = 0.5f)),
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -481,13 +483,13 @@ private fun PermissionRow(
             Text(description, color = MutedGray, style = MaterialTheme.typography.bodySmall)
             Text(
                 if (granted) "Granted" else "Not granted",
-                color = if (granted) NeonCyan else MutedGray,
+                color = if (granted) MaterialTheme.colorScheme.primary else MutedGray,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
             )
         }
         GlassButton(onClick = onAction, modifier = Modifier.width(92.dp).height(38.dp)) {
-            Text(actionLabel, color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(actionLabel, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
 }
@@ -560,8 +562,8 @@ fun McpConfigScreen(onBack: () -> Unit) {
                         checked = enabled,
                         onCheckedChange = { enabled = it },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = NeonCyan,
-                            checkedTrackColor = NeonCyan.copy(alpha = 0.4f),
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                             uncheckedThumbColor = MutedGray,
                             uncheckedTrackColor = DeepBlack,
                         ),
@@ -596,14 +598,14 @@ fun McpConfigScreen(onBack: () -> Unit) {
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isConnected) GlassFillStrong else GlassFill)
-                            .border(1.dp, if (isConnected) NeonCyan.copy(alpha = 0.3f) else GlassBorderDim, RoundedCornerShape(12.dp))
+                            .border(1.dp, if (isConnected) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else GlassBorderDim, RoundedCornerShape(12.dp))
                             .padding(12.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(def.icon, contentDescription = null, tint = if (isConnected) NeonCyan else MutedGray, modifier = Modifier.size(22.dp))
+                            Icon(def.icon, contentDescription = null, tint = if (isConnected) MaterialTheme.colorScheme.primary else MutedGray, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(def.title, color = SoftWhite, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -613,8 +615,8 @@ fun McpConfigScreen(onBack: () -> Unit) {
                                 checked = isConnected,
                                 onCheckedChange = { toggleConnector(def.key, def.title, def.command, def.args) },
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = NeonCyan,
-                                    checkedTrackColor = NeonCyan.copy(alpha = 0.4f),
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                                     uncheckedThumbColor = MutedGray,
                                     uncheckedTrackColor = DeepBlack,
                                 ),
@@ -627,10 +629,10 @@ fun McpConfigScreen(onBack: () -> Unit) {
                                 Box(
                                     modifier = Modifier.size(6.dp)
                                         .clip(CircleShape)
-                                        .background(NeonCyan)
+                                        .background(MaterialTheme.colorScheme.primary)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Active", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                Text("Active", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Text("\"${def.command} ${def.args}\"", color = MutedGray, fontSize = 10.sp)
                             }
@@ -745,7 +747,7 @@ fun AutomationsConfigScreen(onBack: () -> Unit) {
 
                         Text(
                             "Scan Interval: ${interval}m",
-                            color = EmberOrange,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Slider(
@@ -956,7 +958,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Max Agent Turns: $maxTurns",
-                    color = EmberOrange,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Slider(
@@ -1011,35 +1013,53 @@ private fun ConfigScaffold(
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
+    ClawSkinBackground {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f))
+                        .padding(start = 20.dp, end = 20.dp, top = 52.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape),
+                    ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            ConfigScreenHeader(title)
-            content()
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, letterSpacing = 0.sp),
+                    )
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp, vertical = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                ConfigScreenHeader(title)
+                content()
+            }
         }
     }
 }
@@ -1062,15 +1082,24 @@ private fun ConfigScreenHeader(title: String) {
             modifier = Modifier
                 .size(42.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f)),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-            Text("Configure ClawDroid behavior", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.96f),
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 30.sp, letterSpacing = 0.sp),
+            )
+            Text(
+                "Configure ClawDroid behavior",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
+            )
         }
     }
 }
@@ -1082,10 +1111,14 @@ private fun InfoCard(title: String, body: String) {
             Text(
                 title,
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, letterSpacing = 0.sp),
             )
-            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                body,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 21.sp, letterSpacing = 0.sp),
+            )
         }
     }
 }
@@ -1096,7 +1129,7 @@ private fun SectionTitle(text: String) {
         text,
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.SemiBold,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.labelLarge.copy(fontSize = 11.sp, letterSpacing = 0.8f.sp),
     )
 }
 
@@ -1112,27 +1145,28 @@ private fun ConfigChoice(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f) else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.64f))
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
             .border(
                 1.dp,
-                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.74f) else Color.White.copy(alpha = 0.07f),
                 shape,
             )
             .clickable(onClick = onClick)
-            .padding(12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 label,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
             )
             Text(
                 description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
                 fontSize = 12.sp,
+                lineHeight = 18.sp,
             )
         }
         if (selected) {
@@ -1159,11 +1193,16 @@ private fun ConfigSwitch(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
             Text(
                 description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp, letterSpacing = 0.sp),
             )
         }
         Spacer(modifier = Modifier.width(12.dp))
@@ -1174,7 +1213,7 @@ private fun ConfigSwitch(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.58f),
                 uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.08f),
             ),
         )
     }
@@ -1303,5 +1342,5 @@ private fun SaveConfigButton(onSave: () -> Unit) {
 private fun configSliderColors() = SliderDefaults.colors(
     thumbColor = MaterialTheme.colorScheme.primary,
     activeTrackColor = MaterialTheme.colorScheme.primary,
-    inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant,
+    inactiveTrackColor = Color.White.copy(alpha = 0.10f),
 )

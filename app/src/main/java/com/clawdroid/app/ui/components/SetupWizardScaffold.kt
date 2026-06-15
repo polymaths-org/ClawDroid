@@ -215,7 +215,7 @@ fun WizardActionRow(
                 onClick = onBack,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Back", color = SoftWhite, fontWeight = FontWeight.Bold)
+                Text("Back", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
             }
         } else {
             Spacer(modifier = Modifier.weight(1f))
@@ -230,7 +230,7 @@ fun WizardActionRow(
             ) {
                 Text(
                     if (isLastStep) "Complete Setup" else nextLabel,
-                    color = SoftWhite,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
                 )
             }

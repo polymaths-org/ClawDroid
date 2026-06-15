@@ -219,12 +219,12 @@ private fun ProviderPreset(
             .fillMaxWidth()
             .clip(shape)
             .background(
-                if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
-                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.64f)
+                if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                else Color.White.copy(alpha = 0.04f)
             )
             .border(
                 1.dp,
-                if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.78f) else Color.White.copy(alpha = 0.08f),
                 shape,
             )
             .clickable(onClick = onClick)
