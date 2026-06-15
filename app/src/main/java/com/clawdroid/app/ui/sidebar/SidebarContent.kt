@@ -1,9 +1,11 @@
 package com.clawdroid.app.ui.sidebar
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.AlertDialog
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -88,10 +90,7 @@ fun SidebarContent(
     var showCreateProject by remember { mutableStateOf(false) }
     var newProjectName by remember { mutableStateOf("") }
     var showAllChats by remember { mutableStateOf(false) }
-
-    val navItems = listOf(
-        NavItem("Terminal", Icons.Rounded.Terminal, onNavigateToTerminal),
-    )
+    var showAllProjects by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -111,26 +110,21 @@ fun SidebarContent(
 
         Spacer(modifier = Modifier.height(Dimens.xl))
 
-        // Navigation items
-        SectionLabel("Navigation")
+        SectionLabel("NAVIGATION")
         Spacer(modifier = Modifier.height(Dimens.sm))
 
-        navItems.forEach { item ->
-            NavRow(item = item)
-            Spacer(modifier = Modifier.height(2.dp))
-        }
+        NavRow(item = NavItem("Terminal", Icons.Rounded.Terminal, onNavigateToTerminal))
 
         Spacer(modifier = Modifier.height(Dimens.md))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(modifier = Modifier.height(Dimens.md))
 
-        // Chats
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SectionLabel("Chats")
+            SectionLabel("CHATS")
             IconButton(
                 onClick = { onNewConversation(null) },
                 modifier = Modifier.size(28.dp),
@@ -174,13 +168,12 @@ fun SidebarContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(modifier = Modifier.height(Dimens.md))
 
-        // Projects
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SectionLabel("Projects")
+            SectionLabel("PROJECTS")
             IconButton(
                 onClick = { showCreateProject = true },
                 modifier = Modifier.size(28.dp),
@@ -198,7 +191,8 @@ fun SidebarContent(
         if (projects.isEmpty()) {
             EmptyLabel("No projects yet.")
         } else {
-            projects.forEach { project ->
+            val visibleProjects = if (showAllProjects) projects else projects.take(4)
+            visibleProjects.forEach { project ->
                 ProjectSection(
                     project = project,
                     conversations = conversations.filter { it.projectId == project.id },
@@ -207,9 +201,20 @@ fun SidebarContent(
                     onNewThread = { onNewConversation(project.id) },
                 )
             }
+            if (projects.size > 4) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (showAllProjects) "Show less" else "Show more (${projects.size - 4} more)",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier
+                        .clickable { showAllProjects = !showAllProjects }
+                        .padding(horizontal = Dimens.md, vertical = Dimens.sm)
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(Dimens.xl))
+        Spacer(modifier = Modifier.weight(1f))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(modifier = Modifier.height(Dimens.sm))
         NavRow(item = NavItem("Settings", Icons.Rounded.Settings, onNavigateToSettings))
@@ -303,7 +308,7 @@ private fun ChatRow(
 ) {
     val bgColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer
-            .copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
+            .copy(alpha = 0.5f) else Color.Transparent,
         label = "chat_bg",
     )
 
@@ -373,35 +378,41 @@ private fun ProjectSection(
             )
         }
 
-        if (expanded) {
-            conversations.forEach { chat ->
-                ChatRow(
-                    title = chat.title,
-                    selected = chat.id == activeConversationId,
-                    onClick = { onSelectConversation(chat.id) },
-                )
-            }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
+        ) {
+            Column {
+                conversations.forEach { chat ->
+                    ChatRow(
+                        title = chat.title,
+                        selected = chat.id == activeConversationId,
+                        onClick = { onSelectConversation(chat.id) },
+                    )
+                }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable(onClick = onNewThread)
-                    .padding(start = 40.dp, end = Dimens.md, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(modifier = Modifier.width(Dimens.sm))
-                Text(
-                    text = "New Thread",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable(onClick = onNewThread)
+                        .padding(start = 40.dp, end = Dimens.md, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(modifier = Modifier.width(Dimens.sm))
+                    Text(
+                        text = "New Thread",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    )
+                }
             }
         }
     }
