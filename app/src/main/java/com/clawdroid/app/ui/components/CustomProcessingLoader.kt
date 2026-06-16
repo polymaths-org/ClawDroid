@@ -1,8 +1,20 @@
 package com.clawdroid.app.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -13,59 +25,64 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlin.math.cos
+import kotlin.math.sin
+
+private data class ProcessingQuote(
+    val text: String,
+    val author: String,
+)
 
 @Composable
 fun CustomProcessingLoader(
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
-    var phraseIndex by remember { mutableIntStateOf(0) }
-    val phrases = remember {
+    var quoteIndex by remember { mutableIntStateOf(0) }
+    val quotes = remember {
         listOf(
-            "Reading the room before touching the machine" to "ClawDroid is mapping intent, constraints, and next actions",
-            "Good agents show their work" to "Planning the smallest useful step before running tools",
-            "Measure twice, execute once" to "Checking context so the next action is deliberate",
-            "The sandbox is awake" to "Preparing commands, files, and services for the task",
-            "Thinking in public, acting with receipts" to "Every action will appear as an inspectable step",
-            "Autonomy without opacity" to "Balancing speed with control and reversibility",
-            "Following the thread" to "Connecting your request to the current project state",
-            "Sharper context, cleaner action" to "Compressing the problem into an executable plan",
+            ProcessingQuote("Privacy is the Price you pay to Agents", "Paris K."),
+            ProcessingQuote("Stay hungry. Stay foolish.", "Steve Jobs"),
+            ProcessingQuote("It's Day 1.", "Jeff Bezos"),
+            ProcessingQuote("Our industry does not respect tradition. What it respects is innovation.", "Satya Nadella"),
+            ProcessingQuote("The best way to predict the future is to invent it.", "Alan Kay"),
+            ProcessingQuote("Make every detail perfect and limit the number of details to perfect.", "Jack Dorsey"),
+            ProcessingQuote("If you are changing the world, you are working on important things.", "Larry Page"),
+            ProcessingQuote("Great companies are built on great products.", "Elon Musk"),
         )
     }
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(3200)
-            phraseIndex = (phraseIndex + 1) % phrases.size
+            delay(4200)
+            quoteIndex = (quoteIndex + 1) % quotes.size
         }
     }
 
-    // Smooth continuous rotation
     val rotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
+            animation = tween(1800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
     )
 
-    // Pulsing glow intensity
     val glowPulse by infiniteTransition.animateFloat(
         initialValue = 0.5f,
         targetValue = 1.0f,
@@ -76,92 +93,196 @@ fun CustomProcessingLoader(
         label = "glow"
     )
 
-    // Breathing size of the center dot
     val centerDotRadius by infiniteTransition.animateFloat(
-        initialValue = 3f,
-        targetValue = 5f,
+        initialValue = 2.5f,
+        targetValue = 5.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutSine),
+            animation = tween(940, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "center_dot"
     )
 
+    val sheenOffset by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "quote_sheen"
+    )
+
+    val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 4.dp),
+            .padding(vertical = 12.dp, horizontal = 4.dp)
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        colors.surfaceContainerLow.copy(alpha = 0.78f),
+                        colors.surfaceContainerHigh.copy(alpha = 0.58f),
+                        colors.primary.copy(alpha = 0.06f + 0.04f * glowPulse),
+                    )
+                )
+            )
+            .border(1.dp, colors.outlineVariant.copy(alpha = 0.55f), shape)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Canvas(
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(56.dp)
         ) {
             val center = Offset(size.width / 2, size.height / 2)
-            val outerRadius = size.width / 2 - 3.dp.toPx()
+            val outerRadius = size.width / 2 - 4.dp.toPx()
+            val innerRadius = outerRadius * 0.62f
+            val orbitRadius = outerRadius * 0.78f
 
-            // 1. Soft radial background glow
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        primary.copy(alpha = 0.2f * glowPulse),
-                        secondary.copy(alpha = 0.05f * glowPulse),
+                        colors.primary.copy(alpha = 0.22f * glowPulse),
+                        colors.secondary.copy(alpha = 0.08f * glowPulse),
                         Color.Transparent
                     ),
                     center = center,
-                    radius = outerRadius + 8.dp.toPx()
+                    radius = outerRadius + 10.dp.toPx()
                 ),
-                radius = outerRadius + 8.dp.toPx()
+                radius = outerRadius + 10.dp.toPx()
             )
 
-            // 2. Faint background circular track
             drawCircle(
-                color = primary.copy(alpha = 0.08f),
+                color = colors.primary.copy(alpha = 0.10f),
                 radius = outerRadius,
-                style = Stroke(width = 3.dp.toPx())
+                style = Stroke(width = 2.dp.toPx())
             )
 
-            // 3. Rotating gradient arc spinner (comet tail style)
             rotate(rotationAngle, center) {
                 drawArc(
                     brush = Brush.sweepGradient(
                         colors = listOf(
-                            primary.copy(alpha = 0.1f),
-                            primary,
-                            primary.copy(alpha = 0.1f)
+                            Color.Transparent,
+                            colors.primary,
+                            colors.secondary,
+                            Color.Transparent
                         ),
                         center = center
                     ),
-                    startAngle = 0f,
-                    sweepAngle = 270f,
+                    startAngle = -30f,
+                    sweepAngle = 240f,
                     useCenter = false,
                     style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
 
-            // 4. Soft breathing center indicator dot
+            rotate(-rotationAngle * 0.72f, center) {
+                drawArc(
+                    color = colors.secondary.copy(alpha = 0.66f),
+                    startAngle = 120f,
+                    sweepAngle = 92f,
+                    useCenter = false,
+                    topLeft = Offset(center.x - innerRadius, center.y - innerRadius),
+                    size = Size(innerRadius * 2, innerRadius * 2),
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+
             drawCircle(
-                color = primary,
+                color = colors.primary.copy(alpha = 0.95f),
                 radius = centerDotRadius.dp.toPx(),
                 center = center
             )
+
+            repeat(3) { index ->
+                val angle = Math.toRadians((rotationAngle + index * 120f).toDouble())
+                drawCircle(
+                    color = colors.secondary.copy(alpha = 0.32f + index * 0.16f),
+                    radius = (2.2f + index * 0.45f).dp.toPx(),
+                    center = Offset(
+                        x = center.x + cos(angle).toFloat() * orbitRadius,
+                        y = center.y + sin(angle).toFloat() * orbitRadius,
+                    )
+                )
+            }
         }
 
-        Column(verticalArrangement = Arrangement.Center) {
-            Text(
-                text = phrases[phraseIndex].first,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = onSurface,
-                    letterSpacing = 0.sp
+        AnimatedContent(
+            targetState = quoteIndex,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                (
+                    slideInVertically(
+                        animationSpec = tween(520, easing = FastOutSlowInEasing),
+                        initialOffsetY = { height -> height / 3 },
+                    ) + fadeIn(tween(420)) + scaleIn(
+                        animationSpec = tween(520, easing = FastOutSlowInEasing),
+                        initialScale = 0.96f,
+                    )
+                ).togetherWith(
+                    slideOutVertically(
+                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                        targetOffsetY = { height -> -height / 3 },
+                    ) + fadeOut(tween(220)) + scaleOut(
+                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                        targetScale = 0.98f,
+                    )
+                ).using(SizeTransform(clip = false))
+            },
+            label = "processing_quote_swap",
+        ) { index ->
+            val quote = quotes[index]
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = "PROCESSING REQUEST",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.primary.copy(alpha = 0.84f),
+                        letterSpacing = 0.sp,
+                    )
                 )
-            )
-            Text(
-                text = phrases[phraseIndex].second,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = onVariant.copy(alpha = 0.7f)
+                Box {
+                    Text(
+                        text = "\"${quote.text}\"",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.onSurface,
+                            lineHeight = 20.sp,
+                            letterSpacing = 0.sp,
+                        ),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        colors.primary.copy(alpha = 0.10f * glowPulse),
+                                        Color.Transparent,
+                                    ),
+                                    start = Offset(160f * sheenOffset, 0f),
+                                    end = Offset(160f * sheenOffset + 80f, 90f),
+                                )
+                            )
+                    )
+                }
+                Text(
+                    text = quote.author,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f),
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.sp,
+                        textAlign = TextAlign.Start,
+                    )
                 )
-            )
+            }
         }
     }
 }
