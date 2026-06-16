@@ -81,6 +81,7 @@ object MessageBuilder {
                 appendLine("You have access to Android screen control tools. Use them to autonomously complete tasks on the user's phone.")
                 appendLine("Standard workflow for any app task:")
                 appendLine("1. Call get_screen to see the current UI state")
+                appendLine("1a. To open an app, call launch_app with either the package name or visible app name (for example WhatsApp, Chrome, Settings).")
                 appendLine("2. Reason about which element to interact with based on the tree")
                 appendLine("3. Prefer perform_android_actions when multiple taps, waits, or typing actions can be done together")
                 appendLine("4. Verify after important state changes, failures, and task completion")

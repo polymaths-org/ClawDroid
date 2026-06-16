@@ -1,8 +1,10 @@
 package com.clawdroid.app.core.control
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.ResolveInfo
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -13,6 +15,32 @@ import org.json.JSONObject
 object AndroidControlTools {
 
     private const val TAG = "AndroidControlTools"
+
+    private data class LaunchTarget(
+        val packageName: String,
+        val activityName: String?,
+        val label: String,
+        val system: Boolean,
+    )
+
+    private val appAliases = mapOf(
+        "chrome" to "com.android.chrome",
+        "googlechrome" to "com.android.chrome",
+        "whatsapp" to "com.whatsapp",
+        "whatsappbusiness" to "com.whatsapp.w4b",
+        "telegram" to "org.telegram.messenger",
+        "instagram" to "com.instagram.android",
+        "spotify" to "com.spotify.music",
+        "youtube" to "com.google.android.youtube",
+        "gmail" to "com.google.android.gm",
+        "googlemaps" to "com.google.android.apps.maps",
+        "maps" to "com.google.android.apps.maps",
+        "settings" to "com.android.settings",
+        "playstore" to "com.android.vending",
+        "phone" to "com.google.android.dialer",
+        "dialer" to "com.google.android.dialer",
+        "messages" to "com.google.android.apps.messaging",
+    )
 
     private val screenControlToolNames = setOf(
         "get_screen", "tap", "tap_text", "tap_resource_id", "long_press", "swipe",
@@ -131,16 +159,35 @@ object AndroidControlTools {
     }
 
     fun launchApp(packageName: String, appContext: Context? = null): JSONObject = runToolSync {
-        Log.i(TAG, "launchApp package=$packageName appContext=$appContext")
+        val query = packageName.trim()
+        Log.i(TAG, "launchApp query=$query appContext=$appContext")
+
+        if (query.isBlank()) {
+            return@runToolSync errorResult(
+                "missing_app",
+                "Provide an app package name or visible app name to launch.",
+            )
+        }
+
+        val service = ScreenReaderService.instance
+        val target = appContext?.let { resolveLaunchTarget(it, query) }
+            ?: service?.let { resolveLaunchTarget(it, query) }
+        val resolvedPackage = target?.packageName ?: query
+        val resolvedLabel = target?.label ?: query
+
+        if (target == null) {
+            Log.w(TAG, "launchApp: no launch target resolved for query=$query; trying raw package")
+        } else {
+            Log.i(TAG, "launchApp resolved query=$query label=${target.label} package=${target.packageName} activity=${target.activityName}")
+        }
 
         // Method 1: AccessibilityService (has background start privileges)
-        val service = ScreenReaderService.instance
         if (service != null) {
             Log.i(TAG, "launchApp: trying accessibility service")
-            val ok = service.launchApp(packageName)
+            val ok = service.launchApp(resolvedPackage)
             if (ok) {
                 Log.i(TAG, "launchApp: success via accessibility service")
-                return@runToolSync buildResult("launched", true, packageName, "accessibility_service")
+                return@runToolSync buildResult("launched", true, resolvedPackage, "accessibility_service", query, resolvedLabel)
             }
             Log.w(TAG, "launchApp: accessibility service launch returned false")
         } else {
@@ -151,36 +198,35 @@ object AndroidControlTools {
         if (appContext != null) {
             Log.i(TAG, "launchApp: trying application context")
             try {
-                val intent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                    setPackage(packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-                }
+                val intent = buildLaunchIntent(appContext, target, resolvedPackage)
                 appContext.startActivity(intent)
                 Log.i(TAG, "launchApp: success via application context")
-                return@runToolSync buildResult("launched", true, packageName, "app_context")
+                return@runToolSync buildResult("launched", true, resolvedPackage, "app_context", query, resolvedLabel)
             } catch (e: Exception) {
                 Log.w(TAG, "launchApp: application context threw: ${e.message}")
             }
         }
 
-        Log.e(TAG, "launchApp: all methods failed for $packageName")
+        Log.e(TAG, "launchApp: all methods failed for query=$query resolvedPackage=$resolvedPackage")
         errorResult(
             "app_not_launched",
-            "Could not launch app '$packageName'. All methods failed.",
-        ).put("package_name", packageName)
+            "Could not launch app '$query'. Resolved package '$resolvedPackage' could not be opened.",
+        )
+            .put("query", query)
+            .put("package_name", resolvedPackage)
+            .put("app_name", resolvedLabel)
     }
 
     suspend fun getInstalledApps(context: Context): JSONObject = withContext(Dispatchers.Default) {
         runTool {
-            val pm = context.packageManager
-            val apps = pm.getInstalledApplications(0)
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
-                .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
+            val apps = launchableApps(context)
+                .sortedWith(compareBy({ it.label.lowercase() }, { it.packageName }))
                 .map { app ->
                     JSONObject()
-                        .put("name", pm.getApplicationLabel(app).toString())
+                        .put("name", app.label)
                         .put("package_name", app.packageName)
+                        .put("activity_name", app.activityName)
+                        .put("system", app.system)
                 }
             val arr = JSONArray()
             apps.forEach { arr.put(it) }
@@ -393,6 +439,94 @@ object AndroidControlTools {
 
     private fun requireService(): ScreenReaderService? = ScreenReaderService.instance
 
+    private fun resolveLaunchTarget(context: Context, query: String): LaunchTarget? {
+        val normalizedQuery = normalizeAppName(query)
+        val aliasPackage = appAliases[normalizedQuery]
+        val apps = launchableApps(context)
+
+        fun matchesPackage(packageName: String): LaunchTarget? =
+            apps.firstOrNull { it.packageName.equals(packageName, ignoreCase = true) }
+                ?: context.packageManager.getLaunchIntentForPackage(packageName)?.let {
+                    LaunchTarget(
+                        packageName = packageName,
+                        activityName = it.component?.className,
+                        label = packageName,
+                        system = false,
+                    )
+                }
+
+        matchesPackage(query)?.let { return it }
+        if (aliasPackage != null) {
+            matchesPackage(aliasPackage)?.let { return it }
+        }
+
+        return apps
+            .mapNotNull { app ->
+                val label = normalizeAppName(app.label)
+                val packageKey = normalizeAppName(app.packageName)
+                val score = when {
+                    label == normalizedQuery -> 100
+                    label.startsWith(normalizedQuery) && normalizedQuery.length >= 3 -> 88
+                    normalizedQuery.startsWith(label) && label.length >= 3 -> 84
+                    label.contains(normalizedQuery) && normalizedQuery.length >= 3 -> 78
+                    packageKey.contains(normalizedQuery) && normalizedQuery.length >= 3 -> 70
+                    else -> 0
+                }
+                if (score > 0) score to app else null
+            }
+            .maxWithOrNull(compareBy<Pair<Int, LaunchTarget>> { it.first }.thenBy { -it.second.label.length })
+            ?.second
+    }
+
+    private fun launchableApps(context: Context): List<LaunchTarget> {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        return pm.queryIntentActivities(intent, 0)
+            .mapNotNull { info -> info.toLaunchTarget(pm = pm) }
+            .distinctBy { it.packageName to it.activityName }
+    }
+
+    private fun ResolveInfo.toLaunchTarget(pm: android.content.pm.PackageManager): LaunchTarget? {
+        val activity = activityInfo ?: return null
+        val appInfo = activity.applicationInfo
+        val label = loadLabel(pm)?.toString()
+            ?: appInfo?.loadLabel(pm)?.toString()
+            ?: activity.packageName
+        return LaunchTarget(
+            packageName = activity.packageName,
+            activityName = activity.name,
+            label = label,
+            system = appInfo?.let { (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0 } ?: false,
+        )
+    }
+
+    private fun buildLaunchIntent(context: Context, target: LaunchTarget?, fallbackPackageName: String): Intent {
+        if (target?.activityName != null) {
+            return Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                component = ComponentName(target.packageName, target.activityName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            }
+        }
+
+        context.packageManager.getLaunchIntentForPackage(fallbackPackageName)?.let { intent ->
+            return intent.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            }
+        }
+
+        return Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            setPackage(fallbackPackageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+    }
+
+    private fun normalizeAppName(value: String): String =
+        value.lowercase().replace(Regex("[^a-z0-9]+"), "")
+
     private fun serviceNotRunning(): JSONObject = errorResult(
         "accessibility_service_not_running",
         "User must enable ClawDroid Screen Control in Settings > Accessibility",
@@ -402,9 +536,18 @@ object AndroidControlTools {
         .put("success", ok)
         .put("action", action)
 
-    private fun buildResult(action: String, ok: Boolean, packageName: String, method: String): JSONObject = JSONObject()
+    private fun buildResult(
+        action: String,
+        ok: Boolean,
+        packageName: String,
+        method: String,
+        query: String = packageName,
+        appName: String = packageName,
+    ): JSONObject = JSONObject()
         .put("success", ok)
         .put("action", action)
+        .put("query", query)
+        .put("app_name", appName)
         .put("package_name", packageName)
         .put("method", method)
 

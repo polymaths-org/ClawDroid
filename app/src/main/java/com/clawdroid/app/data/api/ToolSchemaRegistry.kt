@@ -7,8 +7,9 @@ object ToolSchemaRegistry {
     fun overlayTools(): JSONArray {
         val array = JSONArray()
 
-        array.put(tool("launch_app", "Launch an installed app by package name.") {
-            putString("package_name", "Android package name, for example org.telegram.messenger.")
+        array.put(tool("launch_app", "Launch an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example org.telegram.messenger, WhatsApp, Chrome, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
         array.put(tool("get_screen", "Read the current Android screen UI tree.") {
@@ -315,8 +316,9 @@ object ToolSchemaRegistry {
         array.put(tool("open_notifications", "Open the notification shade.") {
             required()
         })
-        array.put(tool("launch_app", "Launch an installed app by package name.") {
-            putString("package_name", "Android package name (e.g. com.android.chrome).")
+        array.put(tool("launch_app", "Launch an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example com.android.chrome, Chrome, WhatsApp, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
         array.put(tool("get_installed_apps", "List installed non-system apps.") {
