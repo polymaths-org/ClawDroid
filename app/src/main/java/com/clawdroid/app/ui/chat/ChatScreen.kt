@@ -23,6 +23,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -141,10 +143,11 @@ import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
 import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.control.AndroidControlTools
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
-import com.clawdroid.app.core.voice.OpenAIRealtimeClient
+import com.clawdroid.app.core.voice.RealtimeAudioSession
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
 import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
@@ -152,30 +155,37 @@ import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
 import com.clawdroid.app.ui.components.ClawInputPanel
-import com.clawdroid.app.ui.components.ClawMagicMark
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkin
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.CustomProcessingLoader
+import com.clawdroid.app.ui.components.FifMascot
 import com.clawdroid.app.ui.components.PiperDownloadDialog
 import com.clawdroid.app.ui.components.StaggeredWordsText
 import com.clawdroid.app.ui.components.currentClawSkin
 import com.clawdroid.app.ui.components.isHud
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
-import com.clawdroid.app.ui.voice.AudioVisualizerOrb
 import com.clawdroid.app.ui.voice.OrbState
 import com.clawdroid.app.ui.voice.VoiceOverlay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 private fun shouldUseOverlayForTask(text: String): Boolean {
     val lower = text.lowercase()
-    return listOf(
+    val directControlPhrase = listOf(
         "open app",
         "open ",
+        "launch app",
+        "launch ",
+        "start app",
         "go to ",
         "tap ",
         "click ",
@@ -193,6 +203,44 @@ private fun shouldUseOverlayForTask(text: String): Boolean {
         "on screen",
         "current app",
     ).any { lower.contains(it) }
+    if (directControlPhrase) return true
+
+    val appVerb = listOf("open", "launch", "start").any { verb ->
+        lower.startsWith("$verb ") || lower.contains(" $verb ")
+    }
+    if (!appVerb) return false
+
+    val knownAppName = listOf(
+        "whatsapp",
+        "telegram",
+        "instagram",
+        "spotify",
+        "youtube",
+        "gmail",
+        "chrome",
+        "settings",
+        "maps",
+        "phone",
+        "dialer",
+        "messages",
+        "play store",
+    ).any { lower.contains(it) }
+
+    return knownAppName
+}
+
+private fun extractDirectLaunchAppQuery(text: String): String? {
+    val match = Regex(
+        pattern = "^\\s*(?:please\\s+)?(?:open|launch|start)(?:\\s+the)?(?:\\s+app)?\\s+(.+?)\\s*[.!?]*\\s*$",
+        option = RegexOption.IGNORE_CASE,
+    ).find(text) ?: return null
+    val query = match.groupValues[1]
+        .substringBefore(" and ")
+        .substringBefore(" then ")
+        .trim()
+    if (query.length < 2) return null
+    val blocked = setOf("it", "this", "that", "app", "application")
+    return query.takeUnless { it.lowercase(Locale.US) in blocked }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -263,19 +311,27 @@ fun ChatScreen(
     // Voice & Call states
     val voiceManager = remember { VoiceManager(context.applicationContext) }
     val voiceRecognizer = remember { SpeechRecognizerClient(context.applicationContext) }
-    val realtimeClient = remember { OpenAIRealtimeClient() }
+    val realtimeSession = remember { RealtimeAudioSession(context.applicationContext) }
     var isCallModeActive by remember { mutableStateOf(false) }
     var isCallMuted by remember { mutableStateOf(false) }
     var orbState by remember { mutableStateOf(OrbState.Idle) }
+    var realtimeModeRequested by remember { mutableStateOf(false) }
+    var pendingVoiceStartAfterPermission by remember { mutableStateOf(false) }
 
     // Real-time transcript components
     var userPartialText by remember { mutableStateOf("") }
     var listenTrigger by remember { mutableStateOf(0) }
     var isRecognizerListening by remember { mutableStateOf(false) }
+    var liveTtsBuffer by remember { mutableStateOf("") }
+    var liveTtsSpokeAny by remember { mutableStateOf(false) }
+    var realtimeAgentTranscript by remember { mutableStateOf("") }
+    var realtimeLastUserCommit by remember { mutableStateOf("") }
+    var realtimeLastAgentCommit by remember { mutableStateOf("") }
 
     val voiceSpeaking by voiceManager.isSpeaking.collectAsState()
     val partialSpeech by voiceRecognizer.partialResult.collectAsState()
     val piperDownloadProgress by voiceManager.downloadProgress.collectAsState()
+    val realtimeActive by realtimeSession.isActive.collectAsState()
 
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var wasInterrupted by remember { mutableStateOf(false) }
@@ -283,9 +339,11 @@ fun ChatScreen(
     // Real-time Voice Amplitudes
     val userAmplitude by voiceRecognizer.userVoiceAmplitude.collectAsState()
     val agentAmplitude by voiceManager.agentVoiceAmplitude.collectAsState()
+    val realtimeUserAmplitude by realtimeSession.userAmplitude.collectAsState()
+    val realtimeAgentAmplitude by realtimeSession.agentAmplitude.collectAsState()
     val currentAmplitude = when (orbState) {
-        OrbState.Listening -> userAmplitude
-        OrbState.Speaking -> agentAmplitude
+        OrbState.Listening -> if (realtimeModeRequested || realtimeActive) realtimeUserAmplitude else userAmplitude
+        OrbState.Speaking -> if (realtimeModeRequested || realtimeActive) realtimeAgentAmplitude else agentAmplitude
         else -> 0f
     }
 
@@ -300,8 +358,7 @@ fun ChatScreen(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            isCallModeActive = true
-            isCallMuted = false
+            pendingVoiceStartAfterPermission = true
         }
     }
 
@@ -328,6 +385,39 @@ fun ChatScreen(
         } catch (e: Exception) {}
 
         notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
+    }
+
+    fun appendRealtimeChatMessage(role: String, text: String) {
+        val trimmed = text.trim()
+        val convId = currentConversationId ?: return
+        if (trimmed.isBlank()) return
+        if (role == "user" && trimmed == realtimeLastUserCommit) return
+        if (role == "assistant" && trimmed == realtimeLastAgentCommit) return
+
+        val msgId = UUID.randomUUID().toString()
+        val createdAt = System.currentTimeMillis()
+        if (role == "user") {
+            realtimeLastUserCommit = trimmed
+            items += UserChatItem(id = msgId, text = trimmed, createdAt = createdAt)
+        } else {
+            realtimeLastAgentCommit = trimmed
+            items += AgentChatItem(id = msgId, text = trimmed, streaming = false, createdAt = createdAt)
+        }
+        scope.launch {
+            db.messages().insert(
+                MessageEntity(
+                    id = msgId,
+                    conversationId = convId,
+                    role = role,
+                    content = trimmed,
+                    createdAt = createdAt,
+                    tokenCount = 0,
+                )
+            )
+            db.conversations().getById(convId)?.let { conv ->
+                db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
+            }
+        }
     }
 
     fun processSimulatedSystemCommand(text: String) {
@@ -372,8 +462,9 @@ fun ChatScreen(
         val convId = currentConversationId ?: return
 
         val userMsgId = UUID.randomUUID().toString()
+        val createdAt = System.currentTimeMillis()
         // Add to items immediately with the same ID to prevent key change / flickering
-        items += UserChatItem(id = userMsgId, text = text, mediaPath = mediaPath, mediaMimeType = mediaMimeType)
+        items += UserChatItem(id = userMsgId, text = text, mediaPath = mediaPath, mediaMimeType = mediaMimeType, createdAt = createdAt)
 
         scope.launch {
             db.messages().insert(
@@ -382,7 +473,7 @@ fun ChatScreen(
                     conversationId = convId,
                     role = "user",
                     content = text,
-                    createdAt = System.currentTimeMillis(),
+                    createdAt = createdAt,
                     tokenCount = 0,
                     mediaPath = mediaPath,
                     mediaMimeType = mediaMimeType
@@ -393,7 +484,31 @@ fun ChatScreen(
                 db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
             // Start the run after database insert finishes so context is built correctly
-            if (mediaPath == null && shouldUseOverlayForTask(text)) {
+            val directLaunchQuery = if (mediaPath == null) extractDirectLaunchAppQuery(text) else null
+            if (directLaunchQuery != null) {
+                val result = AndroidControlTools.launchApp(directLaunchQuery, context.applicationContext)
+                val success = result.optBoolean("success", false)
+                val appName = result.optString("app_name", directLaunchQuery).ifBlank { directLaunchQuery }
+                val reply = if (success) {
+                    "Opening $appName."
+                } else {
+                    val message = result.optString("message", "Could not launch $directLaunchQuery.")
+                    "$message If this keeps happening, enable Settings > Permissions > Screen Control. If the model provider reports a context-window error, start a new chat and retry."
+                }
+                val assistantMsg = AgentChatItem(text = reply, streaming = false)
+                items += assistantMsg
+                db.messages().insert(
+                    MessageEntity(
+                        id = assistantMsg.id,
+                        conversationId = convId,
+                        role = "assistant",
+                        content = reply,
+                        createdAt = System.currentTimeMillis(),
+                        tokenCount = 0,
+                    ),
+                )
+                Toast.makeText(context, reply, Toast.LENGTH_SHORT).show()
+            } else if (mediaPath == null && shouldUseOverlayForTask(text)) {
                 val canOverlay = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
                     android.provider.Settings.canDrawOverlays(context)
                 if (canOverlay) {
@@ -428,7 +543,7 @@ fun ChatScreen(
             }
         }
 
-        if (isCallModeActive) {
+        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
             voiceManager.speakThinkingPhrase()
         }
     }
@@ -456,7 +571,8 @@ fun ChatScreen(
             val convId = currentConversationId ?: return
             engine?.steer(text)
             val steerMsgId = UUID.randomUUID().toString()
-            items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime)
+            val createdAt = System.currentTimeMillis()
+            items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime, createdAt = createdAt)
             scope.launch {
                 db.messages().insert(
                     MessageEntity(
@@ -464,7 +580,7 @@ fun ChatScreen(
                         conversationId = convId,
                         role = "user",
                         content = text,
-                        createdAt = System.currentTimeMillis(),
+                        createdAt = createdAt,
                         tokenCount = 0,
                         mediaPath = cachedPath,
                         mediaMimeType = mediaMime
@@ -481,6 +597,8 @@ fun ChatScreen(
         if (text.isBlank()) return
         userPartialText = text
         voiceOverlayText = ""
+        liveTtsBuffer = ""
+        liveTtsSpokeAny = false
         selectedMediaUri = null
         selectedMediaMimeType = null
         selectedMediaName = null
@@ -494,22 +612,95 @@ fun ChatScreen(
             isCallMuted = false
             voiceOverlayText = ""
             userPartialText = ""
+            liveTtsBuffer = ""
+            liveTtsSpokeAny = false
+            realtimeAgentTranscript = ""
+            realtimeLastUserCommit = ""
+            realtimeLastAgentCommit = ""
             ServiceManager.start(context.applicationContext)
-            if (AppConfigManager.realtimeVoiceEnabled) {
-                voiceOverlayText = "Preparing Realtime voice..."
+            val useRealtimeAudio = AppConfigManager.realtimeVoiceEnabled &&
+                AppConfigManager.provider.equals("openai", ignoreCase = true) &&
+                AppConfigManager.openaiRealtimeApiKey.isNotBlank()
+            if (useRealtimeAudio) {
+                realtimeModeRequested = true
+                isRecognizerListening = false
+                voiceRecognizer.cancelListening()
+                voiceManager.stop()
+                orbState = OrbState.Listening
+                voiceOverlayText = "Connecting realtime voice..."
                 scope.launch {
-                    val result = realtimeClient.createClientSecret()
-                    result.onSuccess {
-                        voiceOverlayText = "Realtime voice ready. Native WebRTC audio transport is not connected in this build yet, so standard voice mode will continue for now."
-                    }.onFailure { error ->
-                        voiceOverlayText = ""
-                        Toast.makeText(
-                            context,
-                            "Realtime voice unavailable: ${error.message ?: "token request failed"}",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                    val result = realtimeSession.start(
+                        onStatus = { status ->
+                            withContext(Dispatchers.Main) {
+                                voiceOverlayText = status
+                            }
+                        },
+                        onUserTranscriptDelta = { delta ->
+                            withContext(Dispatchers.Main) {
+                                userPartialText += delta
+                            }
+                        },
+                        onUserTranscriptCompleted = { text ->
+                            withContext(Dispatchers.Main) {
+                                if (text.isNotBlank()) {
+                                    userPartialText = text
+                                    appendRealtimeChatMessage("user", text)
+                                }
+                            }
+                        },
+                        onAgentTranscriptDelta = { delta ->
+                            withContext(Dispatchers.Main) {
+                                realtimeAgentTranscript += delta
+                                voiceOverlayText = realtimeAgentTranscript
+                                orbState = OrbState.Speaking
+                            }
+                        },
+                        onAgentTranscriptCompleted = { text ->
+                            withContext(Dispatchers.Main) {
+                                val finalText = text.ifBlank { realtimeAgentTranscript }
+                                appendRealtimeChatMessage("assistant", finalText)
+                            }
+                        },
+                        onUserSpeechStarted = {
+                            realtimeSession.interrupt()
+                            withContext(Dispatchers.Main) {
+                                userPartialText = ""
+                                realtimeAgentTranscript = ""
+                                voiceOverlayText = "Listening..."
+                                orbState = OrbState.Listening
+                            }
+                        },
+                        onAgentResponseStarted = {
+                            withContext(Dispatchers.Main) {
+                                realtimeAgentTranscript = ""
+                                voiceOverlayText = ""
+                                orbState = OrbState.Speaking
+                            }
+                        },
+                        onAgentResponseCompleted = {
+                            withContext(Dispatchers.Main) {
+                                userPartialText = ""
+                                orbState = OrbState.Listening
+                            }
+                        },
+                        onError = { message ->
+                            withContext(Dispatchers.Main) {
+                                voiceOverlayText = ""
+                                Toast.makeText(context, "Realtime voice unavailable: $message", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    )
+                    if (result.isFailure) {
+                        withContext(Dispatchers.Main) {
+                            realtimeModeRequested = false
+                            isRecognizerListening = false
+                            listenTrigger++
+                        }
                     }
                 }
+            } else {
+                realtimeModeRequested = false
+                listenTrigger++
             }
         } else {
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -517,6 +708,13 @@ fun ChatScreen(
     }
 
     // ── LaunchedEffects / Observers follow sequentially ──
+    LaunchedEffect(pendingVoiceStartAfterPermission) {
+        if (pendingVoiceStartAfterPermission) {
+            pendingVoiceStartAfterPermission = false
+            startVoiceSession()
+        }
+    }
+
     LaunchedEffect(Unit) {
         db.conversations().pruneAllEmpty()
     }
@@ -580,14 +778,15 @@ fun ChatScreen(
                             id = msg.id,
                             text = msg.content,
                             mediaPath = msg.mediaPath,
-                            mediaMimeType = msg.mediaMimeType
+                            mediaMimeType = msg.mediaMimeType,
+                            createdAt = msg.createdAt,
                         )
                     }
                 } else if (msg.role == "assistant") {
                     if (!msg.content.startsWith("[Compacted Summary]")) {
                         // Chronological: text content first (if any)
                         if (msg.content.isNotBlank()) {
-                            list += AgentChatItem(id = msg.id, text = msg.content, streaming = false)
+                            list += AgentChatItem(id = msg.id, text = msg.content, streaming = false, createdAt = msg.createdAt)
                         }
                         
                         // Tool calls second
@@ -656,6 +855,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(agentResponseText, isAgentRunning) {
+        if (realtimeModeRequested || realtimeActive) return@LaunchedEffect
         if (isAgentRunning) {
             voiceOverlayText = agentResponseText
         } else if (agentResponseText.isNotBlank()) {
@@ -668,11 +868,39 @@ fun ChatScreen(
         AgentRunManager.events.collect { (eventConvId, event) ->
             if (eventConvId == convId) {
                 when (event) {
+                    is AgentRunEvent.TextDelta -> {
+                        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
+                            liveTtsBuffer += event.text
+                            val (chunk, remaining) = takeRealtimeSpeechSegment(liveTtsBuffer, force = false)
+                            if (chunk.isNotBlank()) {
+                                liveTtsBuffer = remaining
+                                liveTtsSpokeAny = true
+                                voiceManager.speakWithNaturalBreaks(chunk)
+                            }
+                        }
+                    }
                     is AgentRunEvent.Completed -> {
                         processSimulatedSystemCommand(event.finalText)
-                        if (isCallModeActive) {
-                            voiceManager.speakWithNaturalBreaks(event.finalText) {
+                        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
+                            val spokeDuringStream = liveTtsSpokeAny
+                            val (remainingChunk, remainingTail) = takeRealtimeSpeechSegment(liveTtsBuffer, force = true)
+                            liveTtsBuffer = remainingTail
+                            liveTtsSpokeAny = false
+                            val finalSpeech = when {
+                                remainingChunk.isNotBlank() -> remainingChunk
+                                !spokeDuringStream -> event.finalText
+                                else -> ""
+                            }
+                            if (finalSpeech.isNotBlank()) {
+                                voiceManager.speakWithNaturalBreaks(finalSpeech) {
+                                    scope.launch {
+                                        userPartialText = ""
+                                        listenTrigger++
+                                    }
+                                }
+                            } else {
                                 scope.launch {
+                                    delay(450)
                                     userPartialText = ""
                                     listenTrigger++
                                 }
@@ -683,6 +911,8 @@ fun ChatScreen(
                     }
                     is AgentRunEvent.RunError -> {
                         errorMessage = event.message
+                        liveTtsBuffer = ""
+                        liveTtsSpokeAny = false
                     }
                     else -> {}
                 }
@@ -696,10 +926,13 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(isCallModeActive, voiceSpeaking, runtimeState) {
+    LaunchedEffect(isCallModeActive, voiceSpeaking, runtimeState, realtimeActive, realtimeModeRequested, realtimeAgentAmplitude) {
         if (isCallModeActive) {
             orbState = when {
                 isCallMuted -> OrbState.Idle
+                realtimeModeRequested || realtimeActive -> {
+                    if (realtimeAgentAmplitude > 0.02f) OrbState.Speaking else OrbState.Listening
+                }
                 voiceSpeaking -> OrbState.Speaking
                 runtimeState == AgentRuntimeState.Running -> OrbState.Thinking
                 else -> OrbState.Listening
@@ -724,7 +957,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(isCallModeActive, isCallMuted, userAmplitude) {
-        if (isCallModeActive && !isCallMuted && userAmplitude > 0.15f && !wasInterrupted) {
+        if (isCallModeActive && !isCallMuted && !realtimeModeRequested && !realtimeActive && userAmplitude > AppConfigManager.voiceInterruptThreshold && !wasInterrupted) {
             if (voiceSpeaking || runtimeState == AgentRuntimeState.Running) {
                 wasInterrupted = true
                 voiceManager.stop()
@@ -741,7 +974,10 @@ fun ChatScreen(
 
     LaunchedEffect(isCallModeActive, isCallMuted, listenTrigger) {
         if (isCallModeActive) {
-            if (isCallMuted) {
+            if (realtimeModeRequested || realtimeActive) {
+                isRecognizerListening = false
+                voiceRecognizer.cancelListening()
+            } else if (isCallMuted) {
                 isRecognizerListening = false
                 voiceRecognizer.cancelListening()
             } else if (!isRecognizerListening) {
@@ -774,6 +1010,10 @@ fun ChatScreen(
         } else {
             isRecognizerListening = false
             wasInterrupted = false
+            realtimeModeRequested = false
+            scope.launch {
+                realtimeSession.stop()
+            }
             voiceRecognizer.cancelListening()
             if (orbState != OrbState.Idle) {
                 voiceManager.stop()
@@ -784,6 +1024,7 @@ fun ChatScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            realtimeSession.destroy()
             voiceManager.destroy()
             voiceRecognizer.destroy()
         }
@@ -799,6 +1040,10 @@ fun ChatScreen(
     if (isCallModeActive) {
         BackHandler {
             isCallModeActive = false
+            realtimeModeRequested = false
+            scope.launch {
+                realtimeSession.stop()
+            }
             voiceManager.stop()
         }
     }
@@ -1118,11 +1363,29 @@ fun ChatScreen(
                     orbState = orbState,
                     amplitude = currentAmplitude,
                     isMuted = isCallMuted,
-                    onMuteToggle = { isCallMuted = !isCallMuted },
+                    onMuteToggle = {
+                        val muted = !isCallMuted
+                        isCallMuted = muted
+                        if (realtimeModeRequested || realtimeActive) {
+                            if (muted) {
+                                scope.launch {
+                                    realtimeSession.stop()
+                                }
+                                orbState = OrbState.Idle
+                                voiceOverlayText = "Muted"
+                            } else {
+                                startVoiceSession()
+                            }
+                        }
+                    },
                     userPartialText = userPartialText,
                     agentResponseText = voiceOverlayText,
                     onBack = {
                         isCallModeActive = false
+                        realtimeModeRequested = false
+                        scope.launch {
+                            realtimeSession.stop()
+                        }
                         voiceManager.stop()
                     }
                 )
@@ -1181,24 +1444,30 @@ fun ChatScreen(
 private fun EmptyGreeting(modifier: Modifier = Modifier) {
     val name = AppConfigManager.ownerName.trim().ifBlank { "there" }
     val skin = currentClawSkin()
+    val prompt = remember {
+        listOf(
+            "what's on your mind?",
+            "what should we move today?",
+            "what can I handle for you?",
+            "want me to look into something?",
+            "drop a task and I will work through it.",
+            "need help with an app, file, or idea?",
+        ).random()
+    }
     Column(
         modifier = modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (skin == ClawSkin.ClawMagic) {
-            ClawMagicMark(modifier = Modifier.size(48.dp))
-            Spacer(modifier = Modifier.height(18.dp))
-        } else if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
-            AudioVisualizerOrb(
-                state = OrbState.Idle,
-                amplitude = 0f,
-                modifier = Modifier.size(if (skin == ClawSkin.LiquidGlass) 112.dp else 128.dp),
-            )
-            Spacer(modifier = Modifier.height(18.dp))
-        }
+        FifMascot(
+            modifier = Modifier.size(if (skin == ClawSkin.ClawMagic) 86.dp else 112.dp),
+            contentDescription = "ClawDroid idle mascot",
+            randomize = true,
+            randomKey = name,
+        )
+        Spacer(modifier = Modifier.height(18.dp))
         StaggeredWordsText(
-            text = "Hello $name,",
+            text = "Hey $name",
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = if (skin == ClawSkin.ClawMagic) 30.sp else 32.sp,
@@ -1209,7 +1478,7 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
         )
         StaggeredWordsText(
-            text = if (skin == ClawSkin.ClawMagic) "what's the move?" else "what's on your mind?",
+            text = prompt,
             color = if (skin == ClawSkin.ClawMagic) {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
             } else {
@@ -1225,6 +1494,47 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
             delayStepMs = 58L,
         )
     }
+}
+
+private fun takeRealtimeSpeechSegment(buffer: String, force: Boolean): Pair<String, String> {
+    val normalized = buffer
+        .replace('\n', ' ')
+        .replace(Regex("\\s+"), " ")
+        .trimStart()
+    if (normalized.isBlank()) return "" to ""
+
+    val sentenceCut = normalized.indexOfFirstIndexed { index, char ->
+        index >= 28 && char in ".!?" && (index == normalized.lastIndex || normalized.getOrNull(index + 1)?.isWhitespace() == true)
+    }
+    val softCut = normalized.indexOfFirstIndexed { index, char ->
+        index >= 56 && char in ",;:" && (index == normalized.lastIndex || normalized.getOrNull(index + 1)?.isWhitespace() == true)
+    }
+    val hardCut = if (normalized.length >= 96) {
+        normalized.lastIndexOf(' ', startIndex = 82.coerceAtMost(normalized.lastIndex)).takeIf { it > 42 }
+    } else {
+        null
+    }
+    val cut = when {
+        sentenceCut >= 0 -> sentenceCut + 1
+        softCut >= 0 -> softCut + 1
+        hardCut != null -> hardCut
+        force -> normalized.length
+        else -> -1
+    }
+    if (cut <= 0) return "" to normalized
+    return normalized.take(cut).trim() to normalized.drop(cut).trimStart()
+}
+
+private fun formatChatTimestamp(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault()).format(Date(timestamp))
+}
+
+private inline fun String.indexOfFirstIndexed(predicate: (Int, Char) -> Boolean): Int {
+    for (index in indices) {
+        if (predicate(index, this[index])) return index
+    }
+    return -1
 }
 
 @Composable
@@ -1537,86 +1847,100 @@ private fun referenceStepLabel(step: ActivityStepItem): String {
 private fun UserMessageBubble(item: UserChatItem) {
     val skin = currentClawSkin()
     val context = LocalContext.current
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val maxBubbleWidth = maxWidth * 0.85f
         val bubbleShape = if (skin == ClawSkin.ClawMagic) {
             RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
         } else {
             RoundedCornerShape(if (skin.isHud()) 14.dp else 22.dp)
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .clip(bubbleShape)
-                .background(
-                    if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
-                    else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
-                    bubbleShape,
-                )
-                .border(
-                    1.dp,
-                    if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
-                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-                    bubbleShape,
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (item.mediaPath != null && item.mediaMimeType != null) {
-                    val mediaFile = java.io.File(item.mediaPath)
-                    if (mediaFile.exists() && mediaFile.isFile) {
-                        val isImage = item.mediaMimeType.startsWith("image/")
-                        val uri = Uri.fromFile(mediaFile)
-                        val bitmap = rememberBitmapFromUri(context, uri)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = maxBubbleWidth)
+                    .clip(bubbleShape)
+                    .background(
+                        if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
+                        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                        bubbleShape,
+                    )
+                    .border(
+                        1.dp,
+                        if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                        bubbleShape,
+                    )
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (item.mediaPath != null && item.mediaMimeType != null) {
+                        val mediaFile = java.io.File(item.mediaPath)
+                        if (mediaFile.exists() && mediaFile.isFile) {
+                            val isImage = item.mediaMimeType.startsWith("image/")
+                            val uri = Uri.fromFile(mediaFile)
+                            val bitmap = rememberBitmapFromUri(context, uri)
 
-                        if (isImage && bitmap != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = bitmap,
-                                contentDescription = "User attachment",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 240.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                            )
-                        } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = mediaIconForMime(item.mediaMimeType),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
+                            if (isImage && bitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = bitmap,
+                                    contentDescription = "User attachment",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                        .clip(RoundedCornerShape(12.dp))
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = mediaFile.name,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = mediaIconForMime(item.mediaMimeType),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = mediaFile.name,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                if (item.text.isNotBlank()) {
-                    Text(
-                        text = item.text,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 23.sp,
-                            letterSpacing = 0.sp,
-                        ),
-                    )
+                    if (item.text.isNotBlank()) {
+                        SelectionContainer {
+                            Text(
+                                text = item.text,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 23.sp,
+                                    letterSpacing = 0.sp,
+                                ),
+                            )
+                        }
+                        Text(
+                            text = formatChatTimestamp(item.createdAt),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                letterSpacing = 0.sp,
+                            ),
+                            modifier = Modifier.align(Alignment.End),
+                        )
+                    }
                 }
             }
         }
@@ -1663,18 +1987,31 @@ private fun AgentMessageCard(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     emphasis = 0.15f,
                 ) {
+                    SelectionContainer {
+                        MarkdownText(
+                            markdown = item.text,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            } else {
+                SelectionContainer {
                     MarkdownText(
                         markdown = item.text,
+                        modifier = contentModifier,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-            } else {
-                MarkdownText(
-                    markdown = item.text,
-                    modifier = contentModifier,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
             }
+            Text(
+                text = formatChatTimestamp(item.createdAt),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    letterSpacing = 0.sp,
+                ),
+                modifier = Modifier.padding(start = if (skin == ClawSkin.ClawMagic) 2.dp else 0.dp),
+            )
         }
 
         if (showActionRow && !item.streaming && item.text.isNotBlank()) {

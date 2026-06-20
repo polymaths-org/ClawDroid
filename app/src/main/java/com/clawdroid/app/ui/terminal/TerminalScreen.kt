@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -96,14 +98,19 @@ fun TerminalScreen(onBack: () -> Unit) {
             lines.add("Shell not running. Press ↻ to restart.")
             return
         }
+        val commandToSend = if (text.equals("clear", ignoreCase = true)) "clear" else text
         input = ""
-        history.add(text)
+        history.add(commandToSend)
         historyIndex = history.size
-        sendRaw("$text[ENTER]")
+        if (commandToSend == "clear") {
+            lines.clear()
+            processId?.let { id -> scope.launch { runCatching { pm.clearProcessOutput(id) } } }
+        }
+        sendRaw("$commandToSend[ENTER]")
     }
 
     fun appendOutput(text: String) {
-        val next = text.lines().filter { it.isNotBlank() }
+        val next = text.lines()
         if (next.isNotEmpty()) {
             lines.clear()
             lines.addAll(next.takeLast(500))
@@ -114,8 +121,9 @@ fun TerminalScreen(onBack: () -> Unit) {
         lines.add("Starting ClawDroid Linux shell...")
         val start = runCatching {
             pm.startProcess(
-                command = "export PS1='clawdroid:\\w$ '; exec bash --noprofile --norc -i",
+                command = terminalStartupCommand(),
                 timeout = 3.hours,
+                usePty = true,
             )
         }
         if (start.isFailure) {
@@ -125,14 +133,14 @@ fun TerminalScreen(onBack: () -> Unit) {
         }
         val result = start.getOrThrow()
         processId = result.processId
-        appendOutput(result.initialOutput.ifBlank { "Shell ready." })
+        appendOutput(pm.getProcessOutput(result.processId).ifBlank { result.initialOutput.ifBlank { "Shell ready." } })
 
         while (isActive) {
             val id = processId ?: break
             val status = runCatching { pm.checkProcess(id) }.getOrNull() ?: break
             state = status.state
             cwd = status.cwd
-            appendOutput(status.recentOutput)
+            appendOutput(pm.getProcessOutput(id))
             delay(600)
         }
     }
@@ -176,7 +184,12 @@ fun TerminalScreen(onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Restart shell")
                     }
-                    IconButton(onClick = { lines.clear() }) {
+                    IconButton(
+                        onClick = {
+                            lines.clear()
+                            processId?.let { id -> scope.launch { runCatching { pm.clearProcessOutput(id) } } }
+                        },
+                    ) {
                         Icon(Icons.Rounded.ClearAll, contentDescription = "Clear")
                     }
                     IconButton(
@@ -231,6 +244,8 @@ fun TerminalScreen(onBack: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(12.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f))
@@ -383,6 +398,64 @@ private fun StatusStrip(state: ProcessState) {
         )
     }
 }
+
+private fun terminalStartupCommand(): String {
+    val banner = CLAWDROID_TERMINAL_BANNER.replace("'", "'\"'\"'")
+    return "printf '%s\\n' '$banner'\n" +
+        "export PS1='clawdroid:\\w${'$'} '\n" +
+        "clear() { printf '\\033[H\\033[2J\\033[3J'; }\n" +
+        "export -f clear\n" +
+        "exec \"${'$'}SHELL\" --noprofile --norc -i\n"
+}
+
+private val CLAWDROID_TERMINAL_BANNER = """
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                              =======+                                              
+                                          ===============*                                          
+                                        ===================+                                        
+                                      +=====================*                                       
+                                     =======================#*#                                     
+                                     ========================**                                     
+                        ======      ===@%====================***      ======                        
+                      -=+  #*===    =@=:=@@=================-***    ==-**  +=-                      
+                      =      **==   =@-:====================****   ==**      =                      
+                      =       *==   =%=:=@=@===============-****   ==*       =                      
+                        =     *==   =@=:=@=--==============*****   ==*     +                        
+                             **==    @===@%*#%@======@%#*%@****    ==**                             
+                            **==+     =@#@#::#@======@#::#@****    ===**                            
+                           ***==       %@=@@@@@======@@@@@****      ==**#                           
+                           **===        :-=@@=#======@******        ==-**                           
+                           #**==        @==##=========*****@        ==**+                           
+                            **====      %==============****@      -===**                            
+                   ========  **#======:%=================***@=======#**  ========                   
+                 ===*****-==== ***=-%@-====================-*+%@-=*** ====-*****===                 
+                 =**     ***===========@====@==========@====@===========***     **=                 
+                *=*        +***======+@====@============@====@+======***+        *=                 
+                 =*           ******@-====@====******====@=====@******           *=                 
+                   =+*=           @=====*@-===**@@@@**===-%*=====@           +**=                   
+                           ==========-***@===**%    @**===@***-==========                           
+                        ========-#*****@ @===*+@    @**===@ @*****#-========                        
+                      ==-********+*%     @===**@    @**===@     @****##*+**-==                      
+                     ==**                %-==**@    @**===                 **=+                     
+                     ==*            +-=   @===**    **===%   --+            *==                     
+                      =-*    =    -=       %==**@  @**==%      +=-    =    *-=                      
+                        ====      ==       @==***  @**==@       ==     *====                        
+                                  ==       -==**    **==-       ==                                  
+                                  -==== +====**      **====+ ====-                                  
+                                    ========*          *========                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+Control the Sandbox with own expertise, scriptkiddies stay away!
+""".trim('\n', '\r')
 
 private val terminalStates = setOf(
     ProcessState.COMPLETED,

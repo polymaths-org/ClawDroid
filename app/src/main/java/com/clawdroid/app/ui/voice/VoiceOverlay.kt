@@ -54,6 +54,8 @@ import com.clawdroid.app.ui.components.ClawSkin
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.currentClawSkin
 import com.clawdroid.app.ui.components.isHud
+import kotlin.math.PI
+import kotlin.math.sin
 
 @Composable
 fun VoiceOverlay(
@@ -77,30 +79,6 @@ fun VoiceOverlay(
         modifier = modifier,
     ) {
         ClawSkinBackground(modifier = Modifier.fillMaxSize()) {
-            // ── Background Glows ───────────────────────────────────────────
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Top Right Cyan Glow
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(primaryGlow.copy(alpha = 0.08f), Color.Transparent),
-                        center = Offset(size.width * 0.8f, size.height * 0.2f),
-                        radius = size.maxDimension * 0.5f,
-                    ),
-                    radius = size.maxDimension * 0.5f,
-                    center = Offset(size.width * 0.8f, size.height * 0.2f),
-                )
-                // Bottom Left Blue Glow
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(secondaryGlow.copy(alpha = 0.08f), Color.Transparent),
-                        center = Offset(size.width * 0.2f, size.height * 0.8f),
-                        radius = size.maxDimension * 0.5f,
-                    ),
-                    radius = size.maxDimension * 0.5f,
-                    center = Offset(size.width * 0.2f, size.height * 0.8f),
-                )
-            }
-
             // ── Main Content Container ─────────────────────────────────────
             Column(
                 modifier = Modifier
@@ -179,17 +157,19 @@ fun VoiceOverlay(
                     }
                 }
 
-                // 2. Central 3D Audio Visualizer Orb
+                // 2. Central Audio Meter
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AudioVisualizerOrb(
+                    ProfessionalVoiceMeter(
                         state = orbState,
                         amplitude = amplitude,
-                        modifier = Modifier.size(280.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp),
                     )
                 }
 
@@ -313,6 +293,56 @@ fun VoiceOverlay(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfessionalVoiceMeter(
+    state: OrbState,
+    amplitude: Float,
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "voice_meter")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "meter_phase",
+    )
+    val colors = MaterialTheme.colorScheme
+    val active = state != OrbState.Idle
+    Canvas(modifier = modifier) {
+        val barCount = 42
+        val gap = 5.dp.toPx()
+        val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(2.dp.toPx())
+        val centerY = size.height / 2f
+        val baseAmp = when (state) {
+            OrbState.Listening -> amplitude.coerceAtLeast(0.05f)
+            OrbState.Speaking -> amplitude.coerceAtLeast(0.10f)
+            OrbState.Thinking -> 0.30f
+            OrbState.Idle -> 0.04f
+        }
+        for (i in 0 until barCount) {
+            val wave = ((sin(phase * PI.toFloat() * 2f + i * 0.42f) + 1f) / 2f)
+            val height = (10.dp.toPx() + size.height * baseAmp * (0.30f + wave * 0.78f))
+                .coerceIn(8.dp.toPx(), size.height)
+            val x = i * (barWidth + gap)
+            val alpha = if (active) (0.30f + wave * 0.54f).coerceIn(0.30f, 0.88f) else 0.20f
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        colors.primary.copy(alpha = alpha),
+                        colors.secondary.copy(alpha = alpha * 0.68f),
+                    ),
+                ),
+                topLeft = Offset(x, centerY - height / 2f),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth),
+            )
         }
     }
 }

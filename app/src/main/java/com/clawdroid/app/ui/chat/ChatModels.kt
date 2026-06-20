@@ -24,6 +24,7 @@ data class UserChatItem(
     val text: String,
     val mediaPath: String? = null,
     val mediaMimeType: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
 ) : ChatItem
 
 data class AgentChatItem(
@@ -31,6 +32,7 @@ data class AgentChatItem(
     val text: String,
     val streaming: Boolean = false,
     val filePreviews: List<FilePreview> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
 ) : ChatItem
 
 data class ActivityChatItem(

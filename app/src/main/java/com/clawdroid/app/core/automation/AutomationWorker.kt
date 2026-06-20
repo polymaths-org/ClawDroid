@@ -11,6 +11,7 @@ import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.core.service.EnhancedForegroundService
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import com.clawdroid.app.core.notifications.NotificationHelper
 import kotlinx.coroutines.flow.first
 import java.io.File
 
@@ -69,6 +70,35 @@ class AutomationWorker(
                                 prompt = prompt
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        if (AppConfigManager.proactiveAssistantEnabled) {
+            runCatching {
+                val now = System.currentTimeMillis()
+                val minGapMs = 6 * 60 * 60 * 1000L
+                if (now - AppConfigManager.proactiveLastPromptAt > minGapMs) {
+                    AppConfigManager.proactiveLastPromptAt = now
+                    val title = when (AppConfigManager.proactiveAssistantMode) {
+                        "email_triage" -> "Email triage"
+                        "work_prompt" -> "Need anything handled?"
+                        else -> "Daily brief"
+                    }
+                    val body = when (AppConfigManager.proactiveAssistantMode) {
+                        "email_triage" -> "Want me to check recent mail and ask before drafting replies?"
+                        "work_prompt" -> "Tell me what to work on, or tap to start voice chat."
+                        else -> "Want a quick plan from your calendar, reminders, and messages?"
+                    }
+                    if (AppConfigManager.proactiveDeliveryMode != "silent") {
+                        NotificationHelper.sendReminderNotification(
+                            context = applicationContext,
+                            reminderId = "proactive_$now",
+                            title = title,
+                            body = body,
+                            voiceMode = AppConfigManager.proactiveDeliveryMode == "voice",
+                        )
                     }
                 }
             }

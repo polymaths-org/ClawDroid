@@ -42,11 +42,13 @@ fun MarkdownText(
                 setLineSpacing(0f, 1.15f)
                 setTextColor(textColor)
                 setLinkTextColor(linkColor)
+                setTextIsSelectable(true)
             }
         },
         update = { textView ->
             textView.setTextColor(textColor)
             textView.setLinkTextColor(linkColor)
+            textView.setTextIsSelectable(true)
             markwon.setMarkdown(textView, markdown)
         },
     )

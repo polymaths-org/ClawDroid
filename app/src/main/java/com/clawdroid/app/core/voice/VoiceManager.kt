@@ -42,6 +42,7 @@ class VoiceManager(private val context: Context) {
     private var piperEngine: PiperEngine? = null
     private var activeVoice: String? = null
     private val pendingQueue = mutableListOf<Pair<String, (() -> Unit)?>>()
+    private val speechQueue = ArrayDeque<Pair<String, (() -> Unit)?>>()
 
     private fun getDesiredVoice(): String {
         return AppConfigManager.ttsVoice.takeIf { it.isNotBlank() }
@@ -203,12 +204,25 @@ class VoiceManager(private val context: Context) {
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         reconfigure()
-        val engine = activeEngine
-        if (engine == null || _state.value != State.Ready) {
-            pendingQueue.add(text to onDone)
+        val spokenText = TextCleaningUtils.fullyCleanForTts(text)
+        if (spokenText.isBlank()) {
+            onDone?.invoke()
             return
         }
-        doSpeak(text, engine, onDone)
+        val engine = activeEngine
+        if (engine == null || _state.value != State.Ready) {
+            pendingQueue.add(spokenText to onDone)
+            return
+        }
+        var queued = false
+        synchronized(speechQueue) {
+            if (_isSpeaking.value || speechQueue.isNotEmpty()) {
+                speechQueue.addLast(spokenText to onDone)
+                queued = true
+            }
+        }
+        if (queued) return
+        doSpeak(spokenText, engine, onDone)
     }
 
     fun speakThinkingPhrase() {
@@ -242,6 +256,7 @@ class VoiceManager(private val context: Context) {
 
     private fun doSpeak(text: String, engine: TtsEngine, onDone: (() -> Unit)?) {
         _isSpeaking.value = true
+        VoiceActivityGate.markAgentSpeechStarted()
         startAmplitudeAnimation()
         // Apply configured speed via AndroidTTS if applicable
         val speed = AppConfigManager.ttsSpeed
@@ -251,8 +266,18 @@ class VoiceManager(private val context: Context) {
         engine.speak(text) {
             stopAmplitudeAnimation()
             _isSpeaking.value = false
+            VoiceActivityGate.markAgentSpeechEnded()
             onDone?.invoke()
+            speakNextQueued()
         }
+    }
+
+    private fun speakNextQueued() {
+        val engine = activeEngine ?: return
+        val next = synchronized(speechQueue) {
+            if (speechQueue.isEmpty()) null else speechQueue.removeFirst()
+        } ?: return
+        doSpeak(next.first, engine, next.second)
     }
 
     private fun startAmplitudeAnimation() {
@@ -275,15 +300,18 @@ class VoiceManager(private val context: Context) {
     private fun drainQueue() {
         val queue = pendingQueue.toList()
         pendingQueue.clear()
-        val engine = activeEngine ?: return
         for ((text, callback) in queue) {
-            doSpeak(text, engine, callback)
+            speak(text, callback)
         }
     }
 
     fun stop() {
         stopAmplitudeAnimation()
         _isSpeaking.value = false
+        VoiceActivityGate.markAgentSpeechEnded()
+        synchronized(speechQueue) {
+            speechQueue.clear()
+        }
         activeEngine?.stop()
     }
 

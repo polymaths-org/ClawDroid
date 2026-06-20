@@ -61,15 +61,20 @@ class BackgroundAgent(private val context: Context) {
             HeartbeatManager.scheduleAll(context)
             Log.i(TAG, "Heartbeats scheduled")
 
-            // Connect channels
-            _status.value = "Connecting channels…"
-            val results = channelManager.connectAll()
+            // Connect channels only when the user has enabled at least one.
+            val enabledChannels = config.channels.filter { it.enabled }
+            _status.value = if (enabledChannels.isEmpty()) "Background agent ready" else "Connecting channels…"
+            val results = if (enabledChannels.isEmpty()) emptyMap() else channelManager.connectAll()
             val connected = results.filter { it.value.isSuccess }.keys
             val failed = results.filter { it.value.isFailure }.keys
             if (failed.isNotEmpty()) {
                 Log.w(TAG, "Channel connection failures: $failed")
             }
-            _status.value = if (connected.isNotEmpty()) "Connected: ${connected.joinToString(", ")}" else "No channels connected"
+            _status.value = when {
+                connected.isNotEmpty() -> "Connected: ${connected.joinToString(", ")}"
+                enabledChannels.isNotEmpty() -> "No enabled channels connected"
+                else -> "Background agent ready"
+            }
 
             // Listen for incoming messages from channels
             launch {
@@ -80,11 +85,13 @@ class BackgroundAgent(private val context: Context) {
                 }
             }
 
-            NotificationHelper.sendAgentNotification(
-                context,
-                "ClawDroid Agent Running",
-                "Channels: ${connected.joinToString(", ").ifEmpty { "none" }}",
-            )
+            if (connected.isNotEmpty()) {
+                NotificationHelper.sendAgentNotification(
+                    context,
+                    "ClawDroid Agent Running",
+                    "Channels: ${connected.joinToString(", ")}",
+                )
+            }
         }
     }
 

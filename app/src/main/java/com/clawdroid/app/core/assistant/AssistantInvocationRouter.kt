@@ -44,6 +44,15 @@ object AssistantInvocationRouter {
             "submit id=${invocation.id} mode=$mode source=${invocation.source} " +
                 "textLen=${userText.length} textPreview=${userText.take(80).replace('\n', ' ')}"
         )
+        val conversationId = invocation.conversationId ?: "assistant_${invocation.id}"
+        if (activeConversationId.value == conversationId) {
+            AgentRunManager.getActiveEngine(conversationId)?.let { engine ->
+                engine.steer(userText)
+                AssistantOverlayCoordinator.recordAction("Queued steering")
+                AssistantOverlayCoordinator.updateProgress(userText)
+                return
+            }
+        }
         val submittedInvocation = invocation.copy(
             mode = mode,
             userText = userText.ifBlank { invocation.userText },
@@ -244,6 +253,7 @@ object AssistantInvocationRouter {
             appendLine("Use the same Android control tools and workflow you normally use in the ClawDroid app.")
             appendLine("The floating ClawDroid widget stays visible while you work. It is your status UI, not the target app UI.")
             appendLine("If the widget appears in screen captures, ignore it and do not tap it unless the user asks.")
+            appendLine("A screenshot tool is available in this overlay when visual details are needed and screen capture permission is active.")
             appendLine("Current app package: $packageHint")
             appendLine("Current app activity: $activityHint")
             appendLine("If the user asks to send a specific message in the current chat, use send_message_in_current_chat first.")

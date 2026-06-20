@@ -29,6 +29,12 @@ class OutputBuffer(
         lines.joinToString("\n")
     }
 
+    suspend fun clear() = mutex.withLock {
+        lines.clear()
+        firstLines.clear()
+        omittedLines = 0
+    }
+
     suspend fun getRecentLines(count: Int): String = mutex.withLock {
         lines.takeLast(count).joinToString("\n")
     }

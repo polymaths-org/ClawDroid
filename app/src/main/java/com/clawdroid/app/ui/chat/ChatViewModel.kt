@@ -154,7 +154,7 @@ class ChatViewModel(
             val content = m.message.content
             val msgId = m.message.id
             if (role == "user") {
-                listOf(UserChatItem(id = msgId, text = content))
+                listOf(UserChatItem(id = msgId, text = content, createdAt = m.message.createdAt))
             } else {
                 val steps = m.toolCalls.map { t ->
                     ActivityStepItem(
@@ -177,6 +177,7 @@ class ChatViewModel(
                         id = msgId,
                         text = content,
                         streaming = false,
+                        createdAt = m.message.createdAt,
                     ),
                 )
             }

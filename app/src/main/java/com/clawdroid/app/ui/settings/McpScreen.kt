@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -29,6 +30,8 @@ import com.clawdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
@@ -60,6 +63,7 @@ fun McpScreen(
     var googleConnectorEnabled by remember { mutableStateOf(AppConfigManager.googleConnectorEnabled) }
     var googleGmailEnabled by remember { mutableStateOf(AppConfigManager.googleGmailEnabled) }
     var googleCalendarEnabled by remember { mutableStateOf(AppConfigManager.googleCalendarEnabled) }
+    var googleStatusMessage by remember { mutableStateOf("") }
 
     val googleSignInOptions = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -116,8 +120,17 @@ fun McpScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isGoogleConnected = GoogleAuthManager.isGoogleConnected
                 googleEmail = AppConfigManager.googleAccountEmail
+                if (GoogleAuthManager.isGoogleConnected) {
+                    scope.launch {
+                        val usable = GoogleAuthManager.validateConnection()
+                        isGoogleConnected = usable
+                        googleStatusMessage = if (usable) "" else GoogleAuthManager.lastError
+                    }
+                } else {
+                    isGoogleConnected = false
+                    googleStatusMessage = ""
+                }
                 isGithubConnected = com.clawdroid.app.core.service.GithubAuthManager.isConnected
                 isNotionConnected = com.clawdroid.app.core.service.NotionAuthManager.isConnected
                 isSpotifyConnected = com.clawdroid.app.core.service.SpotifyAuthManager.isConnected
@@ -130,9 +143,17 @@ fun McpScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (GoogleAuthManager.isGoogleConnected) {
+            val usable = GoogleAuthManager.validateConnection()
+            isGoogleConnected = usable
+            googleStatusMessage = if (usable) "" else GoogleAuthManager.lastError
+        }
         while (true) {
             kotlinx.coroutines.delay(5000)
-            isGoogleConnected = GoogleAuthManager.isGoogleConnected
+            if (!GoogleAuthManager.isGoogleConnected) {
+                isGoogleConnected = false
+                googleStatusMessage = ""
+            }
             googleEmail = AppConfigManager.googleAccountEmail
             isGithubConnected = com.clawdroid.app.core.service.GithubAuthManager.isConnected
             isNotionConnected = com.clawdroid.app.core.service.NotionAuthManager.isConnected
@@ -156,16 +177,20 @@ fun McpScreen(
                         isGoogleConnected = true
                         googleConnectorEnabled = true
                         AppConfigManager.googleConnectorEnabled = true
+                        googleStatusMessage = ""
                         Toast.makeText(context, "Google connected successfully!", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "OAuth exchange failed. Check client secret.", Toast.LENGTH_LONG).show()
+                        googleStatusMessage = GoogleAuthManager.lastError
+                        Toast.makeText(context, "Google error: ${GoogleAuthManager.lastError.ifBlank { "OAuth exchange failed." }}", Toast.LENGTH_LONG).show()
                     }
                 }
             } else {
-                Toast.makeText(context, "OAuth failed: No server authorization code received.", Toast.LENGTH_LONG).show()
+                googleStatusMessage = "Google did not return a server authorization code."
+                Toast.makeText(context, googleStatusMessage, Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            Toast.makeText(context, "Sign-in error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            googleStatusMessage = "Sign-in error: ${e.localizedMessage ?: "unknown error"}"
+            Toast.makeText(context, googleStatusMessage, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -270,6 +295,7 @@ fun McpScreen(
                     GoogleConnectorCard(
                         isConnected = isGoogleConnected,
                         email = googleEmail,
+                        statusMessage = googleStatusMessage,
                         connectorEnabled = googleConnectorEnabled,
                         gmailEnabled = googleGmailEnabled,
                         calendarEnabled = googleCalendarEnabled,
@@ -286,8 +312,24 @@ fun McpScreen(
                             googleCalendarEnabled = enabled
                         },
                         onConnect = {
-                            googleSignInClient.signOut().addOnCompleteListener {
-                                signInLauncher.launch(googleSignInClient.signInIntent)
+                            if (AppConfigManager.googleClientId.isBlank() || AppConfigManager.googleClientSecret.isBlank()) {
+                                googleStatusMessage = "Add Google Web OAuth client ID and secret first."
+                                Toast.makeText(context, googleStatusMessage, Toast.LENGTH_LONG).show()
+                            } else {
+                                val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                    .requestServerAuthCode(AppConfigManager.googleClientId, true)
+                                    .requestEmail()
+                                    .requestScopes(
+                                        Scope("https://www.googleapis.com/auth/gmail.modify"),
+                                        Scope("https://www.googleapis.com/auth/calendar"),
+                                        Scope("https://www.googleapis.com/auth/drive.file"),
+                                        Scope("https://www.googleapis.com/auth/documents")
+                                    )
+                                    .build()
+                                val signInClient = GoogleSignIn.getClient(context, signInOptions)
+                                signInClient.signOut().addOnCompleteListener {
+                                    signInLauncher.launch(signInClient.signInIntent)
+                                }
                             }
                         },
                         onDisconnect = {
@@ -295,6 +337,7 @@ fun McpScreen(
                             googleSignInClient.signOut()
                             isGoogleConnected = false
                             googleEmail = ""
+                            googleStatusMessage = ""
                             Toast.makeText(context, "Google Account Disconnected", Toast.LENGTH_SHORT).show()
                         }
                     )
@@ -375,6 +418,10 @@ fun McpScreen(
                     )
                 }
 
+                item {
+                    OAuthClientSecretsCard()
+                }
+
                 }
 
                 if (showServers) {
@@ -449,9 +496,139 @@ fun McpScreen(
 }
 
 @Composable
+private fun OAuthClientSecretsCard() {
+    val context = LocalContext.current
+    var googleClientId by remember { mutableStateOf(AppConfigManager.googleClientId) }
+    var googleSecret by remember { mutableStateOf(AppConfigManager.googleClientSecret) }
+    var githubSecret by remember { mutableStateOf(AppConfigManager.githubClientSecret) }
+    var notionSecret by remember { mutableStateOf(AppConfigManager.notionClientSecret) }
+    var spotifySecret by remember { mutableStateOf(AppConfigManager.spotifyClientSecret) }
+
+    val shape = RoundedCornerShape(18.dp)
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(EmberOrange.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = EmberOrange,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Client Secrets",
+                        color = SoftWhite,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "OAuth credentials for connected MCP services",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            SecretConfigField(
+                value = googleClientId,
+                onValueChange = { googleClientId = it },
+                label = "Google Web OAuth Client ID"
+            )
+            SecretConfigField(
+                value = googleSecret,
+                onValueChange = { googleSecret = it },
+                label = "Google Web OAuth Client Secret"
+            )
+            SecretConfigField(
+                value = githubSecret,
+                onValueChange = { githubSecret = it },
+                label = "GitHub Client Secret"
+            )
+            SecretConfigField(
+                value = notionSecret,
+                onValueChange = { notionSecret = it },
+                label = "Notion Client Secret"
+            )
+            SecretConfigField(
+                value = spotifySecret,
+                onValueChange = { spotifySecret = it },
+                label = "Spotify Client Secret"
+            )
+
+            Button(
+                onClick = {
+                    AppConfigManager.googleClientId = googleClientId.trim()
+                    AppConfigManager.googleClientSecret = googleSecret.trim()
+                    AppConfigManager.githubClientSecret = githubSecret.trim()
+                    AppConfigManager.notionClientSecret = notionSecret.trim()
+                    AppConfigManager.spotifyClientSecret = spotifySecret.trim()
+                    Toast.makeText(context, "MCP client secrets saved.", Toast.LENGTH_SHORT).show()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = EmberOrange),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Save,
+                    contentDescription = null,
+                    tint = DeepBlack,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Save Client Secrets",
+                    color = DeepBlack,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecretConfigField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        colors = mcpDialogColors(),
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+}
+
+@Composable
 private fun GoogleConnectorCard(
     isConnected: Boolean,
     email: String,
+    statusMessage: String,
     connectorEnabled: Boolean,
     gmailEnabled: Boolean,
     calendarEnabled: Boolean,
@@ -537,6 +714,32 @@ private fun GoogleConnectorCard(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+            }
+
+            if (statusMessage.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Red.copy(alpha = 0.10f))
+                        .border(1.dp, Color.Red.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ErrorOutline,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = statusMessage,
+                        color = Color.Red,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
 

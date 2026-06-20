@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.tools
 
 import android.content.Context
+import com.clawdroid.app.core.bootstrap.BootstrapManager
 import com.clawdroid.app.core.bootstrap.EnvironmentSetup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,6 +24,7 @@ object CommandTool {
         timeoutSeconds: Long = 30,
         onProgress: (suspend (String) -> Unit)? = null,
     ): CommandResult = withContext(Dispatchers.IO) {
+        BootstrapManager.ensureBootstrapped(context) { }
         val env = EnvironmentSetup.build(context)
         val workingDirectory = cwd
             ?.takeIf { it.isNotBlank() }
