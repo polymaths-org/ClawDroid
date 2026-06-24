@@ -72,7 +72,10 @@ import kotlin.time.Duration.Companion.hours
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen(onBack: () -> Unit) {
+fun TerminalScreen(
+    onBack: () -> Unit,
+    onNavigateToSelfManage: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -239,6 +242,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                 onCommand = { submitCommand(it) },
                 onCtrlC = { sendRaw("[CTRL+C]") },
                 onCtrlD = { sendRaw("[CTRL+D]") },
+                onSelfManagement = onNavigateToSelfManage,
             )
 
             Row(
@@ -320,6 +324,7 @@ private fun QuickCommandRow(
     onCommand: (String) -> Unit,
     onCtrlC: () -> Unit,
     onCtrlD: () -> Unit,
+    onSelfManagement: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -333,6 +338,7 @@ private fun QuickCommandRow(
         }
         TerminalChip(label = "Ctrl+C", danger = true, onClick = onCtrlC)
         TerminalChip(label = "Ctrl+D", danger = false, onClick = onCtrlD)
+        TerminalChip(label = "Self-management", onClick = onSelfManagement)
     }
 }
 

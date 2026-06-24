@@ -35,6 +35,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.interpole.DesktopEnvironment
+import com.clawdroid.app.core.interpole.InterpoleConfig
+import com.clawdroid.app.core.interpole.InterpoleConfigRepository
 import com.clawdroid.app.core.service.GoogleAuthManager
 import com.clawdroid.app.ui.theme.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -56,6 +59,8 @@ fun McpScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val interpoleRepository = remember { InterpoleConfigRepository(context) }
+    var interpoleConfig by remember { mutableStateOf(interpoleRepository.getConfig()) }
 
     // Google Sign-In config & launcher
     var isGoogleConnected by remember { mutableStateOf(GoogleAuthManager.isGoogleConnected) }
@@ -289,6 +294,17 @@ fun McpScreen(
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                         )
                     }
+
+                item {
+                    InterpoleSettingsCard(
+                        config = interpoleConfig,
+                        onConfigChange = { updated ->
+                            interpoleRepository.saveConfig(updated)
+                            interpoleConfig = interpoleRepository.getConfig()
+                            Toast.makeText(context, "INTERPOLE settings saved", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                }
 
                 // Google Connector Card
                 item {
@@ -1405,6 +1421,185 @@ private fun addServerToConfig(configJson: String, newServer: McpServerItem): Str
     }
     mcp.put(newServer.name, serverObj)
     return root.toString(2)
+}
+
+@Composable
+private fun InterpoleSettingsCard(
+    config: InterpoleConfig,
+    onConfigChange: (InterpoleConfig) -> Unit,
+) {
+    var enabled by remember(config) { mutableStateOf(config.enabled) }
+    var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
+    var tailscaleIp by remember(config) { mutableStateOf(config.tailscaleIp) }
+    var desktopEnv by remember(config) { mutableStateOf(config.desktopEnv) }
+    var fileTransferPort by remember(config) { mutableStateOf(config.fileTransferPort.toString()) }
+    var downloadPath by remember(config) { mutableStateOf(config.downloadPath) }
+    var autoStartFileServer by remember(config) { mutableStateOf(config.autoStartFileServer) }
+    var allowExecute by remember(config) { mutableStateOf(config.allowExecute) }
+    var commandTimeout by remember(config) { mutableStateOf(config.commandTimeout.toString()) }
+    val shape = RoundedCornerShape(18.dp)
+
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "INTERPOLE Desktop",
+                        color = SoftWhite,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Text(
+                        text = if (config.deviceId.isBlank()) "Not paired" else "Paired device ${config.deviceId.takeLast(6)}",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { enabled = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = EmberOrange,
+                        checkedTrackColor = EmberOrange.copy(alpha = 0.35f),
+                        uncheckedThumbColor = MutedGray,
+                        uncheckedTrackColor = Color.DarkGray,
+                    ),
+                )
+            }
+
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                label = { Text("RPC Base URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = tailscaleIp,
+                onValueChange = { tailscaleIp = it },
+                label = { Text("Tailscale IP / MagicDNS") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Text("Desktop Environment", color = EmberOrange, fontWeight = FontWeight.SemiBold)
+            DesktopEnvironment.entries.forEach { env ->
+                val envToolchain = InterpoleConfigRepository.getToolchain(env)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { desktopEnv = env }
+                        .background(if (desktopEnv == env) EmberOrange.copy(alpha = 0.12f) else GlassFill)
+                        .border(1.dp, if (desktopEnv == env) EmberOrange.copy(alpha = 0.55f) else GlassBorderDim, RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = if (desktopEnv == env) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (desktopEnv == env) EmberOrange else MutedGray,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(env.label, color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${envToolchain.waylandType} · ${envToolchain.terminalEmulator}",
+                            color = MutedGray,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = fileTransferPort,
+                    onValueChange = { fileTransferPort = it.filter(Char::isDigit) },
+                    label = { Text("File port") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = commandTimeout,
+                    onValueChange = { commandTimeout = it.filter(Char::isDigit) },
+                    label = { Text("Timeout") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            OutlinedTextField(
+                value = downloadPath,
+                onValueChange = { downloadPath = it },
+                label = { Text("Download path") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ConfigSwitchRow("Auto-start file server", autoStartFileServer) { autoStartFileServer = it }
+            ConfigSwitchRow("Allow execute", allowExecute) { allowExecute = it }
+
+            Button(
+                onClick = {
+                    onConfigChange(
+                        config.copy(
+                            enabled = enabled,
+                            baseUrl = baseUrl.trim().trimEnd('/'),
+                            desktopEnv = desktopEnv,
+                            fileTransferPort = fileTransferPort.toIntOrNull()?.coerceIn(1024, 65535) ?: config.fileTransferPort,
+                            downloadPath = downloadPath.trim().ifBlank { config.downloadPath },
+                            autoStartFileServer = autoStartFileServer,
+                            tailscaleIp = tailscaleIp.trim(),
+                            allowExecute = allowExecute,
+                            commandTimeout = commandTimeout.toIntOrNull()?.coerceIn(1, 3600) ?: config.commandTimeout,
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = EmberOrange),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save INTERPOLE Settings", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfigSwitchRow(
+    title: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = SoftWhite, fontWeight = FontWeight.SemiBold)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = EmberOrange,
+                checkedTrackColor = EmberOrange.copy(alpha = 0.35f),
+                uncheckedThumbColor = MutedGray,
+                uncheckedTrackColor = Color.DarkGray,
+            ),
+        )
+    }
 }
 
 @Composable

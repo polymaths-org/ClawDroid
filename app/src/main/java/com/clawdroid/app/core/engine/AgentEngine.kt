@@ -51,7 +51,7 @@ class AgentEngine(
 
     init {
         // Load persistent memory into the message builder on engine creation
-        val memory = memoryManager.readMemory()
+        val memory = memoryManager.getRelevantContext("")
         MessageBuilder.setMemoryContext(memory)
     }
 
@@ -154,6 +154,7 @@ class AgentEngine(
         hidePromptInChat: Boolean = false,
     ): Flow<AgentRunEvent> = channelFlow {
         stopRequested.set(false)
+        MessageBuilder.setMemoryContext(memoryManager.getRelevantContext(prompt))
         Log.i("AgentEngine", "runInternal started assistant=$isAssistantMode promptLen=${prompt.length} targetConversationId=$targetConversationId mediaPath=$mediaPath mediaMimeType=$mediaMimeType")
         val result = BootstrapManager.ensureBootstrapped(context) { }
         Log.i("AgentEngine", "ensureBootstrapped completed. Result: $result")
@@ -426,7 +427,7 @@ class AgentEngine(
         val summary = "Completed task. Summary: $preview"
         memoryManager.appendSessionSummary(summary)
         // Reload memory context for next run
-        MessageBuilder.setMemoryContext(memoryManager.readMemory())
+        MessageBuilder.setMemoryContext(memoryManager.getRelevantContext(text))
     }
 
     private fun String.toUserFacingStreamError(mediaPath: String?): String {

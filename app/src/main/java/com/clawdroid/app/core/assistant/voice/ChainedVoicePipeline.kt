@@ -5,11 +5,9 @@ import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.assistant.AssistantInvocationSource
 import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
+import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import java.util.UUID
 
 class ChainedVoicePipeline(
@@ -17,10 +15,8 @@ class ChainedVoicePipeline(
     private val voiceManager: VoiceManager = VoiceManager(context),
     private val recognizerClient: SpeechRecognizerClient = SpeechRecognizerClient(context)
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
     fun startSession() {
-        voiceManager.speak("How can I help you?") {
+        val startListening = {
             recognizerClient.startListening(
                 onResult = { text ->
                     if (text.isNotBlank()) {
@@ -43,6 +39,11 @@ class ChainedVoicePipeline(
                     voiceManager.speak("Sorry, I didn't catch that.")
                 }
             )
+        }
+        if (AppConfigManager.voiceLaunchGreetingEnabled) {
+            voiceManager.speak("How can I help you?") { startListening() }
+        } else {
+            startListening()
         }
     }
 

@@ -156,9 +156,9 @@ fun ClawPanel(
         )
         ClawSkin.LiquidGlass -> Brush.verticalGradient(
             listOf(
-                colors.surfaceContainerLowest.copy(alpha = 0.76f + emphasis * 0.10f),
-                colors.surface.copy(alpha = 0.46f + emphasis * 0.12f),
-                colors.surfaceContainerHigh.copy(alpha = 0.34f + emphasis * 0.10f),
+                colors.surfaceContainerLowest.copy(alpha = 0.86f + emphasis * 0.08f),
+                colors.surface.copy(alpha = 0.68f + emphasis * 0.10f),
+                colors.surfaceContainerHigh.copy(alpha = 0.54f + emphasis * 0.10f),
             ),
         )
         ClawSkin.Cyberpunk -> Brush.linearGradient(
