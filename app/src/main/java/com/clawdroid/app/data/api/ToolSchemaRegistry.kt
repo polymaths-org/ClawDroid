@@ -223,6 +223,7 @@ object ToolSchemaRegistry {
         array.put(tool("send_notification", "Send a concise user notification.") {
             putString("title", "Notification title.")
             putString("body", "Notification body.")
+            putString("trigger_action", "Optional action string to feed back to the agent when the notification is tapped.")
             required("title", "body")
         })
         array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
@@ -242,6 +243,110 @@ object ToolSchemaRegistry {
         array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
             putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
             required("reminder_id")
+        })
+        array.put(tool("memory_read", "Read relevant layered memory and skill index context for a task.") {
+            putString("query", "Task, keyword, or topic to retrieve memory for.")
+            required("query")
+        })
+        array.put(tool("memory_write", "Save durable facts, preferences, changes, app access notes, or heartbeat notes to long-term memory.") {
+            putString("section", "Target section: memory, user, changes, access, heartbeats, or skills.")
+            putString("content", "Markdown content to append.")
+            required("section", "content")
+        })
+        array.put(tool("agent_ask", "Proactively ask the user a question via overlay/notification.") {
+            putString("question", "Question to ask the user.")
+            putString("context", "What triggered the question.")
+            putArray("suggested_actions", "Suggested action labels.")
+            putInteger("priority", "Priority 1-10. Default 5.")
+            putInteger("expires_at", "Optional Unix timestamp in milliseconds after which this question expires.")
+            required("question", "context")
+        })
+        array.put(tool("agent_answer", "Mark a pending proactive question as answered after the user responds.") {
+            putString("question_id", "Question id, usually from answer_question:<id> notification context.")
+            putString("answer", "The user's answer or decision.")
+            required("question_id", "answer")
+        })
+        array.put(tool("self_manage_add_alarm", "Add an alarm to the Self Manage system.") {
+            putString("label", "Alarm label.")
+            putInteger("hour", "Hour, 0-23.")
+            putInteger("minute", "Minute, 0-59.")
+            putArray("days_of_week", "Optional ISO day numbers 1-7. Empty means one-time.")
+            putBoolean("enabled", "Whether alarm is enabled. Default true.")
+            required("label", "hour", "minute")
+        })
+        array.put(tool("self_manage_add_reminder", "Add a reminder to the Self Manage system.") {
+            putString("title", "Reminder title.")
+            putString("description", "Optional details.")
+            putInteger("due_at", "Due timestamp in milliseconds since epoch.")
+            putInteger("priority", "Priority 1-10.")
+            putBoolean("recurring", "Whether reminder repeats.")
+            putInteger("interval_minutes", "Repeat interval in minutes.")
+            putString("category", "Category, e.g. work, personal, health.")
+            putString("created_by", "user or agent. Default agent.")
+            required("title", "due_at")
+        })
+        array.put(tool("self_manage_add_todo", "Add a todo to the Self Manage system.") {
+            putString("title", "Todo title.")
+            putString("description", "Optional details.")
+            putInteger("due_at", "Optional due timestamp in milliseconds since epoch.")
+            putInteger("priority", "Priority 1-10.")
+            putArray("tags", "Optional string tags.")
+            putString("created_by", "user or agent. Default agent.")
+            required("title")
+        })
+        array.put(tool("self_manage_list", "List alarms, reminders, and todos.") {
+            required()
+        })
+        array.put(tool("self_manage_complete_reminder", "Mark a reminder complete.") {
+            putString("id", "Reminder id.")
+            required("id")
+        })
+        array.put(tool("self_manage_complete_todo", "Mark a todo complete.") {
+            putString("id", "Todo id.")
+            required("id")
+        })
+        array.put(tool("interpole_terminal_create", "Create a persistent tmux-backed terminal UI session on the paired INTERPOLE desktop.") {
+            putString("name", "Short session name, for example lazygit or nvim-main.")
+            putString("cwd", "Desktop working directory, for example /home/paris/project.")
+            putString("command", "Optional command to start inside the terminal, for example nvim main.py.")
+            putString("shell", "Shell to start when command is omitted. Default /bin/bash.")
+            putInteger("cols", "Terminal columns. Default 120.")
+            putInteger("rows", "Terminal rows. Default 40.")
+            required("name")
+        })
+        array.put(tool("interpole_terminal_send", "Send text or special key tokens to an INTERPOLE terminal session. Supports [ENTER], [TAB], arrows, [CTRL+C], [CTRL+D], [ESC].") {
+            putString("name", "Terminal session name.")
+            putString("keys", "Keys to send. Use enter=false for single TUI navigation keys like j, k, q.")
+            putBoolean("enter", "Whether to append Enter after sending keys. Default true.")
+            required("name", "keys")
+        })
+        array.put(tool("interpole_terminal_read", "Read recent visible output from an INTERPOLE terminal session.") {
+            putString("name", "Terminal session name.")
+            putInteger("lines", "How many recent lines to capture. Default 100.")
+            required("name")
+        })
+        array.put(tool("interpole_terminal_resize", "Resize an INTERPOLE terminal session.") {
+            putString("name", "Terminal session name.")
+            putInteger("cols", "Terminal columns.")
+            putInteger("rows", "Terminal rows.")
+            required("name", "cols", "rows")
+        })
+        array.put(tool("interpole_terminal_list", "List active tmux terminal sessions on the paired INTERPOLE desktop.") {
+            required()
+        })
+        array.put(tool("interpole_terminal_kill", "Kill an INTERPOLE terminal session and its running TUI program.") {
+            putString("name", "Terminal session name.")
+            required("name")
+        })
+        array.put(tool("interpole_transfer_push", "Upload a local Android/sandbox file to the paired INTERPOLE desktop file server.") {
+            putString("local_path", "Local file path on Android/sandbox.")
+            putString("desktop_path", "Destination path under the desktop download_path.")
+            required("local_path", "desktop_path")
+        })
+        array.put(tool("interpole_transfer_pull", "Download a file from the paired INTERPOLE desktop file server to Android/sandbox.") {
+            putString("desktop_path", "Desktop source path under download_path.")
+            putString("local_path", "Local destination path on Android/sandbox.")
+            required("desktop_path", "local_path")
         })
 
         val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&

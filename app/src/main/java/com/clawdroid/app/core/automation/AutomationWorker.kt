@@ -7,6 +7,7 @@ import com.clawdroid.app.data.db.ClawDroidDatabase
 
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.BackgroundAgentRunner
+import com.clawdroid.app.core.selfmanage.TriggerEngine
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.core.service.EnhancedForegroundService
 import android.content.Intent
@@ -102,6 +103,10 @@ class AutomationWorker(
                     }
                 }
             }
+        }
+
+        runCatching {
+            TriggerEngine(applicationContext).evaluateTriggers()
         }
 
         return Result.success()

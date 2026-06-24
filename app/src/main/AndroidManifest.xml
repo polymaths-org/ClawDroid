@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_SMS" />
@@ -127,6 +129,34 @@
             android:name=".core.reminders.ReminderReceiver"
             android:enabled="true"
             android:exported="false" />
+
+        <receiver
+            android:name=".core.selfmanage.SelfManageAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.clawdroid.action.SELF_MANAGE_TRIGGER" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".core.notifications.AgentNotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.clawdroid.action.AGENT_TRIGGER" />
+                <action android:name="com.clawdroid.action.SNOOZE" />
+                <action android:name="com.clawdroid.action.SHOW_SNOOZED_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name=".core.selfmanage.SelfManageAlarmActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.ClawDroid"
+            android:turnScreenOn="true" />
 
         <activity
             android:name=".MainActivity"
