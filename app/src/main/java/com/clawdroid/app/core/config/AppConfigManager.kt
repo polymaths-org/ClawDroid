@@ -117,6 +117,12 @@ object AppConfigManager {
         get() = p.getString(KEY_REALTIME_VOICE_VOICE, "marin") ?: "marin"
         set(value) = p.edit().putString(KEY_REALTIME_VOICE_VOICE, value).apply()
 
+    const val KEY_VOICE_LAUNCH_GREETING_ENABLED = "voice_launch_greeting_enabled"
+
+    var voiceLaunchGreetingEnabled: Boolean
+        get() = p.getBoolean(KEY_VOICE_LAUNCH_GREETING_ENABLED, true)
+        set(value) = p.edit().putBoolean(KEY_VOICE_LAUNCH_GREETING_ENABLED, value).apply()
+
     // Cloud TTS API keys
     const val KEY_OPENAI_TTS_API_KEY = "openai_tts_api_key"
     const val KEY_OPENAI_REALTIME_API_KEY = "openai_realtime_api_key"
@@ -632,11 +638,15 @@ object AppConfigManager {
     const val KEY_MCP_SERVERS_CONFIG = "mcp_servers_config"
 
     var googleClientId: String
-        get() = p.getString(KEY_GOOGLE_CLIENT_ID, "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com") ?: "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com"
+        get() = p.getString(KEY_GOOGLE_CLIENT_ID, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: BuildConfig.GOOGLE_OAUTH_CLIENT_ID
         set(value) = p.edit().putString(KEY_GOOGLE_CLIENT_ID, value).apply()
 
     var googleClientSecret: String
-        get() = p.getString(KEY_GOOGLE_CLIENT_SECRET, "") ?: ""
+        get() = p.getString(KEY_GOOGLE_CLIENT_SECRET, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: BuildConfig.GOOGLE_OAUTH_CLIENT_SECRET
         set(value) = p.edit().putString(KEY_GOOGLE_CLIENT_SECRET, value).apply()
 
     var googleRefreshToken: String
