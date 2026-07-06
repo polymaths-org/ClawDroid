@@ -48,6 +48,16 @@ android {
         val spotifyClientId = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_ID") ?: ""
         val spotifyClientSecret = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_SECRET") ?: ""
 
+        // Google OAuth (server-auth-code flow). The WEB client carries the secret used for
+        // token exchange; the Android client authenticates on-device via package + SHA-1.
+        // Prefer local.properties/.env overrides, then fall back to the web client JSON in root.
+        val googleClientId = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID")
+            ?: readGoogleWebCredential("client_id")
+            ?: "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com"
+        val googleClientSecret = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_SECRET")
+            ?: readGoogleWebCredential("client_secret")
+            ?: ""
+
         buildConfigField("String", "LLM_BASE_URL", llmBaseUrl.asBuildConfigString())
         buildConfigField("String", "LLM_MODEL", llmModel.asBuildConfigString())
         buildConfigField("String", "LLM_API_KEY", llmApiKey.asBuildConfigString())
@@ -61,6 +71,8 @@ android {
         buildConfigField("String", "NOTION_OAUTH_CLIENT_SECRET", notionClientSecret.asBuildConfigString())
         buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_ID", spotifyClientId.asBuildConfigString())
         buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_SECRET", spotifyClientSecret.asBuildConfigString())
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", googleClientId.asBuildConfigString())
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_SECRET", googleClientSecret.asBuildConfigString())
     }
 
     buildFeatures {
@@ -75,6 +87,19 @@ android {
 }
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+fun readGoogleWebCredential(key: String): String? {
+    return try {
+        val webJson = rootProject.projectDir.listFiles()
+            ?.firstOrNull { it.isFile && it.name.startsWith("client_secret_") && it.name.contains("-niqg2") && it.name.endsWith(".json") }
+        if (webJson != null && webJson.exists()) {
+            val parsed = groovy.json.JsonSlurper().parse(webJson) as Map<*, *>
+            (parsed["web"] as? Map<*, *>)?.get(key) as? String
+        } else null
+    } catch (e: Exception) {
+        null
+    }
+}
 
 kotlin {
     compilerOptions {
