@@ -16,6 +16,7 @@ release/*.sha256
 signing/
 *.jks
 *.keystore
+client_secret_*.json
 
 .idea/
 *.iml
