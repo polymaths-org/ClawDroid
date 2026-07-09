@@ -1,11 +1,13 @@
 package com.clawdroid.app.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import com.clawdroid.app.core.config.AppConfigManager
 
@@ -34,6 +36,64 @@ private val ObsidianAstraColors = darkColorScheme(
     outline = ObsidianOutline,
     outlineVariant = ObsidianOutlineVariant,
     error = AstraError,
+)
+
+private val ClawMagicDarkColors = darkColorScheme(
+    primary = Color(0xFF44D8F1),
+    onPrimary = Color(0xFF00363E),
+    primaryContainer = Color(0xFF00BCD4),
+    onPrimaryContainer = Color(0xFF004650),
+    secondary = Color(0xFFCDBDFF),
+    onSecondary = Color(0xFF370096),
+    secondaryContainer = Color(0xFF5203D5),
+    onSecondaryContainer = Color(0xFFC0ACFF),
+    tertiary = Color(0xFFFFB87B),
+    onTertiary = Color(0xFF4C2700),
+    tertiaryContainer = Color(0xFFF19640),
+    onTertiaryContainer = Color(0xFF633400),
+    background = Color(0xFF090909),
+    onBackground = Color(0xFFDDE3E5),
+    surface = Color(0xFF0E1416),
+    onSurface = Color(0xFFDDE3E5),
+    surfaceVariant = Color(0xFF2F3637),
+    onSurfaceVariant = Color(0xFFBBC9CC),
+    surfaceContainerLowest = Color(0xFF090F11),
+    surfaceContainerLow = Color(0xFF161D1E),
+    surfaceContainer = Color(0xFF1A2122),
+    surfaceContainerHigh = Color(0xFF252B2C),
+    surfaceContainerHighest = Color(0xFF2F3637),
+    outline = Color(0xFF869396),
+    outlineVariant = Color(0xFF3C494C),
+    error = Color(0xFFFFB4AB),
+)
+
+private val ClawMagicLightColors = lightColorScheme(
+    primary = Color(0xFF2D5F93),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD2E7FF),
+    onPrimaryContainer = Color(0xFF001D35),
+    secondary = Color(0xFF5C5F68),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE1E2EC),
+    onSecondaryContainer = Color(0xFF191B22),
+    tertiary = Color(0xFF785900),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFDEA1),
+    onTertiaryContainer = Color(0xFF261900),
+    background = Color(0xFFF8F9FF),
+    onBackground = Color(0xFF191B20),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF191B20),
+    surfaceVariant = Color(0xFFE1E3EA),
+    onSurfaceVariant = Color(0xFF454850),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF1F3F9),
+    surfaceContainer = Color(0xFFECEEF5),
+    surfaceContainerHigh = Color(0xFFE5E8EF),
+    surfaceContainerHighest = Color(0xFFDEE2EA),
+    outline = Color(0xFF757983),
+    outlineVariant = Color(0xFFC5C7D0),
+    error = Color(0xFFBA1A1A),
 )
 
 private val ClawLightColors = lightColorScheme(
@@ -140,17 +200,114 @@ private val LiquidGlassDarkColors = darkColorScheme(
     error = Color(0xFFFF453A),
 )
 
+private val CyberpunkColors = darkColorScheme(
+    primary = Color(0xFF18E6FF),
+    onPrimary = Color(0xFF001F27),
+    primaryContainer = Color(0xFF083B4D),
+    onPrimaryContainer = Color(0xFFD6FAFF),
+    secondary = Color(0xFFFF4FDB),
+    onSecondary = Color(0xFF3D0031),
+    secondaryContainer = Color(0xFF5D174F),
+    onSecondaryContainer = Color(0xFFFFD7F5),
+    tertiary = Color(0xFFFFD166),
+    onTertiary = Color(0xFF2F2300),
+    tertiaryContainer = Color(0xFF4C3A08),
+    onTertiaryContainer = Color(0xFFFFE8A6),
+    background = Color(0xFF04010A),
+    onBackground = Color(0xFFF9F4FF),
+    surface = Color(0xFF090512),
+    onSurface = Color(0xFFF9F4FF),
+    surfaceVariant = Color(0xFF211228),
+    onSurfaceVariant = Color(0xFFDCCEE5),
+    surfaceContainerLowest = Color(0xFF020005),
+    surfaceContainerLow = Color(0xFF0B0613),
+    surfaceContainer = Color(0xFF120A1D),
+    surfaceContainerHigh = Color(0xFF1C1028),
+    surfaceContainerHighest = Color(0xFF271536),
+    outline = Color(0xFFB389C0),
+    outlineVariant = Color(0xFF553164),
+    error = Color(0xFFFF5C7A),
+)
+
+private val JarvisColors = darkColorScheme(
+    primary = Color(0xFF23E7FF),
+    onPrimary = Color(0xFF00262D),
+    primaryContainer = Color(0xFF063F4A),
+    onPrimaryContainer = Color(0xFFCCFAFF),
+    secondary = Color(0xFF8BD7E6),
+    onSecondary = Color(0xFF08262C),
+    secondaryContainer = Color(0xFF173D46),
+    onSecondaryContainer = Color(0xFFD8F7FF),
+    tertiary = Color(0xFFFFC857),
+    onTertiary = Color(0xFF302300),
+    tertiaryContainer = Color(0xFF493700),
+    onTertiaryContainer = Color(0xFFFFE6A3),
+    background = Color(0xFF01080B),
+    onBackground = Color(0xFFE8FBFF),
+    surface = Color(0xFF041015),
+    onSurface = Color(0xFFE8FBFF),
+    surfaceVariant = Color(0xFF12272E),
+    onSurfaceVariant = Color(0xFFC7E7EF),
+    surfaceContainerLowest = Color(0xFF000405),
+    surfaceContainerLow = Color(0xFF061419),
+    surfaceContainer = Color(0xFF0A1C22),
+    surfaceContainerHigh = Color(0xFF102830),
+    surfaceContainerHighest = Color(0xFF17343D),
+    outline = Color(0xFF7BB8C3),
+    outlineVariant = Color(0xFF25525C),
+    error = Color(0xFFFFB4AB),
+)
+
 @Composable
 fun ClawDroidTheme(
     content: @Composable () -> Unit,
 ) {
     val themeKey by AppConfigManager.appThemeFlow.collectAsState()
+    val context = LocalContext.current
+    val dynamicColorsAvailable = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+    val dynamicClawMagicColors = if (dynamicColorsAvailable) {
+        dynamicDarkColorScheme(context)
+    } else {
+        ClawMagicDarkColors
+    }
     val colorScheme = when (themeKey) {
+        "claw_magic" -> dynamicClawMagicColors.copy(
+            background = ClawMagicDarkColors.background,
+            onBackground = ClawMagicDarkColors.onBackground,
+            surface = ClawMagicDarkColors.surface,
+            onSurface = ClawMagicDarkColors.onSurface,
+            surfaceVariant = ClawMagicDarkColors.surfaceVariant,
+            onSurfaceVariant = ClawMagicDarkColors.onSurfaceVariant,
+            surfaceContainerLowest = ClawMagicDarkColors.surfaceContainerLowest,
+            surfaceContainerLow = ClawMagicDarkColors.surfaceContainerLow,
+            surfaceContainer = ClawMagicDarkColors.surfaceContainer,
+            surfaceContainerHigh = ClawMagicDarkColors.surfaceContainerHigh,
+            surfaceContainerHighest = ClawMagicDarkColors.surfaceContainerHighest,
+            outline = ClawMagicDarkColors.outline,
+            outlineVariant = ClawMagicDarkColors.outlineVariant,
+        )
         "light" -> ClawLightColors
         "minimalist" -> MinimalistColors
         "liquid_glass_light" -> LiquidGlassLightColors
         "liquid_glass_dark" -> LiquidGlassDarkColors
-        else -> ObsidianAstraColors
+        "cyberpunk" -> CyberpunkColors
+        "jarvis" -> JarvisColors
+        "dark" -> ObsidianAstraColors
+        else -> dynamicClawMagicColors.copy(
+            background = ClawMagicDarkColors.background,
+            onBackground = ClawMagicDarkColors.onBackground,
+            surface = ClawMagicDarkColors.surface,
+            onSurface = ClawMagicDarkColors.onSurface,
+            surfaceVariant = ClawMagicDarkColors.surfaceVariant,
+            onSurfaceVariant = ClawMagicDarkColors.onSurfaceVariant,
+            surfaceContainerLowest = ClawMagicDarkColors.surfaceContainerLowest,
+            surfaceContainerLow = ClawMagicDarkColors.surfaceContainerLow,
+            surfaceContainer = ClawMagicDarkColors.surfaceContainer,
+            surfaceContainerHigh = ClawMagicDarkColors.surfaceContainerHigh,
+            surfaceContainerHighest = ClawMagicDarkColors.surfaceContainerHighest,
+            outline = ClawMagicDarkColors.outline,
+            outlineVariant = ClawMagicDarkColors.outlineVariant,
+        )
     }
 
     MaterialTheme(

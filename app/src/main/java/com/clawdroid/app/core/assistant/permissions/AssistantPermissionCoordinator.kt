@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -153,7 +154,7 @@ object AssistantPermissionCoordinator {
                     PermissionBlockedResult(
                         capability = capability,
                         title = "Screen Capture Required",
-                        message = "I can read some UI text, but visual screenshot access is off. Enable screen capture for visual questions.",
+                        message = "Screenshot access is off. Open Settings > Permissions and tap Screen Capture to approve Android's screen-share prompt.",
                         recoveryAction = PermissionRecoveryAction.REQUEST_MEDIA_PROJECTION
                     )
                 } else null
@@ -228,6 +229,10 @@ object AssistantPermissionCoordinator {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                 } else null
+            }
+            PermissionRecoveryAction.REQUEST_MEDIA_PROJECTION -> {
+                val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+                manager?.createScreenCaptureIntent()
             }
             PermissionRecoveryAction.OPEN_APP_SETTINGS -> {
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {

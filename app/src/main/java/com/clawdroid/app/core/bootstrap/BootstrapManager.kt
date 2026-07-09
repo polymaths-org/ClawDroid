@@ -5,6 +5,8 @@ import android.system.Os
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -27,11 +29,12 @@ object BootstrapManager {
     private const val BOOTSTRAP_URL =
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-aarch64.zip"
     private const val TERMUX_PREFIX = "/data/data/com.termux/files/usr"
+    private val bootstrapMutex = Mutex()
 
     suspend fun ensureBootstrapped(
         context: Context,
         onProgress: (BootstrapProgress) -> Unit,
-    ): BootstrapResult = withContext(Dispatchers.IO) {
+    ): BootstrapResult = bootstrapMutex.withLock { withContext(Dispatchers.IO) {
         val env = EnvironmentSetup.build(context)
         createBaseDirectories(context, env)
         runCatching { SharedFolderManager.ensureSharedFolders() }
@@ -39,6 +42,13 @@ object BootstrapManager {
 
         val bash = File(env.prefix, "bin/bash")
         if (bash.exists()) {
+            if (!bash.canExecute()) {
+                Log.w(TAG, "bash exists but not executable — reapplying permissions")
+                applyPermissions(env.prefix)
+                if (!bash.canExecute()) {
+                    error("bash at ${bash.absolutePath} still not executable after permission fix")
+                }
+            }
             return@withContext BootstrapResult(
                 prefixDir = env.prefix.absolutePath,
                 homeDir = env.home.absolutePath,
@@ -81,7 +91,7 @@ object BootstrapManager {
             homeDir = env.home.absolutePath,
             bashOutput = output,
         )
-    }
+    } }
 
     private fun createBaseDirectories(context: Context, env: LinuxEnvironment) {
         listOf(
@@ -284,7 +294,13 @@ object BootstrapManager {
             dir.walkTopDown()
                 .filter { it.isFile }
                 .forEach { file ->
-                    val bytes = runCatching { file.inputStream().use { it.readNBytes(128) } }
+                    val bytes = runCatching {
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(128)
+                            val read = input.read(buffer)
+                            if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+                        }
+                    }
                         .getOrNull()
                         ?: return@forEach
                     val header = bytes.toString(Charsets.UTF_8)
@@ -301,12 +317,17 @@ object BootstrapManager {
         prefix.walkTopDown().forEach { file ->
             runCatching {
                 if (file.isDirectory) {
-                    Os.chmod(file.absolutePath, 0b111_000_000)
+                    file.setExecutable(true, true)
+                    file.setReadable(true, true)
+                    file.setWritable(true, true)
                 } else {
-                    Os.chmod(file.absolutePath, 0b111_000_000)
+                    file.setExecutable(true, true)
+                    file.setReadable(true, true)
+                    file.setWritable(true, true)
                 }
+                Os.chmod(file.absolutePath, if (file.isDirectory) 0b111_000_000 else 0b111_000_000)
             }.onFailure {
-                Log.w(TAG, "Unable to chmod ${file.absolutePath}", it)
+                Log.w(TAG, "Unable to set permissions on ${file.absolutePath}", it)
             }
         }
     }

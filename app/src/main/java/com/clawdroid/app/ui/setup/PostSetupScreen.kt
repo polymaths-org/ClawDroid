@@ -20,11 +20,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -45,11 +47,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.data.api.ChatMessage
+import com.clawdroid.app.data.api.LlmApiClient
+import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.ui.components.StaggeredWordsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.time.LocalTime
@@ -57,7 +64,10 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun PostSetupScreen(onComplete: () -> Unit) {
+fun PostSetupScreen(
+    onComplete: () -> Unit,
+    onOpenProviderSettings: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val agentName = AppConfigManager.agentName.ifBlank { "ClawDroid" }
@@ -68,6 +78,7 @@ fun PostSetupScreen(onComplete: () -> Unit) {
     var userResponse by remember { mutableStateOf("") }
     var isWriting by remember { mutableStateOf(false) }
     var isDone by remember { mutableStateOf(false) }
+    var providerError by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableFloatStateOf(0f) }
 
     fun submit() {
@@ -90,6 +101,24 @@ fun PostSetupScreen(onComplete: () -> Unit) {
             if (files.isEmpty()) {
                 generatedFiles += "No files written"
             }
+            generatedFiles += "Checking provider and personalizing memory..."
+            val personalization = personalizePostHatchMarkdowns(
+                root = context.filesDir,
+                agentName = agentName,
+                ownerName = AppConfigManager.ownerName.ifBlank { ownerName },
+                ownerResponse = response,
+            ) { fileName ->
+                generatedFiles += "~ $fileName"
+            }
+            personalization
+                .onSuccess {
+                    providerError = null
+                    generatedFiles += "Provider personalization complete"
+                }
+                .onFailure {
+                    providerError = it.message ?: "Provider personalization failed"
+                    generatedFiles += "Provider personalization skipped"
+                }
             delay(450)
             isDone = true
         }
@@ -155,7 +184,42 @@ fun PostSetupScreen(onComplete: () -> Unit) {
             }
 
             AnimatedVisibility(visible = isDone) {
-                AgentBubble("Memory is written. I know enough to begin. You can refine these markdown files later from Settings.")
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AgentBubble(
+                        if (providerError == null) {
+                            "Memory is written and personalized by the configured provider. I know enough to begin."
+                        } else {
+                            "Memory is written from templates, but the provider check failed. You can fix provider settings and refine these markdown files later."
+                        }
+                    )
+                    providerError?.let { error ->
+                        Text(
+                            text = error.take(240),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Button(
+                            onClick = onOpenProviderSettings,
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Icon(Icons.Rounded.Settings, contentDescription = null)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            Text("Provider Settings", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (providerError == null) {
+                        OutlinedButton(
+                            onClick = onOpenProviderSettings,
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Icon(Icons.Rounded.Settings, contentDescription = null)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            Text("Provider Settings", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
 
@@ -284,6 +348,133 @@ private suspend fun writePostHatchMarkdowns(
         delay(90)
     }
     return files.map { it.first.name }.distinct()
+}
+
+private suspend fun personalizePostHatchMarkdowns(
+    root: File,
+    agentName: String,
+    ownerName: String,
+    ownerResponse: String,
+    onFile: (String) -> Unit,
+): Result<List<String>> = runCatching {
+    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
+    val fallback = generatedMarkdowns(agentName, ownerName, ownerResponse.trim(), timestamp)
+    val prompt = """
+        The user just completed ClawDroid first wake onboarding.
+
+        Agent name: $agentName
+        Owner name: $ownerName
+        User response:
+        $ownerResponse
+
+        Rewrite the following ClawDroid memory/config markdown files so they are specific to this user, concise, and operationally useful.
+        Keep the same intent as each file. Do not invent private facts. Return only valid JSON with these exact string keys:
+        agents, soul, tools, skill, system, agentMemory, userMemory, heartbeat, memory.
+
+        Current templates:
+        AGENTS:
+        ${fallback.agents}
+
+        SOUL:
+        ${fallback.soul}
+
+        TOOLS:
+        ${fallback.tools}
+
+        SKILL:
+        ${fallback.skill}
+
+        SYSTEM:
+        ${fallback.system}
+    """.trimIndent()
+
+    val response = StringBuilder()
+    var error: String? = null
+    LlmApiClient().streamChat(
+        messages = listOf(
+            ChatMessage(
+                role = "system",
+                content = "You personalize ClawDroid markdown config. Return strict JSON only, with no markdown fences unless unavoidable.",
+            ),
+            ChatMessage(role = "user", content = prompt),
+        ),
+        tools = null,
+    ).collect { event ->
+        when (event) {
+            is StreamEvent.TextDelta -> response.append(event.text)
+            is StreamEvent.Error -> error = event.message
+            else -> Unit
+        }
+    }
+    error?.let { throw IllegalStateException(it) }
+
+    val json = JSONObject(extractJsonObject(response.toString()))
+    val generated = GeneratedMarkdowns(
+        agents = json.optString("agents", fallback.agents),
+        soul = json.optString("soul", fallback.soul),
+        tools = json.optString("tools", fallback.tools),
+        skill = json.optString("skill", fallback.skill),
+        system = json.optString("system", fallback.system),
+        agentMemory = json.optString("agentMemory", fallback.agentMemory),
+        userMemory = json.optString("userMemory", fallback.userMemory),
+        heartbeat = json.optString("heartbeat", fallback.heartbeat),
+        memory = json.optString("memory", fallback.memory),
+    )
+    writeGeneratedMarkdownFiles(root, generated, onFile)
+}
+
+private suspend fun writeGeneratedMarkdownFiles(
+    root: File,
+    generated: GeneratedMarkdowns,
+    onFile: (String) -> Unit,
+): List<String> {
+    val home = File(root, "home").also { it.mkdirs() }
+    val memory = File(home, ".memory").also { it.mkdirs() }
+    val files = listOf(
+        File(root, "AGENTS.md") to generated.agents,
+        File(home, "AGENTS.md") to generated.agents,
+        File(root, "SOUL.md") to generated.soul,
+        File(home, "SOUL.md") to generated.soul,
+        File(root, "SOULD.md") to generated.soul,
+        File(home, "SOULD.md") to generated.soul,
+        File(root, "TOOLS.md") to generated.tools,
+        File(home, "TOOLS.md") to generated.tools,
+        File(root, "SKILL.md") to generated.skill,
+        File(home, "SKILL.md") to generated.skill,
+        File(root, "SYSTEM.md") to generated.system,
+        File(home, "SYSTEM.md") to generated.system,
+        File(memory, "Agent.md") to generated.agentMemory,
+        File(memory, "user.md") to generated.userMemory,
+        File(memory, "heartbeat.md") to generated.heartbeat,
+        File(memory, "memory.md") to generated.memory,
+    )
+
+    AppConfigManager.agentsMd = generated.agents
+    AppConfigManager.soulMd = generated.soul
+    AppConfigManager.toolsMd = generated.tools
+    AppConfigManager.skillMd = generated.skill
+    AppConfigManager.systemMd = generated.system
+
+    files.forEach { (file, content) ->
+        withContext(Dispatchers.IO) {
+            file.parentFile?.mkdirs()
+            file.writeText(content)
+        }
+        onFile(file.name)
+    }
+    return files.map { it.first.name }.distinct()
+}
+
+private fun extractJsonObject(text: String): String {
+    val unfenced = Regex("```(?:json)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
+        .find(text)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: text
+    val start = unfenced.indexOf('{')
+    val end = unfenced.lastIndexOf('}')
+    check(start >= 0 && end > start) { "Provider did not return JSON config." }
+    return unfenced.substring(start, end + 1)
 }
 
 private data class GeneratedMarkdowns(

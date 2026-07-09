@@ -1,13 +1,10 @@
 package com.clawdroid.app.ui.chat
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.AlarmClock
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,9 +33,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,17 +46,32 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -73,12 +85,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
@@ -122,72 +133,45 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.clawdroid.app.core.assistant.AssistantInvocation
-import com.clawdroid.app.core.assistant.AssistantInvocationSource
-import com.clawdroid.app.core.assistant.AssistantMode
+import com.clawdroid.app.core.AppContainer
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
-import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
 import com.clawdroid.app.core.config.AppConfigManager
-import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
-import com.clawdroid.app.core.voice.OpenAIRealtimeClient
+import com.clawdroid.app.core.voice.RealtimeAudioSession
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
-import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.core.voice.StreamingTtsController
 import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
+import com.clawdroid.app.data.api.internalUserPrompt
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
-import com.clawdroid.app.data.db.ToolCallEntity
-import com.clawdroid.app.ui.components.BlueGradientHorizontal
+import com.clawdroid.app.ui.components.ClawInputPanel
+import com.clawdroid.app.ui.components.ClawPanel
+import com.clawdroid.app.ui.components.ClawSkin
+import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.CustomProcessingLoader
+import com.clawdroid.app.ui.components.FifMascot
 import com.clawdroid.app.ui.components.PiperDownloadDialog
 import com.clawdroid.app.ui.components.StaggeredWordsText
+import com.clawdroid.app.ui.components.currentClawSkin
+import com.clawdroid.app.ui.components.isHud
+import com.clawdroid.app.ui.markdown.MarkdownResponseContent
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
-import com.clawdroid.app.ui.theme.CardDark
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.EmberOrange
-import com.clawdroid.app.ui.theme.FireRed
-import com.clawdroid.app.ui.theme.GlassBorderDim
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassFillMedium
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.SoftWhite
 import com.clawdroid.app.ui.voice.OrbState
 import com.clawdroid.app.ui.voice.VoiceOverlay
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
-
-private fun shouldUseOverlayForTask(text: String): Boolean {
-    val lower = text.lowercase()
-    return listOf(
-        "open app",
-        "open ",
-        "go to ",
-        "tap ",
-        "click ",
-        "scroll",
-        "swipe",
-        "type ",
-        "send message",
-        "reply to",
-        "perform",
-        "in instagram",
-        "in whatsapp",
-        "in spotify",
-        "in gmail",
-        "in chrome",
-        "on screen",
-        "current app",
-    ).any { lower.contains(it) }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -195,6 +179,7 @@ fun ChatScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
     onNavigateToTerminal: () -> Unit = {},
+    onNavigateToSelfManage: () -> Unit = {},
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -217,6 +202,7 @@ fun ChatScreen(
     var selectedMediaName by remember { mutableStateOf<String?>(null) }
     var voiceOverlayText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var lastSubmittedPrompt by remember { mutableStateOf("") }
 
     // Run Manager States
     val activeRunsState by AgentRunManager.activeRuns.collectAsState()
@@ -255,21 +241,32 @@ fun ChatScreen(
     }
 
     // Voice & Call states
-    val voiceManager = remember { VoiceManager(context.applicationContext) }
+    val voiceManager = remember { AppContainer.getVoiceManager() }
+    val streamingTts = remember(voiceManager) { StreamingTtsController(voiceManager) }
     val voiceRecognizer = remember { SpeechRecognizerClient(context.applicationContext) }
-    val realtimeClient = remember { OpenAIRealtimeClient() }
+    val realtimeSession = remember { RealtimeAudioSession(context.applicationContext) }
     var isCallModeActive by remember { mutableStateOf(false) }
     var isCallMuted by remember { mutableStateOf(false) }
+    var isStreamingTtsActive by remember { mutableStateOf(false) }
+    var streamingTtsStartedForRun by remember { mutableStateOf(false) }
     var orbState by remember { mutableStateOf(OrbState.Idle) }
+    var realtimeModeRequested by remember { mutableStateOf(false) }
+    var pendingVoiceStartAfterPermission by remember { mutableStateOf(false) }
 
     // Real-time transcript components
     var userPartialText by remember { mutableStateOf("") }
     var listenTrigger by remember { mutableStateOf(0) }
     var isRecognizerListening by remember { mutableStateOf(false) }
+    var liveTtsBuffer by remember { mutableStateOf("") }
+    var liveTtsSpokeAny by remember { mutableStateOf(false) }
+    var realtimeAgentTranscript by remember { mutableStateOf("") }
+    var realtimeLastUserCommit by remember { mutableStateOf("") }
+    var realtimeLastAgentCommit by remember { mutableStateOf("") }
 
     val voiceSpeaking by voiceManager.isSpeaking.collectAsState()
     val partialSpeech by voiceRecognizer.partialResult.collectAsState()
     val piperDownloadProgress by voiceManager.downloadProgress.collectAsState()
+    val realtimeActive by realtimeSession.isActive.collectAsState()
 
     var showPermissionsDialog by remember { mutableStateOf(false) }
     var wasInterrupted by remember { mutableStateOf(false) }
@@ -277,9 +274,11 @@ fun ChatScreen(
     // Real-time Voice Amplitudes
     val userAmplitude by voiceRecognizer.userVoiceAmplitude.collectAsState()
     val agentAmplitude by voiceManager.agentVoiceAmplitude.collectAsState()
+    val realtimeUserAmplitude by realtimeSession.userAmplitude.collectAsState()
+    val realtimeAgentAmplitude by realtimeSession.agentAmplitude.collectAsState()
     val currentAmplitude = when (orbState) {
-        OrbState.Listening -> userAmplitude
-        OrbState.Speaking -> agentAmplitude
+        OrbState.Listening -> if (realtimeModeRequested || realtimeActive) realtimeUserAmplitude else userAmplitude
+        OrbState.Speaking -> if (realtimeModeRequested || realtimeActive) realtimeAgentAmplitude else agentAmplitude
         else -> 0f
     }
 
@@ -294,64 +293,40 @@ fun ChatScreen(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            isCallModeActive = true
-            isCallMuted = false
+            pendingVoiceStartAfterPermission = true
         }
     }
 
-    // ── Local helper functions placed BEFORE any LaunchedEffect / usage ──
-    fun showSystemNotification(title: String, content: String) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "clawdroid_agent_channel"
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "ClawDroid Agent Actions", NotificationManager.IMPORTANCE_DEFAULT)
-            notificationManager.createNotificationChannel(channel)
+    fun appendRealtimeChatMessage(role: String, text: String) {
+        val trimmed = text.trim()
+        val convId = currentConversationId ?: return
+        if (trimmed.isBlank()) return
+        if (role == "user" && trimmed == realtimeLastUserCommit) return
+        if (role == "assistant" && trimmed == realtimeLastAgentCommit) return
+
+        val msgId = UUID.randomUUID().toString()
+        val createdAt = System.currentTimeMillis()
+        if (role == "user") {
+            realtimeLastUserCommit = trimmed
+            items += UserChatItem(id = msgId, text = trimmed, createdAt = createdAt)
+        } else {
+            realtimeLastAgentCommit = trimmed
+            items += AgentChatItem(id = msgId, text = trimmed, streaming = false, createdAt = createdAt)
         }
-        val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-        
-        try {
-            val resId = context.resources.getIdentifier("ic_launcher", "mipmap", context.packageName)
-            if (resId != 0) {
-                builder.setSmallIcon(resId)
+        scope.launch {
+            db.messages().insert(
+                MessageEntity(
+                    id = msgId,
+                    conversationId = convId,
+                    role = role,
+                    content = trimmed,
+                    createdAt = createdAt,
+                    tokenCount = 0,
+                )
+            )
+            db.conversations().getById(convId)?.let { conv ->
+                db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
-        } catch (e: Exception) {}
-
-        notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
-    }
-
-    fun processSimulatedSystemCommand(text: String) {
-        val lower = text.lowercase()
-        try {
-            if (lower.contains("call ") || lower.contains("dial ")) {
-                val query = text.substringAfter("call", "").substringAfter("dial", "").trim().removeSuffix(".")
-                if (query.isNotEmpty()) {
-                    Toast.makeText(context, "Initiating call to $query...", Toast.LENGTH_LONG).show()
-                    val intent = Intent(Intent.ACTION_DIAL).apply {
-                        data = Uri.parse("tel:${Uri.encode(query)}")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                }
-            } else if (lower.contains("alarm for") || lower.contains("set alarm")) {
-                Toast.makeText(context, "Opening System Alarm Clock...", Toast.LENGTH_LONG).show()
-                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                    putExtra(AlarmClock.EXTRA_MESSAGE, "ClawDroid Agent Alarm")
-                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } else if (lower.contains("remind me") || lower.contains("reminder")) {
-                showSystemNotification("ClawDroid Reminder", text)
-            } else if (lower.contains("save note") || lower.contains("take a note") || lower.contains("write down")) {
-                showSystemNotification("ClawDroid Note Saved", text)
-            }
-        } catch (e: Exception) {
-            Toast.makeText(context, "Command simulated: $text", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -359,15 +334,19 @@ fun ChatScreen(
         if (!AssistantInvocationRouter.stopIfActiveConversation(currentConversationId)) {
             AgentRunManager.stopRun(currentConversationId)
         }
+        streamingTtsStartedForRun = false
         listenTrigger++
     }
 
     fun submitQuery(text: String, mediaPath: String? = null, mediaMimeType: String? = null) {
         val convId = currentConversationId ?: return
+        if (text.isNotBlank()) lastSubmittedPrompt = text
+        streamingTtsStartedForRun = false
 
         val userMsgId = UUID.randomUUID().toString()
+        val createdAt = System.currentTimeMillis()
         // Add to items immediately with the same ID to prevent key change / flickering
-        items += UserChatItem(id = userMsgId, text = text, mediaPath = mediaPath, mediaMimeType = mediaMimeType)
+        items += UserChatItem(id = userMsgId, text = text, mediaPath = mediaPath, mediaMimeType = mediaMimeType, createdAt = createdAt)
 
         scope.launch {
             db.messages().insert(
@@ -376,7 +355,7 @@ fun ChatScreen(
                     conversationId = convId,
                     role = "user",
                     content = text,
-                    createdAt = System.currentTimeMillis(),
+                    createdAt = createdAt,
                     tokenCount = 0,
                     mediaPath = mediaPath,
                     mediaMimeType = mediaMimeType
@@ -386,44 +365,71 @@ fun ChatScreen(
             if (conv != null) {
                 db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
-            // Start the run after database insert finishes so context is built correctly
-            if (mediaPath == null && shouldUseOverlayForTask(text)) {
-                val canOverlay = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
-                    android.provider.Settings.canDrawOverlays(context)
-                if (canOverlay) {
-                    context.startService(Intent(context, OverlayWindowService::class.java))
-                    AssistantInvocationRouter.invoke(
-                        context = context.applicationContext,
-                        invocation = AssistantInvocation(
-                            id = UUID.randomUUID().toString(),
-                            source = AssistantInvocationSource.ANDROID_CONTROL_TASK,
-                            mode = AssistantMode.AUTOMATE,
-                            userText = text,
-                            contextSnapshot = null,
-                            mediaPath = null,
-                            mediaMimeType = null,
-                            projectId = AppConfigManager.activeProjectId,
-                            conversationId = convId,
-                            createdAt = System.currentTimeMillis(),
-                        ),
-                    )
-                } else {
-                    Toast.makeText(context, "Enable overlay permission so I can show live app-control status.", Toast.LENGTH_LONG).show()
-                    overlayPermissionLauncher.launch(
-                        Intent(
-                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}"),
-                        ),
-                    )
-                    AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
-                }
-            } else {
-                AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
-            }
+            AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
         }
 
-        if (isCallModeActive) {
+        if (isCallModeActive &&
+            !realtimeModeRequested &&
+            !realtimeActive &&
+            !AppConfigManager.overlayTtsStreamingEnabled
+        ) {
             voiceManager.speakThinkingPhrase()
+        }
+    }
+
+    fun continueLastPromptInNewChat() {
+        val previousConversationId = currentConversationId ?: return
+        val draftPrompt = lastSubmittedPrompt.ifBlank { input.trim() }
+        scope.launch {
+            val previousMessages = db.messages().getAll(previousConversationId)
+            val prompt = draftPrompt.ifBlank {
+                previousMessages
+                    .lastOrNull { message ->
+                        message.role == "user" &&
+                            !message.content.startsWith(INTERNAL_USER_PROMPT_PREFIX) &&
+                            !message.content.startsWith("Previous conversation summary:")
+                    }
+                    ?.content
+                    .orEmpty()
+            }.trim()
+            if (prompt.isBlank()) return@launch
+
+            val newId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val handoff = buildContinuationHandoff(
+                db = db,
+                previousConversationId = previousConversationId,
+                prompt = prompt,
+                previousMessages = previousMessages,
+            )
+            db.conversations().upsert(
+                ConversationEntity(
+                    id = newId,
+                    projectId = AppConfigManager.activeProjectId,
+                    title = "Continued: ${prompt.take(30)}${if (prompt.length > 30) "..." else ""}",
+                    createdAt = now,
+                    updatedAt = now,
+                    status = "idle",
+                    costUsd = 0.0,
+                ),
+            )
+            if (handoff.isNotBlank()) {
+                db.messages().insert(
+                    MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        conversationId = newId,
+                        role = "user",
+                        content = internalUserPrompt(handoff),
+                        createdAt = now,
+                        tokenCount = (handoff.length / 4).coerceAtLeast(1),
+                    )
+                )
+            }
+            currentConversationId = newId
+            AppConfigManager.activeConversationId = newId
+            lastSubmittedPrompt = prompt
+            errorMessage = null
+            AgentRunManager.startRun(context.applicationContext, newId, prompt)
         }
     }
 
@@ -450,7 +456,8 @@ fun ChatScreen(
             val convId = currentConversationId ?: return
             engine?.steer(text)
             val steerMsgId = UUID.randomUUID().toString()
-            items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime)
+            val createdAt = System.currentTimeMillis()
+            items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime, createdAt = createdAt)
             scope.launch {
                 db.messages().insert(
                     MessageEntity(
@@ -458,7 +465,7 @@ fun ChatScreen(
                         conversationId = convId,
                         role = "user",
                         content = text,
-                        createdAt = System.currentTimeMillis(),
+                        createdAt = createdAt,
                         tokenCount = 0,
                         mediaPath = cachedPath,
                         mediaMimeType = mediaMime
@@ -471,10 +478,28 @@ fun ChatScreen(
         submitQuery(text, cachedPath, mediaMime)
     }
 
+    fun beginStreamingTtsForRunIfNeeded() {
+        if (streamingTtsStartedForRun) return
+        streamingTtsStartedForRun = true
+        isStreamingTtsActive = true
+        streamingTts.begin {
+            scope.launch {
+                isStreamingTtsActive = false
+                streamingTtsStartedForRun = false
+                userPartialText = ""
+                listenTrigger++
+            }
+        }
+    }
+
     fun submitVoiceQuery(text: String) {
         if (text.isBlank()) return
         userPartialText = text
         voiceOverlayText = ""
+        liveTtsBuffer = ""
+        liveTtsSpokeAny = false
+        streamingTtsStartedForRun = false
+        isStreamingTtsActive = false
         selectedMediaUri = null
         selectedMediaMimeType = null
         selectedMediaName = null
@@ -488,22 +513,95 @@ fun ChatScreen(
             isCallMuted = false
             voiceOverlayText = ""
             userPartialText = ""
+            liveTtsBuffer = ""
+            liveTtsSpokeAny = false
+            realtimeAgentTranscript = ""
+            realtimeLastUserCommit = ""
+            realtimeLastAgentCommit = ""
             ServiceManager.start(context.applicationContext)
-            if (AppConfigManager.realtimeVoiceEnabled) {
-                voiceOverlayText = "Preparing Realtime voice..."
+            val useRealtimeAudio = AppConfigManager.realtimeVoiceEnabled &&
+                AppConfigManager.provider.equals("openai", ignoreCase = true) &&
+                AppConfigManager.openaiRealtimeApiKey.isNotBlank()
+            if (useRealtimeAudio) {
+                realtimeModeRequested = true
+                isRecognizerListening = false
+                voiceRecognizer.cancelListening()
+                voiceManager.stop()
+                orbState = OrbState.Listening
+                voiceOverlayText = "Connecting realtime voice..."
                 scope.launch {
-                    val result = realtimeClient.createClientSecret()
-                    result.onSuccess {
-                        voiceOverlayText = "Realtime voice ready. Native WebRTC audio transport is not connected in this build yet, so standard voice mode will continue for now."
-                    }.onFailure { error ->
-                        voiceOverlayText = ""
-                        Toast.makeText(
-                            context,
-                            "Realtime voice unavailable: ${error.message ?: "token request failed"}",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                    val result = realtimeSession.start(
+                        onStatus = { status ->
+                            withContext(Dispatchers.Main) {
+                                voiceOverlayText = status
+                            }
+                        },
+                        onUserTranscriptDelta = { delta ->
+                            withContext(Dispatchers.Main) {
+                                userPartialText += delta
+                            }
+                        },
+                        onUserTranscriptCompleted = { text ->
+                            withContext(Dispatchers.Main) {
+                                if (text.isNotBlank()) {
+                                    userPartialText = text
+                                    appendRealtimeChatMessage("user", text)
+                                }
+                            }
+                        },
+                        onAgentTranscriptDelta = { delta ->
+                            withContext(Dispatchers.Main) {
+                                realtimeAgentTranscript += delta
+                                voiceOverlayText = realtimeAgentTranscript
+                                orbState = OrbState.Speaking
+                            }
+                        },
+                        onAgentTranscriptCompleted = { text ->
+                            withContext(Dispatchers.Main) {
+                                val finalText = text.ifBlank { realtimeAgentTranscript }
+                                appendRealtimeChatMessage("assistant", finalText)
+                            }
+                        },
+                        onUserSpeechStarted = {
+                            realtimeSession.interrupt()
+                            withContext(Dispatchers.Main) {
+                                userPartialText = ""
+                                realtimeAgentTranscript = ""
+                                voiceOverlayText = "Listening..."
+                                orbState = OrbState.Listening
+                            }
+                        },
+                        onAgentResponseStarted = {
+                            withContext(Dispatchers.Main) {
+                                realtimeAgentTranscript = ""
+                                voiceOverlayText = ""
+                                orbState = OrbState.Speaking
+                            }
+                        },
+                        onAgentResponseCompleted = {
+                            withContext(Dispatchers.Main) {
+                                userPartialText = ""
+                                orbState = OrbState.Listening
+                            }
+                        },
+                        onError = { message ->
+                            withContext(Dispatchers.Main) {
+                                voiceOverlayText = ""
+                                Toast.makeText(context, "Realtime voice unavailable: $message", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    )
+                    if (result.isFailure) {
+                        withContext(Dispatchers.Main) {
+                            realtimeModeRequested = false
+                            isRecognizerListening = false
+                            listenTrigger++
+                        }
                     }
                 }
+            } else {
+                realtimeModeRequested = false
+                listenTrigger++
             }
         } else {
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -511,6 +609,13 @@ fun ChatScreen(
     }
 
     // ── LaunchedEffects / Observers follow sequentially ──
+    LaunchedEffect(pendingVoiceStartAfterPermission) {
+        if (pendingVoiceStartAfterPermission) {
+            pendingVoiceStartAfterPermission = false
+            startVoiceSession()
+        }
+    }
+
     LaunchedEffect(Unit) {
         db.conversations().pruneAllEmpty()
     }
@@ -574,14 +679,15 @@ fun ChatScreen(
                             id = msg.id,
                             text = msg.content,
                             mediaPath = msg.mediaPath,
-                            mediaMimeType = msg.mediaMimeType
+                            mediaMimeType = msg.mediaMimeType,
+                            createdAt = msg.createdAt,
                         )
                     }
                 } else if (msg.role == "assistant") {
                     if (!msg.content.startsWith("[Compacted Summary]")) {
                         // Chronological: text content first (if any)
                         if (msg.content.isNotBlank()) {
-                            list += AgentChatItem(id = msg.id, text = msg.content, streaming = false)
+                            list += AgentChatItem(id = msg.id, text = msg.content, streaming = false, createdAt = msg.createdAt)
                         }
                         
                         // Tool calls second
@@ -650,6 +756,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(agentResponseText, isAgentRunning) {
+        if (realtimeModeRequested || realtimeActive) return@LaunchedEffect
         if (isAgentRunning) {
             voiceOverlayText = agentResponseText
         } else if (agentResponseText.isNotBlank()) {
@@ -662,38 +769,87 @@ fun ChatScreen(
         AgentRunManager.events.collect { (eventConvId, event) ->
             if (eventConvId == convId) {
                 when (event) {
+                    is AgentRunEvent.TextDelta -> {
+                        if (isCallModeActive && !isCallMuted && !realtimeModeRequested && !realtimeActive) {
+                            if (AppConfigManager.overlayTtsStreamingEnabled && AppConfigManager.overlayTtsAutoplay) {
+                                beginStreamingTtsForRunIfNeeded()
+                                streamingTts.onToken(event.text)
+                            } else {
+                                liveTtsBuffer += event.text
+                                val (chunk, remaining) = takeRealtimeSpeechSegment(liveTtsBuffer, force = false)
+                                if (chunk.isNotBlank()) {
+                                    liveTtsBuffer = remaining
+                                    liveTtsSpokeAny = true
+                                    voiceManager.speakWithNaturalBreaks(chunk)
+                                }
+                            }
+                        }
+                    }
                     is AgentRunEvent.Completed -> {
-                        processSimulatedSystemCommand(event.finalText)
-                        if (isCallModeActive) {
-                            voiceManager.speakWithNaturalBreaks(event.finalText) {
-                                scope.launch {
-                                    userPartialText = ""
-                                    listenTrigger++
+                        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
+                            if (AppConfigManager.overlayTtsStreamingEnabled && AppConfigManager.overlayTtsAutoplay) {
+                                streamingTts.complete()
+                            } else {
+                                val spokeDuringStream = liveTtsSpokeAny
+                                val (remainingChunk, remainingTail) = takeRealtimeSpeechSegment(liveTtsBuffer, force = true)
+                                liveTtsBuffer = remainingTail
+                                liveTtsSpokeAny = false
+                                val finalSpeech = when {
+                                    remainingChunk.isNotBlank() -> remainingChunk
+                                    !spokeDuringStream -> event.finalText
+                                    else -> ""
+                                }
+                                if (finalSpeech.isNotBlank()) {
+                                    voiceManager.speakWithNaturalBreaks(finalSpeech) {
+                                        scope.launch {
+                                            userPartialText = ""
+                                            listenTrigger++
+                                        }
+                                    }
+                                } else {
+                                    scope.launch {
+                                        delay(450)
+                                        userPartialText = ""
+                                        listenTrigger++
+                                    }
                                 }
                             }
                         } else {
                             userPartialText = ""
                         }
+                        streamingTtsStartedForRun = false
                     }
                     is AgentRunEvent.RunError -> {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                        streamingTtsStartedForRun = false
                         errorMessage = event.message
+                        liveTtsBuffer = ""
+                        liveTtsSpokeAny = false
+                    }
+                    is AgentRunEvent.Stopped -> {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                        streamingTtsStartedForRun = false
                     }
                     else -> {}
                 }
             }
         }
     }
-
     LaunchedEffect(partialSpeech) {
         if (isCallModeActive && partialSpeech.isNotBlank()) {
             userPartialText = partialSpeech
         }
     }
 
-    LaunchedEffect(isCallModeActive, voiceSpeaking, runtimeState) {
+    LaunchedEffect(isCallModeActive, voiceSpeaking, runtimeState, realtimeActive, realtimeModeRequested, realtimeAgentAmplitude) {
         if (isCallModeActive) {
             orbState = when {
                 isCallMuted -> OrbState.Idle
+                realtimeModeRequested || realtimeActive -> {
+                    if (realtimeAgentAmplitude > 0.02f) OrbState.Speaking else OrbState.Listening
+                }
                 voiceSpeaking -> OrbState.Speaking
                 runtimeState == AgentRuntimeState.Running -> OrbState.Thinking
                 else -> OrbState.Listening
@@ -718,7 +874,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(isCallModeActive, isCallMuted, userAmplitude) {
-        if (isCallModeActive && !isCallMuted && userAmplitude > 0.15f && !wasInterrupted) {
+        if (isCallModeActive && !isCallMuted && !realtimeModeRequested && !realtimeActive && userAmplitude > AppConfigManager.voiceInterruptThreshold && !wasInterrupted) {
             if (voiceSpeaking || runtimeState == AgentRuntimeState.Running) {
                 wasInterrupted = true
                 voiceManager.stop()
@@ -735,7 +891,10 @@ fun ChatScreen(
 
     LaunchedEffect(isCallModeActive, isCallMuted, listenTrigger) {
         if (isCallModeActive) {
-            if (isCallMuted) {
+            if (realtimeModeRequested || realtimeActive) {
+                isRecognizerListening = false
+                voiceRecognizer.cancelListening()
+            } else if (isCallMuted) {
                 isRecognizerListening = false
                 voiceRecognizer.cancelListening()
             } else if (!isRecognizerListening) {
@@ -768,6 +927,10 @@ fun ChatScreen(
         } else {
             isRecognizerListening = false
             wasInterrupted = false
+            realtimeModeRequested = false
+            scope.launch {
+                realtimeSession.stop()
+            }
             voiceRecognizer.cancelListening()
             if (orbState != OrbState.Idle) {
                 voiceManager.stop()
@@ -778,8 +941,9 @@ fun ChatScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            voiceManager.destroy()
+            realtimeSession.destroy()
             voiceRecognizer.destroy()
+            streamingTts.stop()
         }
     }
 
@@ -793,6 +957,10 @@ fun ChatScreen(
     if (isCallModeActive) {
         BackHandler {
             isCallModeActive = false
+            realtimeModeRequested = false
+            scope.launch {
+                realtimeSession.stop()
+            }
             voiceManager.stop()
         }
     }
@@ -839,13 +1007,23 @@ fun ChatScreen(
             }
     }
 
+    val skin = currentClawSkin()
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                modifier = Modifier.width(280.dp),
-                drawerContainerColor = DeepBlack.copy(alpha = 0.95f),
-                drawerContentColor = SoftWhite,
+                modifier = if (currentClawSkin() == ClawSkin.ClawMagic) {
+                    Modifier.fillMaxWidth(0.88f).widthIn(max = 360.dp)
+                } else {
+                    Modifier.width(280.dp)
+                },
+                drawerContainerColor = if (currentClawSkin() == ClawSkin.ClawMagic) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                },
+                drawerContentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 SidebarContent(
                     activeConversationId = currentConversationId,
@@ -908,63 +1086,94 @@ fun ChatScreen(
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
                         onNavigateToTerminal()
+                    },
+                    onNavigateToSelfManage = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSelfManage()
                     }
                 )
             }
         },
     ) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold,
+        ClawSkinBackground {
+            Scaffold(
+                containerColor = Color.Transparent,
+                topBar = {
+                    if (skin == ClawSkin.ClawMagic) {
+                        ReferenceChatTopBar(
+                            provider = AppConfigManager.provider,
+                            model = AppConfigManager.model,
+                            onOpenDrawer = { scope.launch { drawerState.open() } },
+                            onVoice = ::startVoiceSession,
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
+                                val titleText = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid"
+                                if (skin == ClawSkin.LiquidGlass) {
+                                    ClawPanel(
+                                        cornerRadius = 22.dp,
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                        emphasis = 0.42f,
+                                    ) {
+                                        Text(
+                                            text = titleText,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = titleText,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Rounded.Menu, contentDescription = "Open navigation")
+                                }
+                            },
+                            actions = {
+                                if (skin == ClawSkin.LiquidGlass) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.74f), CircleShape)
+                                            .border(1.dp, Color.White.copy(alpha = 0.36f), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        IconButton(onClick = ::startVoiceSession) {
+                                            Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                } else {
+                                    IconButton(onClick = ::startVoiceSession) {
+                                        Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = if (skin == ClawSkin.LiquidGlass) {
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.34f)
+                                } else {
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                },
                             ),
                         )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Menu,
-                                contentDescription = "Open navigation",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = ::startVoiceSession,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Call,
-                                contentDescription = "Voice Call",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                )
-            },
-            modifier = modifier,
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(top = paddingValues.calculateTopPadding()),
-            ) {
+                    }
+                },
+                modifier = modifier,
+            ) { paddingValues ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = paddingValues.calculateTopPadding()),
+                ) {
                 if (displayItems.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -1047,6 +1256,7 @@ fun ChatScreen(
                         state = runtimeState,
                         onSubmit = ::submit,
                         onStop = { stopCurrentRun() },
+                        onVoiceInput = ::startVoiceSession,
                         selectedMediaUri = selectedMediaUri,
                         selectedMediaName = selectedMediaName,
                         selectedMediaMimeType = selectedMediaMimeType,
@@ -1110,12 +1320,37 @@ fun ChatScreen(
                     orbState = orbState,
                     amplitude = currentAmplitude,
                     isMuted = isCallMuted,
-                    onMuteToggle = { isCallMuted = !isCallMuted },
+                    onMuteToggle = {
+                        val muted = !isCallMuted
+                        isCallMuted = muted
+                        voiceManager.setMuted(muted)
+                        if (realtimeModeRequested || realtimeActive) {
+                            if (muted) {
+                                scope.launch {
+                                    realtimeSession.stop()
+                                }
+                                orbState = OrbState.Idle
+                                voiceOverlayText = "Muted"
+                            } else {
+                                startVoiceSession()
+                            }
+                        }
+                    },
                     userPartialText = userPartialText,
                     agentResponseText = voiceOverlayText,
+                    isTtsStreaming = isStreamingTtsActive,
+                    onStopTts = {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                    },
                     onBack = {
                         isCallModeActive = false
+                        realtimeModeRequested = false
+                        scope.launch {
+                            realtimeSession.stop()
+                        }
                         voiceManager.stop()
+                        streamingTts.stop()
                     }
                 )
 
@@ -1128,6 +1363,10 @@ fun ChatScreen(
                         .padding(bottom = 96.dp)
                 ) {
                     errorMessage?.let { msg ->
+                        val providerError = msg.contains("provider", ignoreCase = true) ||
+                            msg.contains("HTTP ", ignoreCase = true) ||
+                            msg.contains("context window", ignoreCase = true) ||
+                            msg.contains("API key", ignoreCase = true)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1135,23 +1374,40 @@ fun ChatScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFFE53935))
                                 .border(1.5.dp, Color(0xFFB71C1C), RoundedCornerShape(12.dp))
-                                .clickable { errorMessage = null }
                                 .padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Error",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = msg,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    modifier = Modifier.weight(1f)
-                                )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Error",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = msg,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (providerError) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(
+                                            onClick = { continueLastPromptInNewChat() },
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+                                        ) {
+                                            Text("Continue in new chat", fontWeight = FontWeight.Bold)
+                                        }
+                                        TextButton(
+                                            onClick = { errorMessage = null },
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+                                        ) {
+                                            Text("Dismiss")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1159,120 +1415,561 @@ fun ChatScreen(
 
                 LaunchedEffect(errorMessage) {
                     if (errorMessage != null) {
-                        delay(4000)
-                        errorMessage = null
+                        val providerError = errorMessage?.let { msg ->
+                            msg.contains("provider", ignoreCase = true) ||
+                                msg.contains("HTTP ", ignoreCase = true) ||
+                                msg.contains("context window", ignoreCase = true) ||
+                                msg.contains("API key", ignoreCase = true)
+                        } == true
+                        if (!providerError) {
+                            delay(4000)
+                            errorMessage = null
+                        }
                     }
                 }
             }
         }
     }
 }
+}
 
 @Composable
 private fun EmptyGreeting(modifier: Modifier = Modifier) {
     val name = AppConfigManager.ownerName.trim().ifBlank { "there" }
+    val skin = currentClawSkin()
+    val prompt = remember {
+        listOf(
+            "what's on your mind?",
+            "what should we move today?",
+            "what can I handle for you?",
+            "want me to look into something?",
+            "drop a task and I will work through it.",
+            "need help with an app, file, or idea?",
+        ).random()
+    }
     Column(
         modifier = modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        FifMascot(
+            modifier = Modifier.size(if (skin == ClawSkin.ClawMagic) 86.dp else 112.dp),
+            contentDescription = "ClawDroid idle mascot",
+            randomize = true,
+            randomKey = name,
+        )
+        Spacer(modifier = Modifier.height(18.dp))
         StaggeredWordsText(
-            text = "Hello $name,",
+            text = "Hey $name",
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineLarge.copy(
-                fontSize = 32.sp,
-                lineHeight = 40.sp,
+                fontSize = if (skin == ClawSkin.ClawMagic) 30.sp else 32.sp,
+                lineHeight = if (skin == ClawSkin.ClawMagic) 36.sp else 40.sp,
                 letterSpacing = 0.sp,
             ),
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
         StaggeredWordsText(
-            text = "what's on your mind?",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = prompt,
+            color = if (skin == ClawSkin.ClawMagic) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
             style = MaterialTheme.typography.headlineLarge.copy(
-                fontSize = 32.sp,
-                lineHeight = 42.sp,
+                fontSize = if (skin == ClawSkin.ClawMagic) 30.sp else 32.sp,
+                lineHeight = if (skin == ClawSkin.ClawMagic) 36.sp else 42.sp,
                 letterSpacing = 0.sp,
             ),
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center,
             delayStepMs = 58L,
         )
     }
 }
 
-@Composable
-private fun UserMessageBubble(item: UserChatItem) {
-    val shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    val context = LocalContext.current
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth(0.82f)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.70f), shape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), shape)
-                .padding(14.dp, 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (item.mediaPath != null && item.mediaMimeType != null) {
-                val mediaFile = java.io.File(item.mediaPath)
-                if (mediaFile.exists() && mediaFile.isFile) {
-                    val isImage = item.mediaMimeType.startsWith("image/")
-                    val uri = Uri.fromFile(mediaFile)
-                    val bitmap = rememberBitmapFromUri(context, uri)
+private fun takeRealtimeSpeechSegment(buffer: String, force: Boolean): Pair<String, String> {
+    val normalized = buffer
+        .replace('\n', ' ')
+        .replace(Regex("\\s+"), " ")
+        .trimStart()
+    if (normalized.isBlank()) return "" to ""
 
-                    if (isImage && bitmap != null) {
-                        androidx.compose.foundation.Image(
-                            bitmap = bitmap,
-                            contentDescription = "User attachment",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .clip(RoundedCornerShape(12.dp))
+    val sentenceCut = normalized.indexOfFirstIndexed { index, char ->
+        index >= 28 && char in ".!?" && (index == normalized.lastIndex || normalized.getOrNull(index + 1)?.isWhitespace() == true)
+    }
+    val softCut = normalized.indexOfFirstIndexed { index, char ->
+        index >= 56 && char in ",;:" && (index == normalized.lastIndex || normalized.getOrNull(index + 1)?.isWhitespace() == true)
+    }
+    val hardCut = if (normalized.length >= 96) {
+        normalized.lastIndexOf(' ', startIndex = 82.coerceAtMost(normalized.lastIndex)).takeIf { it > 42 }
+    } else {
+        null
+    }
+    val cut = when {
+        sentenceCut >= 0 -> sentenceCut + 1
+        softCut >= 0 -> softCut + 1
+        hardCut != null -> hardCut
+        force -> normalized.length
+        else -> -1
+    }
+    if (cut <= 0) return "" to normalized
+    return normalized.take(cut).trim() to normalized.drop(cut).trimStart()
+}
+
+private fun formatChatTimestamp(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault()).format(Date(timestamp))
+}
+
+private inline fun String.indexOfFirstIndexed(predicate: (Int, Char) -> Boolean): Int {
+    for (index in indices) {
+        if (predicate(index, this[index])) return index
+    }
+    return -1
+}
+
+@Composable
+private fun ReferenceChatTopBar(
+    provider: String,
+    model: String,
+    onOpenDrawer: () -> Unit,
+    onVoice: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 52.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ReferenceRoundIconButton(onClick = onOpenDrawer) {
+            Icon(
+                imageVector = Icons.Rounded.Menu,
+                contentDescription = "Open navigation",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
+            ),
+        ) {
+            Row(
+                modifier = Modifier
+                    .height(38.dp)
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = provider.replaceFirstChar { it.uppercaseChar() },
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.sp,
+                    ),
+                )
+                Text(
+                    text = model.substringAfterLast('/').take(18),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        letterSpacing = 0.sp,
+                    ),
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+
+        ReferenceRoundIconButton(onClick = onVoice) {
+            Icon(
+                imageVector = Icons.Rounded.Call,
+                contentDescription = "Voice call",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReferenceRoundIconButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(38.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.92f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
+        ),
+        content = { Box(contentAlignment = Alignment.Center) { content() } },
+    )
+}
+
+@Composable
+private fun AgentIdentityTag() {
+    Row(
+        modifier = Modifier.padding(bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.76f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+        Text(
+            text = AppConfigManager.agentName.ifBlank { "WhiteRose" }.uppercase(),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ReferenceActivityCard(item: ActivityChatItem) {
+    var expanded by remember(item.running, item.steps.size) { mutableStateOf(true) }
+    val statusText = if (item.running) "RUNNING" else if (item.steps.any { it.isError }) "ERROR" else "DONE"
+    val title = "${item.steps.size.coerceAtLeast(1)} step${if (item.steps.size == 1) "" else "s"} ${if (item.running) "running" else "completed"}"
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth(0.90f),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(Color.White.copy(alpha = 0.03f), shape)
+                .border(1.dp, Color.White.copy(alpha = 0.07f), shape),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Bolt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
                         )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = when {
-                                    item.mediaMimeType.startsWith("video/") -> "🎥"
-                                    item.mediaMimeType.startsWith("audio/") -> "🎵"
-                                    item.mediaMimeType.startsWith("text/") -> "📄"
-                                    else -> "📁"
-                                },
-                                fontSize = 20.sp
+                    }
+                    Text(
+                        text = title,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.sp,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = statusText,
+                        color = if (item.steps.any { it.isError }) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp,
+                        ),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(
+                                if (item.steps.any { it.isError }) MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = mediaFile.name,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                AnimatedVisibility(visible = expanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.20f))
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.05f),
+                                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
                             )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        item.steps.takeLast(5).forEach { step ->
+                            ReferenceActivityStep(step)
                         }
                     }
                 }
             }
-            if (item.text.isNotBlank()) {
+        }
+    }
+}
+
+@Composable
+private fun ReferenceActivityStep(step: ActivityStepItem) {
+    val parsed = formatStepContent(step)
+    val detail = parsed.displayText
+        .ifBlank { step.result.orEmpty() }
+        .ifBlank { step.detail }
+        .lineSequence()
+        .firstOrNull()
+        .orEmpty()
+        .take(64)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .border(
+                    1.dp,
+                    if (step.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    CircleShape,
+                )
+                .background(
+                    if (step.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = if (step.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(10.dp),
+            )
+        }
+        Text(
+            text = referenceStepLabel(step),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                letterSpacing = 0.sp,
+            ),
+            maxLines = 1,
+        )
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(18.dp)
+                .background(Color.White.copy(alpha = 0.10f)),
+        )
+        Text(
+            text = detail.ifBlank { if (step.running) "working" else "complete" },
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                letterSpacing = 0.sp,
+            ),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+private fun referenceStepLabel(step: ActivityStepItem): String {
+    val name = step.summary
+        .replace("Write File", "write_file")
+        .replace("Edit File", "edit_file")
+        .replace("Execute Command", "execute_command")
+        .replace("Run Command", "execute_command")
+        .substringBefore(" (")
+        .substringBefore(":")
+        .trim()
+    return name.ifBlank { step.type.name.lowercase() }
+}
+
+@Composable
+private fun UserMessageBubble(item: UserChatItem) {
+    val skin = currentClawSkin()
+    val context = LocalContext.current
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val maxBubbleWidth = maxWidth * 0.85f
+        val bubbleShape = if (skin == ClawSkin.ClawMagic) {
+            RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+        } else {
+            RoundedCornerShape(if (skin.isHud()) 14.dp else 22.dp)
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = maxBubbleWidth)
+                        .clip(bubbleShape)
+                        .background(
+                            if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
+                            else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                            bubbleShape,
+                        )
+                        .border(
+                            1.dp,
+                            if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                            bubbleShape,
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (item.mediaPath != null && item.mediaMimeType != null) {
+                            val mediaFile = java.io.File(item.mediaPath)
+                            if (mediaFile.exists() && mediaFile.isFile) {
+                                val isImage = item.mediaMimeType.startsWith("image/")
+                                val uri = Uri.fromFile(mediaFile)
+                                val bitmap = rememberBitmapFromUri(context, uri)
+
+                                if (isImage && bitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bitmap,
+                                        contentDescription = "User attachment",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 240.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+                                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = mediaIconForMime(item.mediaMimeType),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = mediaFile.name,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (item.text.isNotBlank()) {
+                            SelectionContainer {
+                                Text(
+                                    text = item.text,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontSize = 14.sp,
+                                        lineHeight = 23.sp,
+                                        letterSpacing = 0.sp,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
                 Text(
-                    text = item.text,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = formatChatTimestamp(item.createdAt),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        letterSpacing = 0.sp,
+                    ),
+                    modifier = Modifier.padding(end = 2.dp),
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ChatMarkdownContent(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    useStableTableRenderer: Boolean = false,
+) {
+    val hasTable = text.lineSequence().any { line ->
+        val trimmed = line.trim()
+        trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.count { it == '|' } >= 2
+    }
+    if (hasTable && useStableTableRenderer) {
+        MarkdownResponseContent(
+            text = text,
+            modifier = modifier,
+            color = color,
+            fontSize = 15.sp,
+            maxLines = Int.MAX_VALUE,
+        )
+    } else {
+        MarkdownText(
+            markdown = text,
+            modifier = modifier,
+            color = color,
+        )
     }
 }
 
@@ -1284,6 +1981,7 @@ private fun AgentMessageCard(
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
 ) {
+    val skin = currentClawSkin()
     val alpha = remember(item.id) { Animatable(0f) }
     val offsetY = remember(item.id) { Animatable(12f) }
     LaunchedEffect(item.id) {
@@ -1294,20 +1992,53 @@ private fun AgentMessageCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(end = 32.dp),
+            .padding(end = if (skin == ClawSkin.ClawMagic) 34.dp else 32.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
 
         if (item.text.isBlank() && item.streaming) {
             CustomProcessingLoader()
         } else if (item.text.isNotBlank()) {
-            MarkdownText(
-                markdown = item.text,
-                modifier = Modifier.graphicsLayer {
-                    this.alpha = alpha.value
-                    translationY = offsetY.value
-                },
-                color = MaterialTheme.colorScheme.onSurface,
+            if (skin == ClawSkin.ClawMagic) {
+                AgentIdentityTag()
+            }
+            val contentModifier = Modifier.graphicsLayer {
+                this.alpha = alpha.value
+                translationY = offsetY.value
+            }
+            if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
+                ClawPanel(
+                    modifier = contentModifier.fillMaxWidth(),
+                    cornerRadius = if (skin.isHud()) 12.dp else 20.dp,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    emphasis = 0.15f,
+                ) {
+                    SelectionContainer {
+                        ChatMarkdownContent(
+                            text = item.text,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            useStableTableRenderer = item.streaming,
+                        )
+                    }
+                }
+            } else {
+                SelectionContainer {
+                    ChatMarkdownContent(
+                        text = item.text,
+                        modifier = contentModifier,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        useStableTableRenderer = item.streaming,
+                    )
+                }
+            }
+            Text(
+                text = formatChatTimestamp(item.createdAt),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    letterSpacing = 0.sp,
+                ),
+                modifier = Modifier.padding(start = if (skin == ClawSkin.ClawMagic) 2.dp else 0.dp),
             )
         }
 
@@ -1324,6 +2055,10 @@ private fun AgentMessageCard(
 
 @Composable
 private fun ActivityMessageCard(item: ActivityChatItem) {
+    if (currentClawSkin() == ClawSkin.ClawMagic) {
+        ReferenceActivityCard(item)
+        return
+    }
     val context = LocalContext.current
     val previews = remember(item.steps) { buildFilePreviews(item.steps, context) }
     var previewFile by remember { mutableStateOf<FilePreview?>(null) }
@@ -1352,6 +2087,7 @@ private fun InlineActivityTrail(
     steps: List<ActivityStepItem>,
     running: Boolean,
 ) {
+    val skin = currentClawSkin()
     var expanded by remember(running, steps.size) { mutableStateOf(running) }
     val commandCount = steps.count { it.type == ActivityStepType.Command }
     val latest = steps.lastOrNull()
@@ -1363,17 +2099,15 @@ private fun InlineActivityTrail(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(
+        ClawPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded },
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+            cornerRadius = if (skin.isHud()) 10.dp else 14.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+            emphasis = if (running) 0.35f else 0.10f,
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -1397,14 +2131,12 @@ private fun InlineActivityTrail(
         }
 
         AnimatedVisibility(visible = expanded && steps.isNotEmpty()) {
-            Surface(
+            ClawPanel(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.85f)),
+                cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     steps.takeLast(4).forEach { step -> InlineActivityStep(step) }
                 }
             }
@@ -1414,114 +2146,277 @@ private fun InlineActivityTrail(
 
 @Composable
 private fun InlineActivityStep(step: ActivityStepItem) {
+    val skin = currentClawSkin()
     var expanded by remember(step.running) { mutableStateOf(step.running) }
-    Column(
+    ClawPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { expanded = !expanded }
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .clickable { expanded = !expanded },
+        cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 11.dp),
+        emphasis = if (step.running) 0.30f else 0f,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = step.type.icon, style = MaterialTheme.typography.labelLarge)
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = formatDiffDisplayText("${step.summary}${if (step.running) "…" else ""}"),
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            )
-            if (step.isError) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "❌",
-                    style = MaterialTheme.typography.labelLarge
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = iconForActivityStep(step.type),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
                 )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = formatDiffDisplayText("${step.summary}${if (step.running) "..." else ""}"),
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
+                )
+                if (step.isError) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Failed",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val parsed = formatStepContent(step)
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val parsed = formatStepContent(step)
 
-                if (parsed.copyText != null || parsed.displayText.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            if (parsed.title.isNotEmpty()) {
+                    if (parsed.copyText != null || parsed.displayText.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                if (parsed.title.isNotEmpty()) {
+                                    Text(
+                                        text = parsed.title,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                }
                                 Text(
-                                    text = parsed.title,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    text = formatDiffDisplayText(parsed.displayText),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.sp,
+                                        letterSpacing = 0.sp,
+                                    ),
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                             }
-                            Text(
-                                text = formatDiffDisplayText(parsed.displayText),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp
-                                ),
-                                maxLines = 2,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                        if (parsed.copyText != null) {
-                            val clipboardManager = LocalClipboardManager.current
-                            val context = LocalContext.current
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(parsed.copyText))
-                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ContentCopy,
-                                    contentDescription = "Copy text",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                            if (parsed.copyText != null) {
+                                val clipboardManager = LocalClipboardManager.current
+                                val context = LocalContext.current
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(parsed.copyText))
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = "Copy text",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (parsed.outputText.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .verticalScroll(rememberScrollState())
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerLowest,
-                                shape = RoundedCornerShape(6.dp)
+                    if (parsed.outputText.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .verticalScroll(rememberScrollState())
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.88f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = formatDiffOutputText(parsed.outputText),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    letterSpacing = 0.sp,
+                                )
                             )
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = formatDiffOutputText(parsed.outputText),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    state: AgentRuntimeState,
+    onSubmit: () -> Unit,
+    onStop: () -> Unit,
+    onVoiceInput: () -> Unit,
+    selectedMediaUri: Uri?,
+    selectedMediaName: String?,
+    selectedMediaMimeType: String?,
+    onMediaSelected: (Uri?, String?, String?) -> Unit,
+    onAttach: () -> Unit,
+    showCommandButton: Boolean,
+    onCommandMenu: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Transparent,
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                        MaterialTheme.colorScheme.background,
+                    ),
+                ),
+            )
+            .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 6.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White.copy(alpha = 0.07f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f), RoundedCornerShape(18.dp))
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (selectedMediaUri != null) {
+                AttachmentPreviewRow(
+                    uri = selectedMediaUri,
+                    name = selectedMediaName ?: "File",
+                    mimeType = selectedMediaMimeType,
+                    onClear = { onMediaSelected(null, null, null) },
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 38.dp, max = 112.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    letterSpacing = 0.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Send,
+                    capitalization = KeyboardCapitalization.Sentences,
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (value.isNotBlank() || selectedMediaUri != null) onSubmit()
+                    },
+                ),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = if (state == AgentRuntimeState.Running) {
+                                    "Steer ${AppConfigManager.agentName.ifBlank { "WhiteRose" }}..."
+                                } else {
+                                    "Message ${AppConfigManager.agentName.ifBlank { "WhiteRose" }}..."
+                                },
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 15.sp,
+                                    letterSpacing = 0.sp,
+                                ),
                             )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    AnimatedVisibility(visible = showCommandButton) {
+                        CompactIconButton(onClick = onCommandMenu) {
+                            Icon(
+                                imageVector = Icons.Rounded.Menu,
+                                contentDescription = "Command menu",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                                modifier = Modifier.size(21.dp),
+                            )
+                        }
+                    }
+                    CompactIconButton(onClick = onAttach) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Attach file",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    CompactIconButton(onClick = onVoiceInput) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = "Voice input",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Surface(
+                    onClick = if (state == AgentRuntimeState.Running) onStop else onSubmit,
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = if (state == AgentRuntimeState.Running) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    contentColor = if (state == AgentRuntimeState.Running) {
+                        MaterialTheme.colorScheme.onError
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
+                    shadowElevation = 6.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (state == AgentRuntimeState.Running) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = if (state == AgentRuntimeState.Running) "Stop" else "Send",
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 }
@@ -1537,12 +2432,15 @@ private fun PremiumInputBar(
     state: AgentRuntimeState,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
+    onVoiceInput: () -> Unit,
     selectedMediaUri: Uri?,
     selectedMediaName: String?,
     selectedMediaMimeType: String?,
     onMediaSelected: (Uri?, String?, String?) -> Unit,
 ) {
     var commandMenuVisible by remember { mutableStateOf(false) }
+    var orchestrationDialogVisible by remember { mutableStateOf(false) }
+    val skin = currentClawSkin()
     val context = LocalContext.current
     val attachmentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -1554,6 +2452,58 @@ private fun PremiumInputBar(
         },
     )
     val showCommandButton = value.isEmpty()
+    fun selectCommand(command: String) {
+        if (command == "/orchestrate") {
+            orchestrationDialogVisible = true
+        } else {
+            onValueChange(command)
+        }
+        commandMenuVisible = false
+    }
+
+    if (orchestrationDialogVisible) {
+        OrchestrationRoleDialog(
+            onDismiss = { orchestrationDialogVisible = false },
+            onSave = { prompt ->
+                onValueChange(prompt)
+                orchestrationDialogVisible = false
+            },
+        )
+    }
+
+    if (skin == ClawSkin.ClawMagic) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AnimatedVisibility(
+                visible = commandMenuVisible && showCommandButton,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                CommandMenu(
+                    onCommandSelected = { command ->
+                        selectCommand(command)
+                    },
+                )
+            }
+            ReferenceInputBar(
+                value = value,
+                onValueChange = onValueChange,
+                state = state,
+                onSubmit = onSubmit,
+                onStop = onStop,
+                onVoiceInput = onVoiceInput,
+                selectedMediaUri = selectedMediaUri,
+                selectedMediaName = selectedMediaName,
+                selectedMediaMimeType = selectedMediaMimeType,
+                onMediaSelected = onMediaSelected,
+                onAttach = { attachmentPicker.launch("*/*") },
+                showCommandButton = showCommandButton,
+                onCommandMenu = { commandMenuVisible = !commandMenuVisible },
+            )
+        }
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -1565,31 +2515,14 @@ private fun PremiumInputBar(
         AnimatedVisibility(visible = commandMenuVisible && showCommandButton) {
             CommandMenu(
                 onCommandSelected = { command ->
-                    onValueChange(command)
-                    commandMenuVisible = false
+                    selectCommand(command)
                 },
             )
         }
 
-        Surface(
+        ClawInputPanel(
             modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                        ),
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                ),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp,
-            shadowElevation = 8.dp,
+                .fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 if (selectedMediaUri != null) {
@@ -1624,6 +2557,16 @@ private fun PremiumInputBar(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    AnimatedVisibility(visible = value.isEmpty() && state == AgentRuntimeState.Idle) {
+                        CompactIconButton(onClick = onVoiceInput) {
+                            Icon(
+                                imageVector = Icons.Rounded.Mic,
+                                contentDescription = "Voice input",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     BasicTextField(
                         value = value,
                         onValueChange = {
@@ -1654,7 +2597,7 @@ private fun PremiumInputBar(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (value.isEmpty()) {
                                     Text(
-                                        text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Message ClawDroid...",
+                                        text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Ask ClawDroid",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f),
                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                     )
@@ -1674,23 +2617,22 @@ private fun PremiumInputBar(
                             ),
                         ) {
                             Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Stop", fontSize = 13.sp)
                         }
                     } else {
                         Surface(
                             onClick = onSubmit,
-                            modifier = Modifier.size(42.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.Send,
-                                contentDescription = "Send",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            modifier = Modifier.size(if (skin.isHud()) 44.dp else 42.dp),
+                            shape = if (skin.isHud()) RoundedCornerShape(10.dp) else CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                                    contentDescription = "Send",
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -1699,10 +2641,9 @@ private fun PremiumInputBar(
     }
 }
 
-}
-
 @Composable
 private fun CommandMenu(onCommandSelected: (String) -> Unit) {
+    val savedProviders = remember { AppConfigManager.savedProviderProfiles() }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -1718,8 +2659,88 @@ private fun CommandMenu(onCommandSelected: (String) -> Unit) {
             CommandMenuItem("/help", "Show available commands", onCommandSelected)
             CommandMenuItem("/clear", "Start a fresh chat", onCommandSelected)
             CommandMenuItem("/runtime", "Check Linux runtime", onCommandSelected)
+            CommandMenuItem("/sync-memory", "Sync agent memory with desktop", onCommandSelected)
+            savedProviders.take(6).forEach { profile ->
+                CommandMenuItem("/provider ${profile.name}", "Switch to ${profile.model}", onCommandSelected)
+            }
+            CommandMenuItem("/provider", "List saved providers", onCommandSelected)
+            CommandMenuItem("/model ", "Set current model id", onCommandSelected)
+            CommandMenuItem("/orchestrate", "Configure multi-agent run", onCommandSelected)
+            CommandMenuItem("/subagents", "Plan background subagents", onCommandSelected)
         }
     }
+}
+
+@Composable
+private fun OrchestrationRoleDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val profiles = AppConfigManager.savedProviderProfiles()
+    val fallback = profiles.firstOrNull()?.name ?: AppConfigManager.provider.ifBlank { "main" }
+    var planner by remember { mutableStateOf(fallback) }
+    var researcher by remember { mutableStateOf(profiles.getOrNull(1)?.name ?: fallback) }
+    var coder by remember { mutableStateOf(profiles.getOrNull(2)?.name ?: fallback) }
+    var reviewer by remember { mutableStateOf(profiles.getOrNull(3)?.name ?: fallback) }
+    var task by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Multi-Agent Orchestration") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Use saved provider profile names. Saved profiles: ${profiles.joinToString(", ") { it.name }.ifBlank { fallback }}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(value = planner, onValueChange = { planner = it }, label = { Text("Planner provider") }, singleLine = true)
+                OutlinedTextField(value = researcher, onValueChange = { researcher = it }, label = { Text("Research provider") }, singleLine = true)
+                OutlinedTextField(value = coder, onValueChange = { coder = it }, label = { Text("Coder provider") }, singleLine = true)
+                OutlinedTextField(value = reviewer, onValueChange = { reviewer = it }, label = { Text("Reviewer provider") }, singleLine = true)
+                OutlinedTextField(
+                    value = task,
+                    onValueChange = { task = it },
+                    label = { Text("Task") },
+                    placeholder = { Text("What should the agents do?") },
+                    minLines = 3,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val config = """
+                        planner=$planner
+                        researcher=$researcher
+                        coder=$coder
+                        reviewer=$reviewer
+                    """.trimIndent()
+                    AppConfigManager.multiAgentOrchestrationConfig = config
+                    val prompt = buildString {
+                        appendLine("/orchestrate")
+                        appendLine("Use this saved provider role map:")
+                        appendLine(config)
+                        appendLine()
+                        appendLine("Task:")
+                        append(task.ifBlank { "Ask me what task to run, then use this role map." })
+                    }
+                    onSave(prompt.trim())
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -1775,6 +2796,8 @@ private fun MessageActionRow(
 ) {
     var isLiked by remember { mutableStateOf(false) }
     var isDisliked by remember { mutableStateOf(false) }
+    val activeTint = MaterialTheme.colorScheme.primary
+    val inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
 
     Row(
         modifier = Modifier
@@ -1793,7 +2816,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ThumbUp,
                 contentDescription = "Thumbs Up",
-                tint = if (isLiked) EmberOrange else MutedGray.copy(alpha = 0.8f),
+                tint = if (isLiked) activeTint else inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1808,7 +2831,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ThumbDown,
                 contentDescription = "Thumbs Down",
-                tint = if (isDisliked) EmberOrange else MutedGray.copy(alpha = 0.8f),
+                tint = if (isDisliked) activeTint else inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1820,7 +2843,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.Refresh,
                 contentDescription = "Regenerate",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1832,7 +2855,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ContentCopy,
                 contentDescription = "Copy text",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1844,7 +2867,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.VolumeUp,
                 contentDescription = "Read aloud",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1856,7 +2879,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.Share,
                 contentDescription = "Share",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1871,35 +2894,34 @@ private fun FilePreviewStrip(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         previews.forEach { preview ->
             val name = preview.path.substringAfterLast('/')
-            val icon = when (preview.previewType) {
-                FilePreviewType.Html -> "🌐"
-                FilePreviewType.Svg -> "🎨"
-                FilePreviewType.Image -> "🖼"
-                FilePreviewType.Text -> "📄"
-            }
             val shape = RoundedCornerShape(12.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
-                    .background(GlassFill, shape)
-                    .border(1.dp, GlassBorderDim, shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), shape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), shape)
                     .clickable { onPreview(preview) }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(icon, fontSize = 18.sp)
+                    Icon(
+                        imageVector = iconForPreviewType(preview.previewType),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = name,
-                        color = SoftWhite,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "Preview →",
-                        color = EmberOrange,
+                        text = "Preview",
+                        color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
@@ -1921,13 +2943,12 @@ private fun FilePreviewDialog(
             dismissOnClickOutside = false,
         ),
     ) {
-        Box(
+        ClawPanel(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(20.dp))
-                .background(DeepBlack, RoundedCornerShape(20.dp))
-                .border(1.dp, GlassBorderDim, RoundedCornerShape(20.dp)),
+                .fillMaxHeight(0.85f),
+            cornerRadius = 20.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
@@ -1939,7 +2960,7 @@ private fun FilePreviewDialog(
                 ) {
                     Text(
                         text = preview.path.substringAfterLast('/'),
-                        color = SoftWhite,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleSmall,
                     )
@@ -1947,7 +2968,7 @@ private fun FilePreviewDialog(
                         Icon(
                             Icons.Rounded.Close,
                             contentDescription = "Close preview",
-                            tint = MutedGray,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -1997,7 +3018,7 @@ private fun FilePreviewDialog(
                         FilePreviewType.Text -> {
                             Text(
                                 text = preview.content,
-                                color = MutedGray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier
@@ -2088,6 +3109,30 @@ private fun String.toActivityStepType(): ActivityStepType = when (this) {
     "send_notification" -> ActivityStepType.Service
     "start_process", "check_process", "send_input", "kill_process", "list_processes", "execute_command" -> ActivityStepType.Command
     else -> ActivityStepType.Service
+}
+
+private fun iconForActivityStep(type: ActivityStepType): ImageVector = when (type) {
+    ActivityStepType.Command -> Icons.Rounded.Terminal
+    ActivityStepType.File -> Icons.Rounded.Folder
+    ActivityStepType.Web -> Icons.Rounded.Language
+    ActivityStepType.Edit -> Icons.Rounded.EditNote
+    ActivityStepType.Package -> Icons.Rounded.Inventory2
+    ActivityStepType.Service -> Icons.Rounded.Cloud
+}
+
+private fun mediaIconForMime(mimeType: String): ImageVector = when {
+    mimeType.startsWith("image/") -> Icons.Rounded.Image
+    mimeType.startsWith("video/") -> Icons.Rounded.Movie
+    mimeType.startsWith("audio/") -> Icons.Rounded.Audiotrack
+    mimeType.startsWith("text/") -> Icons.Rounded.Description
+    else -> Icons.Rounded.Folder
+}
+
+private fun iconForPreviewType(type: FilePreviewType): ImageVector = when (type) {
+    FilePreviewType.Html -> Icons.Rounded.Language
+    FilePreviewType.Svg -> Icons.Rounded.EditNote
+    FilePreviewType.Image -> Icons.Rounded.Image
+    FilePreviewType.Text -> Icons.Rounded.Description
 }
 
 private fun String.readableToolName(): String = split('_')
@@ -2612,6 +3657,104 @@ private fun formatDiffOutputText(text: String): AnnotatedString {
     }
 }
 
+private suspend fun buildContinuationHandoff(
+    db: ClawDroidDatabase,
+    previousConversationId: String,
+    prompt: String,
+    previousMessages: List<MessageEntity>,
+): String {
+    val previousConversation = db.conversations().getById(previousConversationId)
+    val visibleMessages = previousMessages
+        .filterNot { it.content.startsWith(INTERNAL_USER_PROMPT_PREFIX) }
+        .filterNot { it.content.startsWith("Previous conversation summary:") }
+
+    if (visibleMessages.isEmpty()) return ""
+
+    val compactedSummary = previousConversation?.summaryMessageId
+        ?.let { summaryId -> previousMessages.firstOrNull { it.id == summaryId } }
+        ?.content
+        ?.removePrefix("[Compacted Summary]")
+        ?.trim()
+        ?.handoffSnippet(1_800)
+
+    val lastUser = visibleMessages
+        .lastOrNull { it.role == "user" }
+        ?.content
+        ?.handoffSnippet(700)
+
+    val lastAssistant = visibleMessages
+        .lastOrNull { it.role == "assistant" && it.content.isNotBlank() && !it.content.startsWith("[Compacted Summary]") }
+        ?.content
+        ?.handoffSnippet(1_200)
+
+    val recentTranscript = visibleMessages
+        .filterNot { it.role == "tool" }
+        .takeLast(10)
+        .joinToString("\n") { message ->
+            val role = when (message.role) {
+                "user" -> "User"
+                "assistant" -> "Assistant"
+                else -> message.role.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+            "- $role: ${message.content.handoffSnippet(420)}"
+        }
+
+    val recentTools = mutableListOf<com.clawdroid.app.data.db.ToolCallEntity>()
+    for (assistantMessage in visibleMessages.asReversed().filter { it.role == "assistant" }) {
+        recentTools += db.toolCalls().getForMessage(assistantMessage.id)
+        if (recentTools.size >= 5) break
+    }
+
+    val recentToolActivity = recentTools
+        .take(5)
+        .asReversed()
+        .joinToString("\n") { tool ->
+            val result = tool.result
+                ?.handoffSnippet(260)
+                ?.takeIf { it.isNotBlank() }
+                ?: tool.status
+            "- ${tool.toolName}: $result"
+        }
+
+    return buildString {
+        appendLine("Previous chat handoff for Continue in new chat.")
+        appendLine("The user clicked Continue in new chat because the previous session is too large or blocked. Continue the same task from this handoff. Do not restart from scratch unless the previous state clearly requires it.")
+        previousConversation?.title?.takeIf { it.isNotBlank() }?.let { appendLine("Previous chat title: $it") }
+        appendLine("Prompt to continue: ${prompt.handoffSnippet(900)}")
+        if (!compactedSummary.isNullOrBlank()) {
+            appendLine()
+            appendLine("Compacted summary:")
+            appendLine(compactedSummary)
+        }
+        if (!lastUser.isNullOrBlank()) {
+            appendLine()
+            appendLine("Last user request:")
+            appendLine(lastUser)
+        }
+        if (!lastAssistant.isNullOrBlank()) {
+            appendLine()
+            appendLine("Last assistant response:")
+            appendLine(lastAssistant)
+        }
+        if (recentToolActivity.isNotBlank()) {
+            appendLine()
+            appendLine("Recent tool activity:")
+            appendLine(recentToolActivity)
+        }
+        if (recentTranscript.isNotBlank()) {
+            appendLine()
+            appendLine("Recent transcript:")
+            appendLine(recentTranscript)
+        }
+    }.trim().take(8_000)
+}
+
+private fun String.handoffSnippet(maxChars: Int): String {
+    val compact = replace(Regex("\\s+"), " ").trim()
+    if (compact.length <= maxChars) return compact
+    return compact.take(maxChars).trimEnd() + "..."
+}
+
 private fun getUriMetadata(context: Context, uri: Uri): Pair<String?, String?> {
     val contentResolver = context.contentResolver
     val mimeType = contentResolver.getType(uri)
@@ -2681,8 +3824,8 @@ private fun AttachmentPreviewRow(
             modifier = Modifier
                 .size(72.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), RoundedCornerShape(12.dp))
         ) {
             val isImage = mimeType?.startsWith("image/") == true
             val bitmap = rememberBitmapFromUri(context, uri)
@@ -2704,20 +3847,17 @@ private fun AttachmentPreviewRow(
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier.padding(4.dp)
                     ) {
-                        Text(
-                            text = when {
-                                mimeType?.startsWith("video/") == true -> "🎥"
-                                mimeType?.startsWith("audio/") == true -> "🎵"
-                                mimeType?.startsWith("text/") == true -> "📄"
-                                else -> "📁"
-                            },
-                            fontSize = 24.sp
+                        Icon(
+                            imageVector = mediaIconForMime(mimeType ?: ""),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = name,
                             style = MaterialTheme.typography.labelSmall,
-                            color = SoftWhite,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )

@@ -34,6 +34,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,8 +117,10 @@ fun SetupWizardScaffold(
                         .togetherWith(slideOutHorizontally { width -> -direction * width } + fadeOut(tween(300)))
                 },
                 label = "step_transition",
-            ) { _ ->
-                content()
+            ) { step ->
+                key(step) {
+                    content()
+                }
             }
         }
     }
@@ -215,7 +218,7 @@ fun WizardActionRow(
                 onClick = onBack,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Back", color = SoftWhite, fontWeight = FontWeight.Bold)
+                Text("Back", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
             }
         } else {
             Spacer(modifier = Modifier.weight(1f))
@@ -230,7 +233,7 @@ fun WizardActionRow(
             ) {
                 Text(
                     if (isLastStep) "Complete Setup" else nextLabel,
-                    color = SoftWhite,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
                 )
             }

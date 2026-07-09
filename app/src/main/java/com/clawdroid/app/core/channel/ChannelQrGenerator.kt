@@ -43,6 +43,10 @@ object ChannelQrGenerator {
         return generateQrCode(webhookUrl)
     }
 
+    fun generateQr(data: String): Bitmap {
+        return generateQrCode(data)
+    }
+
     private fun generateQrCode(data: String): Bitmap {
         return try {
             val writer = QRCodeWriter()

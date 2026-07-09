@@ -2,6 +2,7 @@ package com.clawdroid.app.core.control
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
@@ -322,10 +323,60 @@ class ScreenReaderService : AccessibilityService() {
     fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
 
     fun launchApp(packageName: String): Boolean {
-        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        return true
+        Log.i(TAG, "launchApp: attempting $packageName")
+        // Method 1: standard getLaunchIntentForPackage
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                startActivity(intent)
+                Log.i(TAG, "launchApp: success via getLaunchIntentForPackage")
+                return true
+            }
+            Log.w(TAG, "launchApp: getLaunchIntentForPackage returned null for $packageName")
+        } catch (e: Exception) {
+            Log.e(TAG, "launchApp: getLaunchIntentForPackage threw", e)
+        }
+
+        // Method 2: manual intent construction with queryIntentActivities
+        try {
+            val resolveIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                `package` = packageName
+            }
+            val matches = packageManager.queryIntentActivities(resolveIntent, 0)
+            if (matches.isNotEmpty()) {
+                val info = matches[0]
+                val launchIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    component = ComponentName(packageName, info.activityInfo.name)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                }
+                startActivity(launchIntent)
+                Log.i(TAG, "launchApp: success via queryIntentActivities ${info.activityInfo.name}")
+                return true
+            }
+            Log.w(TAG, "launchApp: no launcher activities found for $packageName")
+        } catch (e: Exception) {
+            Log.e(TAG, "launchApp: queryIntentActivities threw", e)
+        }
+
+        // Method 3: implicit intent with setPackage (system resolves at runtime)
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            }
+            startActivity(intent)
+            Log.i(TAG, "launchApp: success via implicit intent with setPackage")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "launchApp: implicit intent threw", e)
+        }
+
+        Log.e(TAG, "launchApp: all methods failed for $packageName")
+        return false
     }
 
     private fun getUsableRoot(): AccessibilityNodeInfo? {

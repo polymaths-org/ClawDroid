@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.assistant.context
 
 import android.app.assist.AssistStructure
+import android.os.Build
 import android.text.InputType
 
 object AssistStructureExtractor {
@@ -71,10 +72,12 @@ object AssistStructureExtractor {
         }
 
         // Try to capture Web URI (commonly exposed as node text or resource identifier by webviews)
-        val webScheme = node.webScheme
-        val webDomain = node.webDomain
-        if (!webScheme.isNullOrBlank() && !webDomain.isNullOrBlank()) {
-            onWebUri("$webScheme://$webDomain")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val webScheme = node.webScheme
+            val webDomain = node.webDomain
+            if (!webScheme.isNullOrBlank() && !webDomain.isNullOrBlank()) {
+                onWebUri("$webScheme://$webDomain")
+            }
         }
 
         val childCount = node.childCount

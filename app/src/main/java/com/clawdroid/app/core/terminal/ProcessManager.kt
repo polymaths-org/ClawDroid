@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.terminal
 
 import android.content.Context
+import com.clawdroid.app.core.bootstrap.BootstrapManager
 import com.clawdroid.app.core.bootstrap.EnvironmentSetup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,14 +27,14 @@ class ProcessManager(
         cwd: String? = null,
         timeout: Duration = 30.seconds,
     ): CommandExecutionResult = withContext(Dispatchers.IO) {
-        val managed = startManagedProcess(command, cwd)
+        val managed = startManagedProcess(command, cwd, usePty = false)
         val completed = withTimeoutOrNull(timeout) {
             managed.process.waitFor()
         }
 
         if (completed == null) {
             managed.state.set(ProcessState.TIMED_OUT)
-            managed.process.destroyForcibly()
+            destroyProcessTree(managed.process)
             managed.process.waitFor()
             error("Command timed out after ${timeout.inWholeSeconds}s")
         }
@@ -50,13 +51,14 @@ class ProcessManager(
         command: String,
         cwd: String? = null,
         timeout: Duration = 5.minutesBounded(),
+        usePty: Boolean = false,
     ): ProcessStartResult {
-        val managed = startManagedProcess(command, cwd)
+        val managed = startManagedProcess(command, cwd, usePty)
         scope.launch {
             delay(timeout)
             if (managed.state.get() == ProcessState.RUNNING || managed.state.get() == ProcessState.WAITING_FOR_INPUT) {
                 managed.state.set(ProcessState.TIMED_OUT)
-                managed.process.destroyForcibly()
+                destroyProcessTree(managed.process)
             }
         }
         delay(2_500)
@@ -82,6 +84,16 @@ class ProcessManager(
         )
     }
 
+    suspend fun getProcessOutput(processId: String): String {
+        val managed = processes[processId] ?: error("Unknown process id: $processId")
+        return managed.outputBuffer.getForUi()
+    }
+
+    suspend fun clearProcessOutput(processId: String) {
+        val managed = processes[processId] ?: error("Unknown process id: $processId")
+        managed.outputBuffer.clear()
+    }
+
     suspend fun sendInput(processId: String, input: String): ProcessStatus = withContext(Dispatchers.IO) {
         val managed = processes[processId] ?: error("Unknown process id: $processId")
         managed.process.outputStream.write(InputTranslator.translate(input))
@@ -94,7 +106,7 @@ class ProcessManager(
     suspend fun killProcess(processId: String): ProcessStatus = withContext(Dispatchers.IO) {
         val managed = processes[processId] ?: error("Unknown process id: $processId")
         managed.state.set(ProcessState.KILLED)
-        managed.process.destroyForcibly()
+        destroyProcessTree(managed.process)
         delay(250)
         checkProcess(processId)
     }
@@ -105,20 +117,15 @@ class ProcessManager(
         processes.keys.forEach { killProcess(it) }
     }
 
-    private fun startManagedProcess(command: String, cwd: String?): ManagedProcess {
+    private suspend fun startManagedProcess(command: String, cwd: String?, usePty: Boolean): ManagedProcess {
+        BootstrapManager.ensureBootstrapped(context) { }
         val env = EnvironmentSetup.build(context)
         val workingDirectory = cwd?.takeIf { it.isNotBlank() }?.let(::File) ?: env.home
         check(workingDirectory.exists() || workingDirectory.mkdirs()) {
             "Unable to create working directory ${workingDirectory.absolutePath}"
         }
 
-        val process = ProcessBuilder(
-            File(env.prefix, "bin/bash").absolutePath,
-            "--noprofile",
-            "--norc",
-            "-c",
-            command,
-        )
+        val process = ProcessBuilder(buildProcessArgs(env, command, usePty))
             .directory(workingDirectory)
             .redirectErrorStream(true)
             .apply {
@@ -138,6 +145,30 @@ class ProcessManager(
         observe(managed)
         return managed
     }
+
+    private fun buildProcessArgs(
+        env: com.clawdroid.app.core.bootstrap.LinuxEnvironment,
+        command: String,
+        usePty: Boolean,
+    ): List<String> {
+        if (usePty) {
+            val script = File(env.prefix, "bin/script")
+            if (script.canExecute()) {
+                val bash = File(env.prefix, "bin/bash").absolutePath
+                val wrapped = "${shellQuote(bash)} --noprofile --norc -c ${shellQuote(command)}"
+                return listOf(script.absolutePath, "-q", "-c", wrapped, "/dev/null")
+            }
+        }
+        return listOf(
+            File(env.prefix, "bin/bash").absolutePath,
+            "--noprofile",
+            "--norc",
+            "-c",
+            command,
+        )
+    }
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 
     private fun observe(managed: ManagedProcess) {
         scope.launch {
@@ -165,6 +196,10 @@ class ProcessManager(
             managed.prompt = prompt
             managed.state.set(ProcessState.WAITING_FOR_INPUT)
         }
+    }
+
+    private fun destroyProcessTree(process: Process) {
+        runCatching { process.destroyForcibly() }
     }
 
     private fun Int.minutesBounded(): Duration = this.coerceAtMost(180).seconds * 60

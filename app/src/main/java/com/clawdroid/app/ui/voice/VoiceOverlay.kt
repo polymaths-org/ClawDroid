@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,10 +29,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,16 +54,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.clawdroid.app.ui.components.GlowText
-import com.clawdroid.app.ui.theme.ActivePurple
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.GlassBorderDim
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassFillMedium
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.NeonBlue
-import com.clawdroid.app.ui.theme.NeonCyan
-import com.clawdroid.app.ui.theme.SoftWhite
+import com.clawdroid.app.ui.components.ClawPanel
+import com.clawdroid.app.ui.components.ClawSkin
+import com.clawdroid.app.ui.components.ClawSkinBackground
+import com.clawdroid.app.ui.components.currentClawSkin
+import com.clawdroid.app.ui.components.isHud
+import kotlin.math.PI
+import kotlin.math.sin
 
 @Composable
 fun VoiceOverlay(
@@ -72,44 +71,21 @@ fun VoiceOverlay(
     onMuteToggle: () -> Unit,
     userPartialText: String,
     agentResponseText: String,
+    isTtsStreaming: Boolean = false,
+    onStopTts: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val skin = currentClawSkin()
+    val primaryGlow = MaterialTheme.colorScheme.primary
+    val secondaryGlow = MaterialTheme.colorScheme.secondary
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(400)),
         exit = fadeOut(tween(350)),
         modifier = modifier,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(DeepBlack),
-        ) {
-            // ── Background Glows ───────────────────────────────────────────
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Top Right Cyan Glow
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(NeonCyan.copy(alpha = 0.08f), Color.Transparent),
-                        center = Offset(size.width * 0.8f, size.height * 0.2f),
-                        radius = size.maxDimension * 0.5f,
-                    ),
-                    radius = size.maxDimension * 0.5f,
-                    center = Offset(size.width * 0.8f, size.height * 0.2f),
-                )
-                // Bottom Left Blue Glow
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(NeonBlue.copy(alpha = 0.08f), Color.Transparent),
-                        center = Offset(size.width * 0.2f, size.height * 0.8f),
-                        radius = size.maxDimension * 0.5f,
-                    ),
-                    radius = size.maxDimension * 0.5f,
-                    center = Offset(size.width * 0.2f, size.height * 0.8f),
-                )
-            }
-
+        ClawSkinBackground(modifier = Modifier.fillMaxSize()) {
             // ── Main Content Container ─────────────────────────────────────
             Column(
                 modifier = Modifier
@@ -129,13 +105,13 @@ fun VoiceOverlay(
                         onClick = onBack,
                         modifier = Modifier
                             .size(44.dp)
-                            .background(GlassFill, CircleShape)
-                            .border(1.dp, GlassBorderDim, CircleShape),
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape),
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = SoftWhite,
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
 
@@ -146,9 +122,20 @@ fun VoiceOverlay(
                             text = AppConfigManager.agentName,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = SoftWhite,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                letterSpacing = 0.sp,
                             )
                         )
+                        if (skin == ClawSkin.Jarvis) {
+                            Text(
+                                text = "AI ASSISTANT SYSTEM",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val dotTransition = rememberInfiniteTransition(label = "pulse_dot")
                             val dotAlpha by dotTransition.animateFloat(
@@ -165,29 +152,31 @@ fun VoiceOverlay(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .alpha(dotAlpha)
-                                    .background(if (isMuted) Color.Red else NeonCyan, CircleShape)
+                                    .background(if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, CircleShape)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = if (isMuted) "Microphone Muted" else "Listening...",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedGray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
 
-                // 2. Central 3D Audio Visualizer Orb
+                // 2. Central Audio Meter
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AudioVisualizerOrb(
+                    ProfessionalVoiceMeter(
                         state = orbState,
                         amplitude = amplitude,
-                        modifier = Modifier.size(280.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp),
                     )
                 }
 
@@ -197,15 +186,12 @@ fun VoiceOverlay(
                     scrollState.animateScrollTo(scrollState.maxValue)
                 }
 
-                val transcriptShape = RoundedCornerShape(20.dp)
-                Box(
+                ClawPanel(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(transcriptShape)
-                        .background(GlassFill, transcriptShape)
-                        .border(1.dp, GlassBorderDim, transcriptShape)
-                        .padding(16.dp)
+                        .heightIn(min = 180.dp, max = 280.dp),
+                    cornerRadius = if (skin.isHud()) 12.dp else 20.dp,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 ) {
                     Column(
                         modifier = Modifier
@@ -217,7 +203,7 @@ fun VoiceOverlay(
                             Text(
                                 text = "Start speaking to ClawDroid...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MutedGray.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(top = 40.dp)
                             )
@@ -227,13 +213,13 @@ fun VoiceOverlay(
                                     Text(
                                         text = "You",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = NeonCyan,
+                                        color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         text = userPartialText,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = SoftWhite,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }
@@ -243,16 +229,56 @@ fun VoiceOverlay(
                                     Text(
                                         text = "ClawDroid",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = ActivePurple,
+                                        color = MaterialTheme.colorScheme.secondary,
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         text = agentResponseText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = SoftWhite,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            lineHeight = 22.sp,
+                                            fontSize = 15.sp,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = isTtsStreaming) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f), RoundedCornerShape(14.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.VolumeUp,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Speaking...",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        IconButton(onClick = onStopTts, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = Icons.Rounded.Stop,
+                                contentDescription = "Stop speech",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
                     }
                 }
@@ -268,9 +294,17 @@ fun VoiceOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Mute Button
-                    val muteBg = if (isMuted) Color.Red.copy(alpha = 0.2f) else GlassFill
-                    val muteBorder = if (isMuted) Color.Red.copy(alpha = 0.4f) else GlassBorderDim
-                    val muteIconColor = if (isMuted) Color.Red else SoftWhite
+                    val muteBg = if (isMuted) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f)
+                    }
+                    val muteBorder = if (isMuted) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)
+                    }
+                    val muteIconColor = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
 
                     IconButton(
                         onClick = onMuteToggle,
@@ -294,7 +328,7 @@ fun VoiceOverlay(
                         onClick = onBack,
                         modifier = Modifier
                             .size(60.dp)
-                            .background(Color.Red.copy(alpha = 0.8f), CircleShape)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.86f), CircleShape)
                             .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
                     ) {
                         Icon(
@@ -306,6 +340,56 @@ fun VoiceOverlay(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfessionalVoiceMeter(
+    state: OrbState,
+    amplitude: Float,
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "voice_meter")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "meter_phase",
+    )
+    val colors = MaterialTheme.colorScheme
+    val active = state != OrbState.Idle
+    Canvas(modifier = modifier) {
+        val barCount = 42
+        val gap = 5.dp.toPx()
+        val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(2.dp.toPx())
+        val centerY = size.height / 2f
+        val baseAmp = when (state) {
+            OrbState.Listening -> amplitude.coerceAtLeast(0.05f)
+            OrbState.Speaking -> amplitude.coerceAtLeast(0.10f)
+            OrbState.Thinking -> 0.30f
+            OrbState.Idle -> 0.04f
+        }
+        for (i in 0 until barCount) {
+            val wave = ((sin(phase * PI.toFloat() * 2f + i * 0.42f) + 1f) / 2f)
+            val height = (10.dp.toPx() + size.height * baseAmp * (0.30f + wave * 0.78f))
+                .coerceIn(8.dp.toPx(), size.height)
+            val x = i * (barWidth + gap)
+            val alpha = if (active) (0.30f + wave * 0.54f).coerceIn(0.30f, 0.88f) else 0.20f
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        colors.primary.copy(alpha = alpha),
+                        colors.secondary.copy(alpha = alpha * 0.68f),
+                    ),
+                ),
+                topLeft = Offset(x, centerY - height / 2f),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth),
+            )
         }
     }
 }

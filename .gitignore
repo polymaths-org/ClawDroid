@@ -30,3 +30,11 @@ context.md
 meow_feature_brainstorm.md
 clawdroid.db
 CLAW DROID*.png
+
+# Excluded by Paris - don't push these
+UI-references/
+old-control/
+update-context/
+update.md
+.env
+INTERPOLE/

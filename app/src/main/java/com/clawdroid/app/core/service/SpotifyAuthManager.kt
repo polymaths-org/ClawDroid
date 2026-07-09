@@ -27,7 +27,7 @@ object SpotifyAuthManager {
         try {
             Log.i(TAG, "Exchanging Spotify auth code...")
             val clientID = com.clawdroid.app.BuildConfig.SPOTIFY_OAUTH_CLIENT_ID
-            val clientSecret = com.clawdroid.app.BuildConfig.SPOTIFY_OAUTH_CLIENT_SECRET
+            val clientSecret = AppConfigManager.spotifyClientSecret
 
             val credentials = "$clientID:$clientSecret"
             val basicAuth = "Basic " + Base64.encodeToString(
@@ -109,7 +109,7 @@ object SpotifyAuthManager {
                 try {
                     Log.i(TAG, "Refreshing Spotify access token...")
                     val clientID = com.clawdroid.app.BuildConfig.SPOTIFY_OAUTH_CLIENT_ID
-                    val clientSecret = com.clawdroid.app.BuildConfig.SPOTIFY_OAUTH_CLIENT_SECRET
+                    val clientSecret = AppConfigManager.spotifyClientSecret
 
                     val credentials = "$clientID:$clientSecret"
                     val basicAuth = "Basic " + Base64.encodeToString(

@@ -72,7 +72,7 @@ class ClawNotificationListenerService : NotificationListenerService() {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
 
-        if (!AppConfigManager.whatsappEnabled) return
+        if (!AppConfigManager.whatsappNotificationFallbackEnabled) return
 
         val packageName = sbn.packageName
         if (packageName != "com.whatsapp") return
