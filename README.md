@@ -177,9 +177,11 @@ The app currently uses:
 
 ```kotlin
 minSdk = 26
-targetSdk = 36
+targetSdk = 28
 compileSdk = 36
 ```
+
+`targetSdk` is intentionally lower than `compileSdk` for the current overlay/accessibility behavior. Revisit it during Android compatibility hardening before Play Store distribution.
 
 ---
 
@@ -203,7 +205,29 @@ Build release APK:
 env JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:assembleRelease
 ```
 
-Release signing is local-only. Keep your keystore safe and never commit it.
+If `signing/release-signing.properties` exists, `assembleRelease` produces a signed release APK. That file and the keystore are ignored by git.
+
+Expected local signing file:
+
+```properties
+storeFile=signing/clawdroid-release.jks
+storePassword=...
+keyAlias=clawdroid-release
+keyPassword=...
+```
+
+Keep `signing/` backed up and never commit it. Losing the release keystore means future APK updates cannot use the same signature.
+
+GitHub release builds require these repository secrets:
+
+```text
+RELEASE_KEYSTORE_BASE64
+RELEASE_KEYSTORE_PASSWORD
+RELEASE_KEY_ALIAS
+RELEASE_KEY_PASSWORD
+```
+
+Push a tag like `v0.1.0` after secrets are configured to let CI build and publish the signed APK.
 
 ---
 

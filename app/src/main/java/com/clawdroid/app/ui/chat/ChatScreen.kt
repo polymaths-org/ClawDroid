@@ -1,13 +1,10 @@
 package com.clawdroid.app.ui.chat
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.AlarmClock
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -88,6 +85,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -135,22 +133,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.clawdroid.app.core.assistant.AssistantInvocation
-import com.clawdroid.app.core.assistant.AssistantInvocationSource
-import com.clawdroid.app.core.assistant.AssistantMode
+import com.clawdroid.app.core.AppContainer
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
-import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
 import com.clawdroid.app.core.config.AppConfigManager
-import com.clawdroid.app.core.control.AndroidControlTools
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.RealtimeAudioSession
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
-import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.core.voice.StreamingTtsController
 import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
+import com.clawdroid.app.data.api.internalUserPrompt
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
@@ -164,6 +158,7 @@ import com.clawdroid.app.ui.components.PiperDownloadDialog
 import com.clawdroid.app.ui.components.StaggeredWordsText
 import com.clawdroid.app.ui.components.currentClawSkin
 import com.clawdroid.app.ui.components.isHud
+import com.clawdroid.app.ui.markdown.MarkdownResponseContent
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
 import com.clawdroid.app.ui.voice.OrbState
@@ -178,77 +173,13 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-private fun shouldUseOverlayForTask(text: String): Boolean {
-    val lower = text.lowercase()
-    val directControlPhrase = listOf(
-        "open app",
-        "open ",
-        "launch app",
-        "launch ",
-        "start app",
-        "go to ",
-        "tap ",
-        "click ",
-        "scroll",
-        "swipe",
-        "type ",
-        "send message",
-        "reply to",
-        "perform",
-        "in instagram",
-        "in whatsapp",
-        "in spotify",
-        "in gmail",
-        "in chrome",
-        "on screen",
-        "current app",
-    ).any { lower.contains(it) }
-    if (directControlPhrase) return true
-
-    val appVerb = listOf("open", "launch", "start").any { verb ->
-        lower.startsWith("$verb ") || lower.contains(" $verb ")
-    }
-    if (!appVerb) return false
-
-    val knownAppName = listOf(
-        "whatsapp",
-        "telegram",
-        "instagram",
-        "spotify",
-        "youtube",
-        "gmail",
-        "chrome",
-        "settings",
-        "maps",
-        "phone",
-        "dialer",
-        "messages",
-        "play store",
-    ).any { lower.contains(it) }
-
-    return knownAppName
-}
-
-private fun extractDirectLaunchAppQuery(text: String): String? {
-    val match = Regex(
-        pattern = "^\\s*(?:please\\s+)?(?:open|launch|start)(?:\\s+the)?(?:\\s+app)?\\s+(.+?)\\s*[.!?]*\\s*$",
-        option = RegexOption.IGNORE_CASE,
-    ).find(text) ?: return null
-    val query = match.groupValues[1]
-        .substringBefore(" and ")
-        .substringBefore(" then ")
-        .trim()
-    if (query.length < 2) return null
-    val blocked = setOf("it", "this", "that", "app", "application")
-    return query.takeUnless { it.lowercase(Locale.US) in blocked }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
     onNavigateToTerminal: () -> Unit = {},
+    onNavigateToSelfManage: () -> Unit = {},
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -271,6 +202,7 @@ fun ChatScreen(
     var selectedMediaName by remember { mutableStateOf<String?>(null) }
     var voiceOverlayText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var lastSubmittedPrompt by remember { mutableStateOf("") }
 
     // Run Manager States
     val activeRunsState by AgentRunManager.activeRuns.collectAsState()
@@ -309,11 +241,14 @@ fun ChatScreen(
     }
 
     // Voice & Call states
-    val voiceManager = remember { VoiceManager(context.applicationContext) }
+    val voiceManager = remember { AppContainer.getVoiceManager() }
+    val streamingTts = remember(voiceManager) { StreamingTtsController(voiceManager) }
     val voiceRecognizer = remember { SpeechRecognizerClient(context.applicationContext) }
     val realtimeSession = remember { RealtimeAudioSession(context.applicationContext) }
     var isCallModeActive by remember { mutableStateOf(false) }
     var isCallMuted by remember { mutableStateOf(false) }
+    var isStreamingTtsActive by remember { mutableStateOf(false) }
+    var streamingTtsStartedForRun by remember { mutableStateOf(false) }
     var orbState by remember { mutableStateOf(OrbState.Idle) }
     var realtimeModeRequested by remember { mutableStateOf(false) }
     var pendingVoiceStartAfterPermission by remember { mutableStateOf(false) }
@@ -362,31 +297,6 @@ fun ChatScreen(
         }
     }
 
-    // ── Local helper functions placed BEFORE any LaunchedEffect / usage ──
-    fun showSystemNotification(title: String, content: String) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "clawdroid_agent_channel"
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "ClawDroid Agent Actions", NotificationManager.IMPORTANCE_DEFAULT)
-            notificationManager.createNotificationChannel(channel)
-        }
-        val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-        
-        try {
-            val resId = context.resources.getIdentifier("ic_launcher", "mipmap", context.packageName)
-            if (resId != 0) {
-                builder.setSmallIcon(resId)
-            }
-        } catch (e: Exception) {}
-
-        notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
-    }
-
     fun appendRealtimeChatMessage(role: String, text: String) {
         val trimmed = text.trim()
         val convId = currentConversationId ?: return
@@ -420,46 +330,18 @@ fun ChatScreen(
         }
     }
 
-    fun processSimulatedSystemCommand(text: String) {
-        val lower = text.lowercase()
-        try {
-            if (lower.contains("call ") || lower.contains("dial ")) {
-                val query = text.substringAfter("call", "").substringAfter("dial", "").trim().removeSuffix(".")
-                if (query.isNotEmpty()) {
-                    Toast.makeText(context, "Initiating call to $query...", Toast.LENGTH_LONG).show()
-                    val intent = Intent(Intent.ACTION_DIAL).apply {
-                        data = Uri.parse("tel:${Uri.encode(query)}")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                }
-            } else if (lower.contains("alarm for") || lower.contains("set alarm")) {
-                Toast.makeText(context, "Opening System Alarm Clock...", Toast.LENGTH_LONG).show()
-                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                    putExtra(AlarmClock.EXTRA_MESSAGE, "ClawDroid Agent Alarm")
-                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } else if (lower.contains("remind me") || lower.contains("reminder")) {
-                showSystemNotification("ClawDroid Reminder", text)
-            } else if (lower.contains("save note") || lower.contains("take a note") || lower.contains("write down")) {
-                showSystemNotification("ClawDroid Note Saved", text)
-            }
-        } catch (e: Exception) {
-            Toast.makeText(context, "Command simulated: $text", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     fun stopCurrentRun(reason: String = "Stopped") {
         if (!AssistantInvocationRouter.stopIfActiveConversation(currentConversationId)) {
             AgentRunManager.stopRun(currentConversationId)
         }
+        streamingTtsStartedForRun = false
         listenTrigger++
     }
 
     fun submitQuery(text: String, mediaPath: String? = null, mediaMimeType: String? = null) {
         val convId = currentConversationId ?: return
+        if (text.isNotBlank()) lastSubmittedPrompt = text
+        streamingTtsStartedForRun = false
 
         val userMsgId = UUID.randomUUID().toString()
         val createdAt = System.currentTimeMillis()
@@ -483,68 +365,71 @@ fun ChatScreen(
             if (conv != null) {
                 db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
-            // Start the run after database insert finishes so context is built correctly
-            val directLaunchQuery = if (mediaPath == null) extractDirectLaunchAppQuery(text) else null
-            if (directLaunchQuery != null) {
-                val result = AndroidControlTools.launchApp(directLaunchQuery, context.applicationContext)
-                val success = result.optBoolean("success", false)
-                val appName = result.optString("app_name", directLaunchQuery).ifBlank { directLaunchQuery }
-                val reply = if (success) {
-                    "Opening $appName."
-                } else {
-                    val message = result.optString("message", "Could not launch $directLaunchQuery.")
-                    "$message If this keeps happening, enable Settings > Permissions > Screen Control. If the model provider reports a context-window error, start a new chat and retry."
-                }
-                val assistantMsg = AgentChatItem(text = reply, streaming = false)
-                items += assistantMsg
-                db.messages().insert(
-                    MessageEntity(
-                        id = assistantMsg.id,
-                        conversationId = convId,
-                        role = "assistant",
-                        content = reply,
-                        createdAt = System.currentTimeMillis(),
-                        tokenCount = 0,
-                    ),
-                )
-                Toast.makeText(context, reply, Toast.LENGTH_SHORT).show()
-            } else if (mediaPath == null && shouldUseOverlayForTask(text)) {
-                val canOverlay = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
-                    android.provider.Settings.canDrawOverlays(context)
-                if (canOverlay) {
-                    context.startService(Intent(context, OverlayWindowService::class.java))
-                    AssistantInvocationRouter.invoke(
-                        context = context.applicationContext,
-                        invocation = AssistantInvocation(
-                            id = UUID.randomUUID().toString(),
-                            source = AssistantInvocationSource.ANDROID_CONTROL_TASK,
-                            mode = AssistantMode.AUTOMATE,
-                            userText = text,
-                            contextSnapshot = null,
-                            mediaPath = null,
-                            mediaMimeType = null,
-                            projectId = AppConfigManager.activeProjectId,
-                            conversationId = convId,
-                            createdAt = System.currentTimeMillis(),
-                        ),
-                    )
-                } else {
-                    Toast.makeText(context, "Enable overlay permission so I can show live app-control status.", Toast.LENGTH_LONG).show()
-                    overlayPermissionLauncher.launch(
-                        Intent(
-                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}"),
-                        ),
-                    )
-                    AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
-                }
-            } else {
-                AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
-            }
+            AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
         }
 
-        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
+        if (isCallModeActive &&
+            !realtimeModeRequested &&
+            !realtimeActive &&
+            !AppConfigManager.overlayTtsStreamingEnabled
+        ) {
             voiceManager.speakThinkingPhrase()
+        }
+    }
+
+    fun continueLastPromptInNewChat() {
+        val previousConversationId = currentConversationId ?: return
+        val draftPrompt = lastSubmittedPrompt.ifBlank { input.trim() }
+        scope.launch {
+            val previousMessages = db.messages().getAll(previousConversationId)
+            val prompt = draftPrompt.ifBlank {
+                previousMessages
+                    .lastOrNull { message ->
+                        message.role == "user" &&
+                            !message.content.startsWith(INTERNAL_USER_PROMPT_PREFIX) &&
+                            !message.content.startsWith("Previous conversation summary:")
+                    }
+                    ?.content
+                    .orEmpty()
+            }.trim()
+            if (prompt.isBlank()) return@launch
+
+            val newId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val handoff = buildContinuationHandoff(
+                db = db,
+                previousConversationId = previousConversationId,
+                prompt = prompt,
+                previousMessages = previousMessages,
+            )
+            db.conversations().upsert(
+                ConversationEntity(
+                    id = newId,
+                    projectId = AppConfigManager.activeProjectId,
+                    title = "Continued: ${prompt.take(30)}${if (prompt.length > 30) "..." else ""}",
+                    createdAt = now,
+                    updatedAt = now,
+                    status = "idle",
+                    costUsd = 0.0,
+                ),
+            )
+            if (handoff.isNotBlank()) {
+                db.messages().insert(
+                    MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        conversationId = newId,
+                        role = "user",
+                        content = internalUserPrompt(handoff),
+                        createdAt = now,
+                        tokenCount = (handoff.length / 4).coerceAtLeast(1),
+                    )
+                )
+            }
+            currentConversationId = newId
+            AppConfigManager.activeConversationId = newId
+            lastSubmittedPrompt = prompt
+            errorMessage = null
+            AgentRunManager.startRun(context.applicationContext, newId, prompt)
         }
     }
 
@@ -593,12 +478,28 @@ fun ChatScreen(
         submitQuery(text, cachedPath, mediaMime)
     }
 
+    fun beginStreamingTtsForRunIfNeeded() {
+        if (streamingTtsStartedForRun) return
+        streamingTtsStartedForRun = true
+        isStreamingTtsActive = true
+        streamingTts.begin {
+            scope.launch {
+                isStreamingTtsActive = false
+                streamingTtsStartedForRun = false
+                userPartialText = ""
+                listenTrigger++
+            }
+        }
+    }
+
     fun submitVoiceQuery(text: String) {
         if (text.isBlank()) return
         userPartialText = text
         voiceOverlayText = ""
         liveTtsBuffer = ""
         liveTtsSpokeAny = false
+        streamingTtsStartedForRun = false
+        isStreamingTtsActive = false
         selectedMediaUri = null
         selectedMediaMimeType = null
         selectedMediaName = null
@@ -869,57 +770,73 @@ fun ChatScreen(
             if (eventConvId == convId) {
                 when (event) {
                     is AgentRunEvent.TextDelta -> {
-                        if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
-                            liveTtsBuffer += event.text
-                            val (chunk, remaining) = takeRealtimeSpeechSegment(liveTtsBuffer, force = false)
-                            if (chunk.isNotBlank()) {
-                                liveTtsBuffer = remaining
-                                liveTtsSpokeAny = true
-                                voiceManager.speakWithNaturalBreaks(chunk)
+                        if (isCallModeActive && !isCallMuted && !realtimeModeRequested && !realtimeActive) {
+                            if (AppConfigManager.overlayTtsStreamingEnabled && AppConfigManager.overlayTtsAutoplay) {
+                                beginStreamingTtsForRunIfNeeded()
+                                streamingTts.onToken(event.text)
+                            } else {
+                                liveTtsBuffer += event.text
+                                val (chunk, remaining) = takeRealtimeSpeechSegment(liveTtsBuffer, force = false)
+                                if (chunk.isNotBlank()) {
+                                    liveTtsBuffer = remaining
+                                    liveTtsSpokeAny = true
+                                    voiceManager.speakWithNaturalBreaks(chunk)
+                                }
                             }
                         }
                     }
                     is AgentRunEvent.Completed -> {
-                        processSimulatedSystemCommand(event.finalText)
                         if (isCallModeActive && !realtimeModeRequested && !realtimeActive) {
-                            val spokeDuringStream = liveTtsSpokeAny
-                            val (remainingChunk, remainingTail) = takeRealtimeSpeechSegment(liveTtsBuffer, force = true)
-                            liveTtsBuffer = remainingTail
-                            liveTtsSpokeAny = false
-                            val finalSpeech = when {
-                                remainingChunk.isNotBlank() -> remainingChunk
-                                !spokeDuringStream -> event.finalText
-                                else -> ""
-                            }
-                            if (finalSpeech.isNotBlank()) {
-                                voiceManager.speakWithNaturalBreaks(finalSpeech) {
+                            if (AppConfigManager.overlayTtsStreamingEnabled && AppConfigManager.overlayTtsAutoplay) {
+                                streamingTts.complete()
+                            } else {
+                                val spokeDuringStream = liveTtsSpokeAny
+                                val (remainingChunk, remainingTail) = takeRealtimeSpeechSegment(liveTtsBuffer, force = true)
+                                liveTtsBuffer = remainingTail
+                                liveTtsSpokeAny = false
+                                val finalSpeech = when {
+                                    remainingChunk.isNotBlank() -> remainingChunk
+                                    !spokeDuringStream -> event.finalText
+                                    else -> ""
+                                }
+                                if (finalSpeech.isNotBlank()) {
+                                    voiceManager.speakWithNaturalBreaks(finalSpeech) {
+                                        scope.launch {
+                                            userPartialText = ""
+                                            listenTrigger++
+                                        }
+                                    }
+                                } else {
                                     scope.launch {
+                                        delay(450)
                                         userPartialText = ""
                                         listenTrigger++
                                     }
-                                }
-                            } else {
-                                scope.launch {
-                                    delay(450)
-                                    userPartialText = ""
-                                    listenTrigger++
                                 }
                             }
                         } else {
                             userPartialText = ""
                         }
+                        streamingTtsStartedForRun = false
                     }
                     is AgentRunEvent.RunError -> {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                        streamingTtsStartedForRun = false
                         errorMessage = event.message
                         liveTtsBuffer = ""
                         liveTtsSpokeAny = false
+                    }
+                    is AgentRunEvent.Stopped -> {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                        streamingTtsStartedForRun = false
                     }
                     else -> {}
                 }
             }
         }
     }
-
     LaunchedEffect(partialSpeech) {
         if (isCallModeActive && partialSpeech.isNotBlank()) {
             userPartialText = partialSpeech
@@ -1025,8 +942,8 @@ fun ChatScreen(
     DisposableEffect(Unit) {
         onDispose {
             realtimeSession.destroy()
-            voiceManager.destroy()
             voiceRecognizer.destroy()
+            streamingTts.stop()
         }
     }
 
@@ -1169,6 +1086,10 @@ fun ChatScreen(
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
                         onNavigateToTerminal()
+                    },
+                    onNavigateToSelfManage = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSelfManage()
                     }
                 )
             }
@@ -1188,11 +1109,27 @@ fun ChatScreen(
                     } else {
                         TopAppBar(
                             title = {
-                                Text(
-                                    text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                                val titleText = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid"
+                                if (skin == ClawSkin.LiquidGlass) {
+                                    ClawPanel(
+                                        cornerRadius = 22.dp,
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                        emphasis = 0.42f,
+                                    ) {
+                                        Text(
+                                            text = titleText,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = titleText,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             },
                             navigationIcon = {
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
@@ -1200,12 +1137,32 @@ fun ChatScreen(
                                 }
                             },
                             actions = {
-                                IconButton(onClick = ::startVoiceSession) {
-                                    Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                if (skin == ClawSkin.LiquidGlass) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.74f), CircleShape)
+                                            .border(1.dp, Color.White.copy(alpha = 0.36f), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        IconButton(onClick = ::startVoiceSession) {
+                                            Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                } else {
+                                    IconButton(onClick = ::startVoiceSession) {
+                                        Icon(Icons.Rounded.Call, contentDescription = "Voice call", tint = MaterialTheme.colorScheme.primary)
+                                    }
                                 }
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                containerColor = if (skin == ClawSkin.LiquidGlass) {
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.34f)
+                                } else {
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                                },
                             ),
                         )
                     }
@@ -1366,6 +1323,7 @@ fun ChatScreen(
                     onMuteToggle = {
                         val muted = !isCallMuted
                         isCallMuted = muted
+                        voiceManager.setMuted(muted)
                         if (realtimeModeRequested || realtimeActive) {
                             if (muted) {
                                 scope.launch {
@@ -1380,6 +1338,11 @@ fun ChatScreen(
                     },
                     userPartialText = userPartialText,
                     agentResponseText = voiceOverlayText,
+                    isTtsStreaming = isStreamingTtsActive,
+                    onStopTts = {
+                        streamingTts.stop()
+                        isStreamingTtsActive = false
+                    },
                     onBack = {
                         isCallModeActive = false
                         realtimeModeRequested = false
@@ -1387,6 +1350,7 @@ fun ChatScreen(
                             realtimeSession.stop()
                         }
                         voiceManager.stop()
+                        streamingTts.stop()
                     }
                 )
 
@@ -1399,6 +1363,10 @@ fun ChatScreen(
                         .padding(bottom = 96.dp)
                 ) {
                     errorMessage?.let { msg ->
+                        val providerError = msg.contains("provider", ignoreCase = true) ||
+                            msg.contains("HTTP ", ignoreCase = true) ||
+                            msg.contains("context window", ignoreCase = true) ||
+                            msg.contains("API key", ignoreCase = true)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1406,23 +1374,40 @@ fun ChatScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFFE53935))
                                 .border(1.5.dp, Color(0xFFB71C1C), RoundedCornerShape(12.dp))
-                                .clickable { errorMessage = null }
                                 .padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Error",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = msg,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    modifier = Modifier.weight(1f)
-                                )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Error",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = msg,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (providerError) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(
+                                            onClick = { continueLastPromptInNewChat() },
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+                                        ) {
+                                            Text("Continue in new chat", fontWeight = FontWeight.Bold)
+                                        }
+                                        TextButton(
+                                            onClick = { errorMessage = null },
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+                                        ) {
+                                            Text("Dismiss")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1430,8 +1415,16 @@ fun ChatScreen(
 
                 LaunchedEffect(errorMessage) {
                     if (errorMessage != null) {
-                        delay(4000)
-                        errorMessage = null
+                        val providerError = errorMessage?.let { msg ->
+                            msg.contains("provider", ignoreCase = true) ||
+                                msg.contains("HTTP ", ignoreCase = true) ||
+                                msg.contains("context window", ignoreCase = true) ||
+                                msg.contains("API key", ignoreCase = true)
+                        } == true
+                        if (!providerError) {
+                            delay(4000)
+                            errorMessage = null
+                        }
                     }
                 }
             }
@@ -1855,95 +1848,128 @@ private fun UserMessageBubble(item: UserChatItem) {
             RoundedCornerShape(if (skin.isHud()) 14.dp else 22.dp)
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = maxBubbleWidth)
-                    .clip(bubbleShape)
-                    .background(
-                        if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
-                        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
-                        bubbleShape,
-                    )
-                    .border(
-                        1.dp,
-                        if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-                        bubbleShape,
-                    )
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (item.mediaPath != null && item.mediaMimeType != null) {
-                        val mediaFile = java.io.File(item.mediaPath)
-                        if (mediaFile.exists() && mediaFile.isFile) {
-                            val isImage = item.mediaMimeType.startsWith("image/")
-                            val uri = Uri.fromFile(mediaFile)
-                            val bitmap = rememberBitmapFromUri(context, uri)
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = maxBubbleWidth)
+                        .clip(bubbleShape)
+                        .background(
+                            if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.06f)
+                            else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+                            bubbleShape,
+                        )
+                        .border(
+                            1.dp,
+                            if (skin == ClawSkin.ClawMagic) Color.White.copy(alpha = 0.07f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                            bubbleShape,
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (item.mediaPath != null && item.mediaMimeType != null) {
+                            val mediaFile = java.io.File(item.mediaPath)
+                            if (mediaFile.exists() && mediaFile.isFile) {
+                                val isImage = item.mediaMimeType.startsWith("image/")
+                                val uri = Uri.fromFile(mediaFile)
+                                val bitmap = rememberBitmapFromUri(context, uri)
 
-                            if (isImage && bitmap != null) {
-                                androidx.compose.foundation.Image(
-                                    bitmap = bitmap,
-                                    contentDescription = "User attachment",
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 240.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                )
-                            } else {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
-                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = mediaIconForMime(item.mediaMimeType),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
+                                if (isImage && bitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bitmap,
+                                        contentDescription = "User attachment",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 240.dp)
+                                            .clip(RoundedCornerShape(12.dp))
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = mediaFile.name,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+                                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = mediaIconForMime(item.mediaMimeType),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = mediaFile.name,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                    if (item.text.isNotBlank()) {
-                        SelectionContainer {
-                            Text(
-                                text = item.text,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 14.sp,
-                                    lineHeight = 23.sp,
-                                    letterSpacing = 0.sp,
-                                ),
-                            )
+                        if (item.text.isNotBlank()) {
+                            SelectionContainer {
+                                Text(
+                                    text = item.text,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontSize = 14.sp,
+                                        lineHeight = 23.sp,
+                                        letterSpacing = 0.sp,
+                                    ),
+                                )
+                            }
                         }
-                        Text(
-                            text = formatChatTimestamp(item.createdAt),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 10.sp,
-                                letterSpacing = 0.sp,
-                            ),
-                            modifier = Modifier.align(Alignment.End),
-                        )
                     }
                 }
+                Text(
+                    text = formatChatTimestamp(item.createdAt),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        letterSpacing = 0.sp,
+                    ),
+                    modifier = Modifier.padding(end = 2.dp),
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun ChatMarkdownContent(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    useStableTableRenderer: Boolean = false,
+) {
+    val hasTable = text.lineSequence().any { line ->
+        val trimmed = line.trim()
+        trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.count { it == '|' } >= 2
+    }
+    if (hasTable && useStableTableRenderer) {
+        MarkdownResponseContent(
+            text = text,
+            modifier = modifier,
+            color = color,
+            fontSize = 15.sp,
+            maxLines = Int.MAX_VALUE,
+        )
+    } else {
+        MarkdownText(
+            markdown = text,
+            modifier = modifier,
+            color = color,
+        )
     }
 }
 
@@ -1988,18 +2014,20 @@ private fun AgentMessageCard(
                     emphasis = 0.15f,
                 ) {
                     SelectionContainer {
-                        MarkdownText(
-                            markdown = item.text,
+                        ChatMarkdownContent(
+                            text = item.text,
                             color = MaterialTheme.colorScheme.onSurface,
+                            useStableTableRenderer = item.streaming,
                         )
                     }
                 }
             } else {
                 SelectionContainer {
-                    MarkdownText(
-                        markdown = item.text,
+                    ChatMarkdownContent(
+                        text = item.text,
                         modifier = contentModifier,
                         color = MaterialTheme.colorScheme.onSurface,
+                        useStableTableRenderer = item.streaming,
                     )
                 }
             }
@@ -2258,6 +2286,8 @@ private fun ReferenceInputBar(
     selectedMediaMimeType: String?,
     onMediaSelected: (Uri?, String?, String?) -> Unit,
     onAttach: () -> Unit,
+    showCommandButton: Boolean,
+    onCommandMenu: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -2339,6 +2369,16 @@ private fun ReferenceInputBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    AnimatedVisibility(visible = showCommandButton) {
+                        CompactIconButton(onClick = onCommandMenu) {
+                            Icon(
+                                imageVector = Icons.Rounded.Menu,
+                                contentDescription = "Command menu",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                                modifier = Modifier.size(21.dp),
+                            )
+                        }
+                    }
                     CompactIconButton(onClick = onAttach) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
@@ -2399,6 +2439,7 @@ private fun PremiumInputBar(
     onMediaSelected: (Uri?, String?, String?) -> Unit,
 ) {
     var commandMenuVisible by remember { mutableStateOf(false) }
+    var orchestrationDialogVisible by remember { mutableStateOf(false) }
     val skin = currentClawSkin()
     val context = LocalContext.current
     val attachmentPicker = rememberLauncherForActivityResult(
@@ -2411,21 +2452,56 @@ private fun PremiumInputBar(
         },
     )
     val showCommandButton = value.isEmpty()
+    fun selectCommand(command: String) {
+        if (command == "/orchestrate") {
+            orchestrationDialogVisible = true
+        } else {
+            onValueChange(command)
+        }
+        commandMenuVisible = false
+    }
+
+    if (orchestrationDialogVisible) {
+        OrchestrationRoleDialog(
+            onDismiss = { orchestrationDialogVisible = false },
+            onSave = { prompt ->
+                onValueChange(prompt)
+                orchestrationDialogVisible = false
+            },
+        )
+    }
 
     if (skin == ClawSkin.ClawMagic) {
-        ReferenceInputBar(
-            value = value,
-            onValueChange = onValueChange,
-            state = state,
-            onSubmit = onSubmit,
-            onStop = onStop,
-            onVoiceInput = onVoiceInput,
-            selectedMediaUri = selectedMediaUri,
-            selectedMediaName = selectedMediaName,
-            selectedMediaMimeType = selectedMediaMimeType,
-            onMediaSelected = onMediaSelected,
-            onAttach = { attachmentPicker.launch("*/*") },
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AnimatedVisibility(
+                visible = commandMenuVisible && showCommandButton,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                CommandMenu(
+                    onCommandSelected = { command ->
+                        selectCommand(command)
+                    },
+                )
+            }
+            ReferenceInputBar(
+                value = value,
+                onValueChange = onValueChange,
+                state = state,
+                onSubmit = onSubmit,
+                onStop = onStop,
+                onVoiceInput = onVoiceInput,
+                selectedMediaUri = selectedMediaUri,
+                selectedMediaName = selectedMediaName,
+                selectedMediaMimeType = selectedMediaMimeType,
+                onMediaSelected = onMediaSelected,
+                onAttach = { attachmentPicker.launch("*/*") },
+                showCommandButton = showCommandButton,
+                onCommandMenu = { commandMenuVisible = !commandMenuVisible },
+            )
+        }
         return
     }
 
@@ -2439,8 +2515,7 @@ private fun PremiumInputBar(
         AnimatedVisibility(visible = commandMenuVisible && showCommandButton) {
             CommandMenu(
                 onCommandSelected = { command ->
-                    onValueChange(command)
-                    commandMenuVisible = false
+                    selectCommand(command)
                 },
             )
         }
@@ -2568,6 +2643,7 @@ private fun PremiumInputBar(
 
 @Composable
 private fun CommandMenu(onCommandSelected: (String) -> Unit) {
+    val savedProviders = remember { AppConfigManager.savedProviderProfiles() }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -2583,8 +2659,88 @@ private fun CommandMenu(onCommandSelected: (String) -> Unit) {
             CommandMenuItem("/help", "Show available commands", onCommandSelected)
             CommandMenuItem("/clear", "Start a fresh chat", onCommandSelected)
             CommandMenuItem("/runtime", "Check Linux runtime", onCommandSelected)
+            CommandMenuItem("/sync-memory", "Sync agent memory with desktop", onCommandSelected)
+            savedProviders.take(6).forEach { profile ->
+                CommandMenuItem("/provider ${profile.name}", "Switch to ${profile.model}", onCommandSelected)
+            }
+            CommandMenuItem("/provider", "List saved providers", onCommandSelected)
+            CommandMenuItem("/model ", "Set current model id", onCommandSelected)
+            CommandMenuItem("/orchestrate", "Configure multi-agent run", onCommandSelected)
+            CommandMenuItem("/subagents", "Plan background subagents", onCommandSelected)
         }
     }
+}
+
+@Composable
+private fun OrchestrationRoleDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val profiles = AppConfigManager.savedProviderProfiles()
+    val fallback = profiles.firstOrNull()?.name ?: AppConfigManager.provider.ifBlank { "main" }
+    var planner by remember { mutableStateOf(fallback) }
+    var researcher by remember { mutableStateOf(profiles.getOrNull(1)?.name ?: fallback) }
+    var coder by remember { mutableStateOf(profiles.getOrNull(2)?.name ?: fallback) }
+    var reviewer by remember { mutableStateOf(profiles.getOrNull(3)?.name ?: fallback) }
+    var task by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Multi-Agent Orchestration") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Use saved provider profile names. Saved profiles: ${profiles.joinToString(", ") { it.name }.ifBlank { fallback }}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(value = planner, onValueChange = { planner = it }, label = { Text("Planner provider") }, singleLine = true)
+                OutlinedTextField(value = researcher, onValueChange = { researcher = it }, label = { Text("Research provider") }, singleLine = true)
+                OutlinedTextField(value = coder, onValueChange = { coder = it }, label = { Text("Coder provider") }, singleLine = true)
+                OutlinedTextField(value = reviewer, onValueChange = { reviewer = it }, label = { Text("Reviewer provider") }, singleLine = true)
+                OutlinedTextField(
+                    value = task,
+                    onValueChange = { task = it },
+                    label = { Text("Task") },
+                    placeholder = { Text("What should the agents do?") },
+                    minLines = 3,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val config = """
+                        planner=$planner
+                        researcher=$researcher
+                        coder=$coder
+                        reviewer=$reviewer
+                    """.trimIndent()
+                    AppConfigManager.multiAgentOrchestrationConfig = config
+                    val prompt = buildString {
+                        appendLine("/orchestrate")
+                        appendLine("Use this saved provider role map:")
+                        appendLine(config)
+                        appendLine()
+                        appendLine("Task:")
+                        append(task.ifBlank { "Ask me what task to run, then use this role map." })
+                    }
+                    onSave(prompt.trim())
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
@@ -3499,6 +3655,104 @@ private fun formatDiffOutputText(text: String): AnnotatedString {
             }
         }
     }
+}
+
+private suspend fun buildContinuationHandoff(
+    db: ClawDroidDatabase,
+    previousConversationId: String,
+    prompt: String,
+    previousMessages: List<MessageEntity>,
+): String {
+    val previousConversation = db.conversations().getById(previousConversationId)
+    val visibleMessages = previousMessages
+        .filterNot { it.content.startsWith(INTERNAL_USER_PROMPT_PREFIX) }
+        .filterNot { it.content.startsWith("Previous conversation summary:") }
+
+    if (visibleMessages.isEmpty()) return ""
+
+    val compactedSummary = previousConversation?.summaryMessageId
+        ?.let { summaryId -> previousMessages.firstOrNull { it.id == summaryId } }
+        ?.content
+        ?.removePrefix("[Compacted Summary]")
+        ?.trim()
+        ?.handoffSnippet(1_800)
+
+    val lastUser = visibleMessages
+        .lastOrNull { it.role == "user" }
+        ?.content
+        ?.handoffSnippet(700)
+
+    val lastAssistant = visibleMessages
+        .lastOrNull { it.role == "assistant" && it.content.isNotBlank() && !it.content.startsWith("[Compacted Summary]") }
+        ?.content
+        ?.handoffSnippet(1_200)
+
+    val recentTranscript = visibleMessages
+        .filterNot { it.role == "tool" }
+        .takeLast(10)
+        .joinToString("\n") { message ->
+            val role = when (message.role) {
+                "user" -> "User"
+                "assistant" -> "Assistant"
+                else -> message.role.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+            "- $role: ${message.content.handoffSnippet(420)}"
+        }
+
+    val recentTools = mutableListOf<com.clawdroid.app.data.db.ToolCallEntity>()
+    for (assistantMessage in visibleMessages.asReversed().filter { it.role == "assistant" }) {
+        recentTools += db.toolCalls().getForMessage(assistantMessage.id)
+        if (recentTools.size >= 5) break
+    }
+
+    val recentToolActivity = recentTools
+        .take(5)
+        .asReversed()
+        .joinToString("\n") { tool ->
+            val result = tool.result
+                ?.handoffSnippet(260)
+                ?.takeIf { it.isNotBlank() }
+                ?: tool.status
+            "- ${tool.toolName}: $result"
+        }
+
+    return buildString {
+        appendLine("Previous chat handoff for Continue in new chat.")
+        appendLine("The user clicked Continue in new chat because the previous session is too large or blocked. Continue the same task from this handoff. Do not restart from scratch unless the previous state clearly requires it.")
+        previousConversation?.title?.takeIf { it.isNotBlank() }?.let { appendLine("Previous chat title: $it") }
+        appendLine("Prompt to continue: ${prompt.handoffSnippet(900)}")
+        if (!compactedSummary.isNullOrBlank()) {
+            appendLine()
+            appendLine("Compacted summary:")
+            appendLine(compactedSummary)
+        }
+        if (!lastUser.isNullOrBlank()) {
+            appendLine()
+            appendLine("Last user request:")
+            appendLine(lastUser)
+        }
+        if (!lastAssistant.isNullOrBlank()) {
+            appendLine()
+            appendLine("Last assistant response:")
+            appendLine(lastAssistant)
+        }
+        if (recentToolActivity.isNotBlank()) {
+            appendLine()
+            appendLine("Recent tool activity:")
+            appendLine(recentToolActivity)
+        }
+        if (recentTranscript.isNotBlank()) {
+            appendLine()
+            appendLine("Recent transcript:")
+            appendLine(recentTranscript)
+        }
+    }.trim().take(8_000)
+}
+
+private fun String.handoffSnippet(maxChars: Int): String {
+    val compact = replace(Regex("\\s+"), " ").trim()
+    if (compact.length <= maxChars) return compact
+    return compact.take(maxChars).trimEnd() + "..."
 }
 
 private fun getUriMetadata(context: Context, uri: Uri): Pair<String?, String?> {

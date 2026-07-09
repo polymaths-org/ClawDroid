@@ -24,6 +24,7 @@ import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
 import com.clawdroid.app.data.db.MessageWithToolCalls
@@ -154,7 +155,11 @@ class ChatViewModel(
             val content = m.message.content
             val msgId = m.message.id
             if (role == "user") {
-                listOf(UserChatItem(id = msgId, text = content, createdAt = m.message.createdAt))
+                if (content.startsWith(INTERNAL_USER_PROMPT_PREFIX) || content.startsWith("Previous conversation summary:")) {
+                    emptyList()
+                } else {
+                    listOf(UserChatItem(id = msgId, text = content, createdAt = m.message.createdAt))
+                }
             } else {
                 val steps = m.toolCalls.map { t ->
                     ActivityStepItem(
@@ -210,6 +215,11 @@ class ChatViewModel(
         if (text.isEmpty()) return
         uiState = uiState.copy(input = "")
 
+        if (text.startsWith("/")) {
+            handleSlashCommand(text)
+            return
+        }
+
         if (uiState.runtimeState == AgentRuntimeState.Running) {
             engine?.steer(text)
             viewModelScope.launch {
@@ -229,6 +239,77 @@ class ChatViewModel(
         }
 
         submitQuery(text)
+    }
+
+    private fun handleSlashCommand(text: String) {
+        val parts = text.trim().split(Regex("\\s+"))
+        when (parts.firstOrNull()?.lowercase()) {
+            "/help" -> addAssistantNotice(
+                """
+                Commands:
+                /clear - start a fresh chat
+                /runtime - check the Linux sandbox
+                /provider <saved-name> - switch to a saved provider profile
+                /model <model-id> - switch model for the current provider
+                /sync-memory - sync memory with INTERPOLE
+                """.trimIndent(),
+            )
+            "/clear" -> createNewConversation(AppConfigManager.activeProjectId)
+            "/runtime" -> submitQuery("Check the Linux runtime, package manager, Python, Node, and workspace paths. Report concise status and fix simple bootstrap issues if possible.")
+            "/sync-memory" -> submitQuery("Sync ClawDroid memory with the paired INTERPOLE desktop now, then report what changed.")
+            "/orchestrate" -> submitQuery(
+                "Start a multi-agent orchestration plan for my task. Ask me which saved provider should act as planner, researcher, coder, and reviewer, then run the roles as coordinated subagents where useful. Save any useful workflow as memory/skills for next time.",
+            )
+            "/subagents" -> submitQuery(
+                "Plan background subagents for this task. Split the work into precise roles, decide which saved provider profile should run each role, and ask before starting any external or long-running work.",
+            )
+            "/provider" -> {
+                val provider = parts.getOrNull(1)?.lowercase().orEmpty()
+                switchProvider(provider)
+            }
+            "/model" -> {
+                val model = parts.drop(1).joinToString(" ").trim()
+                if (model.isBlank()) {
+                    addAssistantNotice("Usage: /model <model-id>")
+                } else {
+                    AppConfigManager.save(AppConfigManager.provider, AppConfigManager.baseUrl, AppConfigManager.apiKey, model)
+                    addAssistantNotice("Model switched to $model.")
+                }
+            }
+            else -> addAssistantNotice("Unknown command. Type /help for available commands.")
+        }
+    }
+
+    private fun switchProvider(provider: String) {
+        val profiles = AppConfigManager.savedProviderProfiles()
+        if (provider.isBlank()) {
+            addAssistantNotice(
+                "Saved providers: " + profiles.joinToString(", ") { it.name } +
+                    "\nUsage: /provider <saved-name>",
+            )
+            return
+        }
+        if (!AppConfigManager.switchProviderProfile(provider)) {
+            addAssistantNotice("No saved provider named \"$provider\". Save it in Settings > Provider first.")
+            return
+        }
+        addAssistantNotice("Provider switched to ${AppConfigManager.provider} using ${AppConfigManager.model}.")
+    }
+
+    private fun addAssistantNotice(content: String) {
+        val convId = uiState.currentConversationId ?: return
+        viewModelScope.launch {
+            db.messages().insert(
+                MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    conversationId = convId,
+                    role = "assistant",
+                    content = content,
+                    createdAt = System.currentTimeMillis(),
+                    tokenCount = 0,
+                ),
+            )
+        }
     }
 
     private fun submitQuery(text: String) {

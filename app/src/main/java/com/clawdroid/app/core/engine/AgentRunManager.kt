@@ -3,6 +3,7 @@ package com.clawdroid.app.core.engine
 import android.content.Context
 import android.util.Log
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.interpole.InterpoleMemorySync
 import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.data.db.ClawDroidDatabase
@@ -97,6 +98,7 @@ object AgentRunManager {
         
         val job = appScope.launch {
             try {
+                syncMemoryIfEnabled(appCtx, "push")
                 engine.run(
                     prompt = prompt,
                     targetConversationId = conversationId,
@@ -116,6 +118,7 @@ object AgentRunManager {
                 NotificationHelper.sendTaskFailed(appCtx, e.message ?: "Run failed")
                 events.emit(Pair(conversationId, AgentRunEvent.RunError(e.message ?: "Run failed")))
             } finally {
+                syncMemoryIfEnabled(appCtx, "pull")
                 saveUnsavedStateToDb(appCtx, runState)
                 updateConversationTitleIfNeeded(appCtx, runState)
                 AppConfigManager.syncToSandbox(appCtx)
@@ -129,6 +132,22 @@ object AgentRunManager {
             }
         }
         runState.job = job
+    }
+
+    private suspend fun syncMemoryIfEnabled(context: Context, direction: String) {
+        if (!AppConfigManager.interpoleEnabled ||
+            !AppConfigManager.memorySyncEnabled ||
+            !AppConfigManager.memoryAutoSyncEnabled
+        ) {
+            return
+        }
+        withContext(Dispatchers.IO) {
+            runCatching {
+                InterpoleMemorySync(context).sync(direction = direction, force = false)
+            }.onFailure {
+                Log.w(TAG, "Memory auto-sync failed direction=$direction: ${it.message}")
+            }
+        }
     }
     
     fun stopRun(conversationId: String?) {

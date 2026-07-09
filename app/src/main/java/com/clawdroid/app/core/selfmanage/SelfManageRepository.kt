@@ -59,6 +59,13 @@ class SelfManageRepository(context: Context) {
     suspend fun getOverdueTodos(now: Long): List<Todo> = dao.getOverdueTodos(now).map { it.toModel() }
     suspend fun getNextAlarm(): Alarm? = dao.getNextEnabledAlarm()?.toModel()
 
+    suspend fun rescheduleActive() {
+        val now = System.currentTimeMillis()
+        dao.getAllEnabledAlarms().map { it.toModel() }.forEach { SelfManageScheduler.scheduleAlarm(appContext, it) }
+        dao.getFutureReminders(now).map { it.toModel() }.forEach { SelfManageScheduler.scheduleReminder(appContext, it) }
+        dao.getFutureTodos(now).map { it.toModel() }.forEach { SelfManageScheduler.scheduleTodo(appContext, it) }
+    }
+
     suspend fun addAlarm(alarm: Alarm) {
         dao.upsertAlarm(alarm.toEntity())
         SelfManageScheduler.scheduleAlarm(appContext, alarm)
@@ -94,10 +101,25 @@ class SelfManageRepository(context: Context) {
         dao.deleteReminder(reminderId)
     }
 
-    suspend fun addTodo(todo: Todo) = dao.upsertTodo(todo.toEntity())
-    suspend fun updateTodo(todo: Todo) = dao.upsertTodo(todo.toEntity())
-    suspend fun completeTodo(todoId: String) = dao.completeTodo(todoId, System.currentTimeMillis())
-    suspend fun deleteTodo(todoId: String) = dao.deleteTodo(todoId)
+    suspend fun addTodo(todo: Todo) {
+        dao.upsertTodo(todo.toEntity())
+        SelfManageScheduler.scheduleTodo(appContext, todo)
+    }
+
+    suspend fun updateTodo(todo: Todo) {
+        dao.upsertTodo(todo.toEntity())
+        SelfManageScheduler.scheduleTodo(appContext, todo)
+    }
+
+    suspend fun completeTodo(todoId: String) {
+        SelfManageScheduler.cancel(appContext, todoId)
+        dao.completeTodo(todoId, System.currentTimeMillis())
+    }
+
+    suspend fun deleteTodo(todoId: String) {
+        SelfManageScheduler.cancel(appContext, todoId)
+        dao.deleteTodo(todoId)
+    }
 }
 
 private fun SelfManageAlarmEntity.toModel(): Alarm = Alarm(

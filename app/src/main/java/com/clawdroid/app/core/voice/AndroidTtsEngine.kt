@@ -11,7 +11,10 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
-class AndroidTtsEngine(private val context: Context) : TtsEngine {
+class AndroidTtsEngine(
+    private val context: Context,
+    private val enginePackageName: String? = null,
+) : TtsEngine {
 
     private val _state = MutableStateFlow(TtsEngineState.Idle)
     override val state: StateFlow<TtsEngineState> = _state.asStateFlow()
@@ -24,14 +27,14 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
 
     init {
         _state.value = TtsEngineState.Initializing
-        tts = TextToSpeech(context) { status ->
+        tts = TextToSpeech(context, { status ->
             if (status == TextToSpeech.SUCCESS) {
                 configureVoice()
                 _state.value = TtsEngineState.Ready
             } else {
                 _state.value = TtsEngineState.Unavailable
             }
-        }
+        }, enginePackageName)
     }
 
     private fun configureVoice() {

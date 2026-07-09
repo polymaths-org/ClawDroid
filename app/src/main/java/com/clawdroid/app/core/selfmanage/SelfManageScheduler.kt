@@ -27,7 +27,14 @@ object SelfManageScheduler {
         )
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.setAlarmClock(
-            AlarmManager.AlarmClockInfo(triggerAt, pendingIntent),
+            AlarmManager.AlarmClockInfo(
+                triggerAt,
+                alarmActivityPendingIntent(
+                    context = context,
+                    id = alarm.id,
+                    title = alarm.label.ifBlank { "Alarm" },
+                ),
+            ),
             pendingIntent,
         )
     }
@@ -54,10 +61,48 @@ object SelfManageScheduler {
         }
     }
 
+    fun scheduleTodo(context: Context, todo: Todo) {
+        if (todo.completed) {
+            cancel(context, todo.id)
+            return
+        }
+        val dueAt = todo.dueAt ?: return
+        val now = System.currentTimeMillis()
+        if (dueAt <= now) {
+            triggerSoon(
+                context = context,
+                id = todo.id,
+                kind = "todo",
+                title = todo.title.ifBlank { "Todo" },
+            )
+            return
+        }
+        val pendingIntent = pendingIntent(
+            context = context,
+            id = todo.id,
+            kind = "todo",
+            title = todo.title.ifBlank { "Todo" },
+        )
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
+        } else {
+            @Suppress("DEPRECATION")
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
+        }
+    }
+
     fun cancel(context: Context, id: String) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(pendingIntent(context, id, "alarm", ""))
         alarmManager.cancel(pendingIntent(context, id, "reminder", ""))
+        alarmManager.cancel(pendingIntent(context, id, "todo", ""))
+    }
+
+    private fun triggerSoon(context: Context, id: String, kind: String, title: String) {
+        val pendingIntent = pendingIntent(context, id, kind, title)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1_000L, pendingIntent)
     }
 
     private fun pendingIntent(
@@ -74,6 +119,23 @@ object SelfManageScheduler {
         return PendingIntent.getBroadcast(
             context,
             requestCode(id, kind),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun alarmActivityPendingIntent(
+        context: Context,
+        id: String,
+        title: String,
+    ): PendingIntent {
+        val intent = Intent(context, SelfManageAlarmActivity::class.java)
+            .putExtra(SelfManageAlarmActivity.EXTRA_ALARM_ID, id)
+            .putExtra(SelfManageAlarmActivity.EXTRA_ALARM_TITLE, title)
+            .putExtra(SelfManageAlarmActivity.EXTRA_ALARM_BODY, "Alarm due now")
+        return PendingIntent.getActivity(
+            context,
+            requestCode(id, "alarm_activity"),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

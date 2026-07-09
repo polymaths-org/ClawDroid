@@ -1,5 +1,7 @@
 package com.clawdroid.app.core.notifications
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,16 +9,19 @@ import android.app.PendingIntent
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.clawdroid.app.MainActivity
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.selfmanage.SelfManageAlarmActivity
 import com.clawdroid.app.R
 
+@SuppressLint("MissingPermission")
 object NotificationHelper {
     const val AGENT_CHANNEL_ID = "agent_activity"
     const val ACTION_TASK_MARK_DONE = "com.clawdroid.app.ACTION_TASK_MARK_DONE"
@@ -124,7 +129,7 @@ object NotificationHelper {
     ) {
         ensureChannels(context)
         if (!AppConfigManager.notificationsEnabled) return
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled() || !canPostNotifications(context)) return
         NotificationManagerCompat.from(context).notify(
             notificationId,
             baseBuilder(
@@ -143,7 +148,7 @@ object NotificationHelper {
     fun sendAgentQuestion(context: Context, questionId: String, question: String, triggerAction: String) {
         val notificationId = 20_000 + questionId.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) } % 10_000
         ensureChannels(context)
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled() || !canPostNotifications(context)) return
         val snoozeIntent = Intent(context, AgentNotificationReceiver::class.java).apply {
             action = ACTION_SNOOZE
             putExtra(EXTRA_TRIGGER_ACTION, triggerAction)
@@ -218,7 +223,7 @@ object NotificationHelper {
         ensureChannels(context)
         if (!AppConfigManager.notificationsEnabled) return
         val manager = NotificationManagerCompat.from(context)
-        if (!manager.areNotificationsEnabled()) return
+        if (!manager.areNotificationsEnabled() || !canPostNotifications(context)) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (voiceMode) putExtra("START_VOICE_SESSION", true)
@@ -254,9 +259,6 @@ object NotificationHelper {
         body: String,
     ) {
         ensureChannels(context)
-        if (!AppConfigManager.notificationsEnabled) return
-        val manager = NotificationManagerCompat.from(context)
-        if (!manager.areNotificationsEnabled()) return
         val notificationId = ALARM_NOTIFICATION_ID + (alarmId.hashCode() and 0x0FFF)
         val alarmIntent = Intent(context, SelfManageAlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -265,6 +267,11 @@ object NotificationHelper {
             putExtra(SelfManageAlarmActivity.EXTRA_ALARM_BODY, body)
             putExtra(SelfManageAlarmActivity.EXTRA_NOTIFICATION_ID, notificationId)
         }
+        runCatching { context.startActivity(alarmIntent) }
+
+        if (!AppConfigManager.notificationsEnabled) return
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled() || !canPostNotifications(context)) return
         val pendingIntent = PendingIntent.getActivity(
             context,
             notificationId,
@@ -291,7 +298,11 @@ object NotificationHelper {
                 .setVibrate(longArrayOf(0, 800, 400, 800, 400, 1200))
                 .build(),
         )
-        runCatching { context.startActivity(alarmIntent) }
+    }
+
+    private fun canPostNotifications(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
     fun sendTaskStarted(context: Context, prompt: String) {
@@ -337,7 +348,7 @@ object NotificationHelper {
     private fun sendTaskAskNotification(context: Context, result: String) {
         ensureChannels(context)
         val manager = NotificationManagerCompat.from(context)
-        if (!manager.areNotificationsEnabled()) return
+        if (!manager.areNotificationsEnabled() || !canPostNotifications(context)) return
 
         val summary = summarize(result).ifBlank { "ClawDroid finished the task." }
         val owner = AppConfigManager.ownerName.takeIf { it.isNotBlank() } ?: "there"
@@ -379,7 +390,7 @@ object NotificationHelper {
     ) {
         ensureChannels(context)
         val manager = NotificationManagerCompat.from(context)
-        if (!manager.areNotificationsEnabled()) return
+        if (!manager.areNotificationsEnabled() || !canPostNotifications(context)) return
         manager.notify(
             TASK_NOTIFICATION_ID + idOffset,
             baseBuilder(
@@ -410,7 +421,7 @@ object NotificationHelper {
         channelId: String = AGENT_CHANNEL_ID,
         triggerAction: String = "open_app",
         notificationId: Int = AGENT_NOTIFICATION_ID,
-        useBroadcastIntent: Boolean = true,
+        useBroadcastIntent: Boolean = false,
     ): NotificationCompat.Builder {
         val pendingIntent = if (useBroadcastIntent) {
             val intent = Intent(context, AgentNotificationReceiver::class.java).apply {

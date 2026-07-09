@@ -294,7 +294,13 @@ object BootstrapManager {
             dir.walkTopDown()
                 .filter { it.isFile }
                 .forEach { file ->
-                    val bytes = runCatching { file.inputStream().use { it.readNBytes(128) } }
+                    val bytes = runCatching {
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(128)
+                            val read = input.read(buffer)
+                            if (read <= 0) ByteArray(0) else buffer.copyOf(read)
+                        }
+                    }
                         .getOrNull()
                         ?: return@forEach
                     val header = bytes.toString(Charsets.UTF_8)

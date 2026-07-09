@@ -87,6 +87,9 @@ object MessageBuilder {
             appendLine("- For reminders, todos, alarms, schedules, or future autonomous work, use set_reminder. Use absolute ISO-8601 trigger times with timezone when a time is known.")
             appendLine("- If the user schedules background work, set run_agent=true only when they asked the agent to actually execute something at that time; otherwise create a normal reminder.")
             appendLine("- If the user teaches you durable preferences, workflows, identity facts, or operating rules, update the relevant markdown memory/config files such as AGENTS.md, SOUL.md, TOOLS.md, SKILL.md, SYSTEM.md, or files under home/.memory/.")
+            appendLine("- INTERPOLE is the desktop bridge, desktop harness, desktop web panel, and ClawDroid CLI interface. If desktop transfer or sync fails because host/pairing details are missing, ask the user for the LAN IP, Tailscale IP, or MagicDNS name, then call interpole_configure.")
+            appendLine("- For repeated desktop workflows, sync memory before and after desktop work when memory sync is enabled. Use interpole_memory_sync rather than manually copying memory files.")
+            appendLine("- If a user repeats a workflow, consider creating or updating a skill/memory note so future runs are faster and less error-prone.")
 
             if (globalSystemMd != null || globalAgentsMd != null || globalToolsMd != null || globalSkillMd != null) {
                 appendLine()

@@ -11,8 +11,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -71,7 +73,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.assistant.AssistantInvocation
-import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.AssistantInvocationSource
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.notifications.NotificationHelper
@@ -117,16 +118,20 @@ fun AssistantOverlayView(
         label = "pulseAlpha",
     )
 
-    val isRunning = status != "Ready" && status != "Done" && status != "Error"
-    val isVoiceOnly = invocation?.mode == AssistantMode.VOICE_CHAT ||
-        invocation?.source == AssistantInvocationSource.VOICE_CALL ||
-        invocation?.source == AssistantInvocationSource.NOTIFICATION_ACTION
+    val isRunning = !status.isTerminalOverlayStatus()
+    val preferredInputMode = when (invocation?.source) {
+        AssistantInvocationSource.SYSTEM_ASSIST -> AppConfigManager.assistantOverlayInputMode
+        AssistantInvocationSource.VOICE_CALL,
+        AssistantInvocationSource.NOTIFICATION_ACTION -> "voice"
+        else -> AppConfigManager.overlayInputMode
+    }
+    val isVoiceOnly = preferredInputMode == "voice"
 
     if (isVoiceOnly && !showTextOverlayFromVoice) {
-        val ownerName = AppConfigManager.ownerName.takeIf { it.isNotBlank() } ?: "there"
-        val defaultGreeting = when (invocation?.source) {
-            AssistantInvocationSource.NOTIFICATION_ACTION -> "Listening, $ownerName."
-            else -> "Ready, $ownerName."
+        val initialGreeting = when {
+            invocation?.source == AssistantInvocationSource.SYSTEM_ASSIST -> ""
+            !AppConfigManager.voiceLaunchGreetingEnabled -> ""
+            else -> voiceGreeting?.takeIf { it.isNotBlank() }.orEmpty()
         }
         VoiceAssistantWidget(
             invocationId = invocation?.id,
@@ -136,7 +141,7 @@ fun AssistantOverlayView(
             answer = answer,
             error = error,
             actionLog = actionLog,
-            initialGreeting = voiceGreeting?.takeIf { it.isNotBlank() } ?: defaultGreeting,
+            initialGreeting = initialGreeting,
             listenTimeoutSeconds = voiceListenTimeoutSeconds,
             pulseAlpha = pulseAlpha,
             onWindowDrag = onWindowDrag,
@@ -202,6 +207,13 @@ private fun isAffirmativeTaskAnswer(text: String): Boolean {
         normalized.contains("its done")
 }
 
+private fun String.isTerminalOverlayStatus(): Boolean {
+    return this == "Ready" ||
+        this == "Done" ||
+        this == "Error" ||
+        startsWith("Stopped", ignoreCase = true)
+}
+
 // ── Chat Assistant Widget (Gemini-style bottom dock) ──────────────────────
 
 @Composable
@@ -222,21 +234,34 @@ private fun ChatAssistantWidget(
     onDismiss: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
+    var outputExpanded by remember { mutableStateOf(false) }
     val mascotRandomKey = remember { System.nanoTime() }
     val context = LocalContext.current
-    val displayLine = when {
+    val isComplete = status == "Done" && error.isBlank()
+    val currentTaskLine = when {
+        error.isNotBlank() -> "Needs attention"
+        isRunning -> status.ifBlank { actionLog.lastOrNull() ?: "Working" }
+        isComplete -> "Task completed"
+        status == "Ready" -> "Ready"
+        else -> status.ifBlank { "Ready" }
+    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(140)
+    val latestResponseText = when {
         error.isNotBlank() -> error
         answer.isNotBlank() -> answer
         textDelta.isNotBlank() -> textDelta
-        shortLine.isNotBlank() -> shortLine
-        else -> "Watching the screen and planning the next move."
-    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(180)
-    val lastTaskLine = actionLog.lastOrNull()
-        ?.replace('\n', ' ')
-        ?.replace(Regex("\\s+"), " ")
-        ?.trim()
-        ?.take(120)
-        ?: displayLine.ifBlank { if (isRunning) "Thinking about the current screen." else "Ready for a follow-up." }
+        !isRunning && shortLine.isNotBlank() && shortLine != currentTaskLine -> shortLine
+        else -> ""
+    }.trim()
+    val latestResponseLine = latestResponseText.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(180)
+    val outputText = latestResponseText.ifBlank {
+        currentTaskLine.ifBlank { "Watching the screen and planning the next move." }
+    }
+    val headerLine = when {
+        error.isNotBlank() -> "Needs attention"
+        isRunning -> "In progress"
+        isComplete -> "Task completed"
+        else -> "Ready"
+    }
 
     Box(
         modifier = Modifier
@@ -255,8 +280,14 @@ private fun ChatAssistantWidget(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
-            enter = fadeIn(tween(180)) + expandVertically(expandFrom = Alignment.Bottom),
-            exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)) + slideInVertically(
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                initialOffsetY = { fullHeight -> (fullHeight * 0.16f).toInt().coerceAtLeast(18) },
+            ),
+            exit = fadeOut(tween(100)) + slideOutVertically(
+                animationSpec = tween(120, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> (fullHeight * 0.10f).toInt().coerceAtLeast(12) },
+            ),
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -291,20 +322,25 @@ private fun ChatAssistantWidget(
                                         when {
                                             error.isNotBlank() -> MaterialTheme.colorScheme.error
                                             isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
-                                            else -> MaterialTheme.colorScheme.tertiary
+                                            isComplete -> MaterialTheme.colorScheme.tertiary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                         },
                                     ),
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (status == "Ready") "ClawDroid" else status,
+                                    text = when {
+                                        status == "Ready" -> "ClawDroid"
+                                        isComplete -> "Task completed"
+                                        else -> status
+                                    },
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                 )
                                 Text(
-                                    text = lastTaskLine,
+                                    text = headerLine,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -319,6 +355,105 @@ private fun ChatAssistantWidget(
                         }
                     }
 
+                    AnimatedVisibility(
+                        visible = outputText.isNotBlank() || isRunning || actionLog.isNotEmpty() || isComplete,
+                        enter = fadeIn(tween(90)),
+                        exit = fadeOut(tween(70)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.50f))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
+                                    RoundedCornerShape(18.dp),
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(999.dp)),
+                            ) {
+                                if (isRunning) {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(3.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when {
+                                            error.isNotBlank() -> "Error"
+                                            isComplete -> "Completed"
+                                            else -> "Current task"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        text = currentTaskLine.ifBlank { "Waiting for the next update." },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { outputExpanded = !outputExpanded },
+                                    modifier = Modifier.size(38.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = if (outputExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                        contentDescription = if (outputExpanded) "Collapse output" else "Expand output",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "Latest response",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = latestResponseLine.ifBlank {
+                                        if (isRunning) "Waiting for the assistant response..." else "Ready for a follow-up."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            Text(
+                                text = outputText.ifBlank { "Working..." },
+                                color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp, letterSpacing = 0.sp),
+                                maxLines = if (outputExpanded) 8 else 2,
+                                modifier = Modifier.heightIn(min = 42.dp, max = if (outputExpanded) 156.dp else 46.dp),
+                            )
+                            if (outputExpanded && actionLog.isNotEmpty()) {
+                                ActionTimeline(actions = actionLog, isRunning = isRunning, pulseAlpha = pulseAlpha)
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -329,7 +464,7 @@ private fun ChatAssistantWidget(
                             onValueChange = onPromptChange,
                             modifier = Modifier.weight(1f),
                             enabled = true,
-                            placeholder = { Text(if (isRunning) "Steer while I work" else "Ask a follow-up") },
+                            placeholder = { Text(if (isRunning) "Add note" else "Ask") },
                             minLines = 1,
                             maxLines = 2,
                             shape = RoundedCornerShape(18.dp),
@@ -402,8 +537,14 @@ private fun ChatAssistantWidget(
         AnimatedVisibility(
             visible = !expanded,
             modifier = Modifier.align(Alignment.BottomEnd),
-            enter = fadeIn(tween(160)) + expandVertically(expandFrom = Alignment.Bottom),
-            exit = fadeOut(tween(120)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+            enter = fadeIn(tween(140, easing = FastOutSlowInEasing)) + slideInVertically(
+                animationSpec = tween(160, easing = FastOutSlowInEasing),
+                initialOffsetY = { fullHeight -> (fullHeight * 0.24f).toInt().coerceAtLeast(10) },
+            ),
+            exit = fadeOut(tween(90)) + slideOutVertically(
+                animationSpec = tween(110, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> (fullHeight * 0.18f).toInt().coerceAtLeast(8) },
+            ),
         ) {
             Surface(
                 onClick = { expanded = true },
@@ -591,6 +732,7 @@ private fun VoiceAssistantWidget(
         partial.isNotBlank() -> partial
         answer.isNotBlank() -> answer
         textDelta.isNotBlank() -> textDelta
+        status == "Done" -> "Task completed."
         isRunning -> status.ifBlank { "Thinking..." }
         isListening -> "Listening..."
         else -> "Ready"
@@ -599,6 +741,7 @@ private fun VoiceAssistantWidget(
     val detailLine = primaryLine.take(420)
     val stateLabel = when {
         error.isNotBlank() -> "Error"
+        status == "Done" -> "Completed"
         agentSpeaking -> "Speaking"
         isRunning -> "Thinking"
         isListening -> "Listening"
@@ -616,20 +759,20 @@ private fun VoiceAssistantWidget(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 520.dp)
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    onWindowDrag(dragAmount.x, dragAmount.y)
-                }
-            },
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        tonalElevation = 8.dp,
-        shadowElevation = 12.dp,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f),
-        ),
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        onWindowDrag(dragAmount.x, dragAmount.y)
+                    }
+                },
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f),
+            ),
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -648,6 +791,7 @@ private fun VoiceAssistantWidget(
                                 when {
                                     error.isNotBlank() -> MaterialTheme.colorScheme.error
                                     isListening || agentSpeaking || isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                                    status == "Done" -> MaterialTheme.colorScheme.tertiary
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
                                 },
                             ),
@@ -718,6 +862,7 @@ private fun VoiceAssistantWidget(
                     Text(
                         text = when {
                             partial.isNotBlank() -> "Heard"
+                            status == "Done" -> "Completed"
                             answer.isNotBlank() || textDelta.isNotBlank() -> "Response"
                             isRunning -> "Working"
                             else -> "Voice"

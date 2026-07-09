@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.sin
 
 class VoiceManager(private val context: Context) {
 
@@ -25,8 +24,14 @@ class VoiceManager(private val context: Context) {
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
+    private val _muted = MutableStateFlow(false)
+    val muted: StateFlow<Boolean> = _muted.asStateFlow()
+
     private val _agentVoiceAmplitude = MutableStateFlow(0f)
     val agentVoiceAmplitude: StateFlow<Float> = _agentVoiceAmplitude.asStateFlow()
+
+    private val _agentVoiceLevels = MutableStateFlow<List<Float>>(emptyList())
+    val agentVoiceLevels: StateFlow<List<Float>> = _agentVoiceLevels.asStateFlow()
 
     private val _downloadProgress = MutableStateFlow(0f)
     val downloadProgress: StateFlow<Float> = _downloadProgress.asStateFlow()
@@ -39,10 +44,12 @@ class VoiceManager(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var activeEngine: TtsEngine? = null
+    private var activeEngineId: String? = null
     private var piperEngine: PiperEngine? = null
     private var activeVoice: String? = null
     private val pendingQueue = mutableListOf<Pair<String, (() -> Unit)?>>()
     private val speechQueue = ArrayDeque<Pair<String, (() -> Unit)?>>()
+    private var outputAudioMeter: OutputAudioMeter? = null
 
     private fun getDesiredVoice(): String {
         return AppConfigManager.ttsVoice.takeIf { it.isNotBlank() }
@@ -54,8 +61,8 @@ class VoiceManager(private val context: Context) {
         _state.value = State.Idle
         val desired = AppConfigManager.ttsEngine
         scope.launch {
-            if (desired == "device") {
-                initAndroidTts()
+            if (TtsEngineManager.isDeviceEngineId(desired)) {
+                initAndroidTts(desired)
             } else {
                 initCloudTts(desired)
             }
@@ -74,6 +81,7 @@ class VoiceManager(private val context: Context) {
         val engine = createCloudEngine(engineId)
         if (engine?.state?.value == TtsEngineState.Ready) {
             activeEngine = engine
+            activeEngineId = engineId
             activeVoice = getDesiredVoice()
             _state.value = State.Ready
             Log.i("VoiceManager", "Cloud TTS ready: $engineId")
@@ -84,15 +92,23 @@ class VoiceManager(private val context: Context) {
         }
     }
 
-    private suspend fun initAndroidTts() {
-        val android = AndroidTtsEngine(context)
+    private suspend fun initAndroidTts(engineId: String = "device") {
+        val packageName = TtsEngineManager.packageNameFromDeviceEngineId(engineId)
+        val android = AndroidTtsEngine(context, packageName)
         android.state.first { it != TtsEngineState.Initializing }
+        if (android.state.value != TtsEngineState.Ready && packageName != null) {
+            Log.w("VoiceManager", "Android TTS unavailable: $packageName, falling back to system default")
+            android.destroy()
+            initAndroidTts("device")
+            return
+        }
         val voice = getDesiredVoice()
         android.setVoiceProfile(voice)
         activeVoice = voice
         activeEngine = android
+        activeEngineId = engineId
         _state.value = State.Ready
-        Log.i("VoiceManager", "Android TTS ready with voice profile: $voice")
+        Log.i("VoiceManager", "Android TTS ready engine=${packageName ?: "default"} voiceProfile=$voice")
     }
 
     fun triggerPiperDownload() {
@@ -111,6 +127,7 @@ class VoiceManager(private val context: Context) {
             if (piper.state.value == TtsEngineState.Ready) {
                 piperEngine = piper
                 activeEngine = piper
+                activeEngineId = "piper"
                 _state.value = State.Ready
                 _piperAvailable.value = true
                 _downloadProgress.value = 0f
@@ -119,7 +136,7 @@ class VoiceManager(private val context: Context) {
                 _piperAvailable.value = false
                 _downloadProgress.value = 0f
                 if (activeEngine == null) {
-                    initAndroidTts()
+                    initAndroidTts("device")
                 } else {
                     _state.value = State.Ready
                 }
@@ -137,14 +154,7 @@ class VoiceManager(private val context: Context) {
     fun reconfigure() {
         val desiredEngine = AppConfigManager.ttsEngine
         val desiredVoice = getDesiredVoice()
-        val currentEngine = when (activeEngine) {
-            is PiperEngine -> "piper"
-            is OpenAITtsEngine -> "openai"
-            is ElevenLabsTtsEngine -> "elevenlabs"
-            is DeepgramTtsEngine -> "deepgram"
-            is AndroidTtsEngine -> "device"
-            else -> null
-        }
+        val currentEngine = activeEngineId
 
         // Same engine, same voice — nothing to do
         if (currentEngine == desiredEngine && activeVoice == desiredVoice && activeEngine != null) return
@@ -161,12 +171,14 @@ class VoiceManager(private val context: Context) {
             // Engine changed — destroy old, create new
             activeEngine?.destroy()
             activeEngine = null
-            when (desiredEngine) {
-                "device" -> initAndroidTts()
-                "openai" -> {
+            activeEngineId = null
+            when {
+                TtsEngineManager.isDeviceEngineId(desiredEngine) -> initAndroidTts(desiredEngine)
+                desiredEngine == "openai" -> {
                     val engine = OpenAITtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
                         activeEngine = engine
+                        activeEngineId = desiredEngine
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to OpenAI TTS")
                     } else {
@@ -174,10 +186,11 @@ class VoiceManager(private val context: Context) {
                         _state.value = State.Unavailable
                     }
                 }
-                "elevenlabs" -> {
+                desiredEngine == "elevenlabs" -> {
                     val engine = ElevenLabsTtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
                         activeEngine = engine
+                        activeEngineId = desiredEngine
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to ElevenLabs TTS")
                     } else {
@@ -185,10 +198,11 @@ class VoiceManager(private val context: Context) {
                         _state.value = State.Unavailable
                     }
                 }
-                "deepgram" -> {
+                desiredEngine == "deepgram" -> {
                     val engine = DeepgramTtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
                         activeEngine = engine
+                        activeEngineId = desiredEngine
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to Deepgram TTS")
                     } else {
@@ -206,6 +220,10 @@ class VoiceManager(private val context: Context) {
         reconfigure()
         val spokenText = TextCleaningUtils.fullyCleanForTts(text)
         if (spokenText.isBlank()) {
+            onDone?.invoke()
+            return
+        }
+        if (_muted.value) {
             onDone?.invoke()
             return
         }
@@ -257,14 +275,14 @@ class VoiceManager(private val context: Context) {
     private fun doSpeak(text: String, engine: TtsEngine, onDone: (() -> Unit)?) {
         _isSpeaking.value = true
         VoiceActivityGate.markAgentSpeechStarted()
-        startAmplitudeAnimation()
+        startOutputVisualization()
         // Apply configured speed via AndroidTTS if applicable
         val speed = AppConfigManager.ttsSpeed
         if (engine is AndroidTtsEngine) {
             engine.setSpeed(speed)
         }
         engine.speak(text) {
-            stopAmplitudeAnimation()
+            stopOutputVisualization()
             _isSpeaking.value = false
             VoiceActivityGate.markAgentSpeechEnded()
             onDone?.invoke()
@@ -280,21 +298,31 @@ class VoiceManager(private val context: Context) {
         doSpeak(next.first, engine, next.second)
     }
 
-    private fun startAmplitudeAnimation() {
-        amplitudeJob?.cancel()
+    private fun startOutputVisualization() {
+        stopOutputVisualization()
+        val meter = OutputAudioMeter { levels, amplitude ->
+            _agentVoiceLevels.value = levels
+            _agentVoiceAmplitude.value = amplitude
+        }
+        outputAudioMeter = meter
+        if (meter.start()) return
+
         amplitudeJob = scope.launch {
             while (isActive) {
-                val amp = ((sin(System.currentTimeMillis() * 0.005) + 1.0) / 2.0).toFloat()
-                _agentVoiceAmplitude.value = amp * 0.6f + 0.2f
-                delay(50)
+                _agentVoiceLevels.value = List(14) { 0.12f }
+                _agentVoiceAmplitude.value = 0.12f
+                delay(120)
             }
         }
     }
 
-    private fun stopAmplitudeAnimation() {
+    private fun stopOutputVisualization() {
+        outputAudioMeter?.stop()
+        outputAudioMeter = null
         amplitudeJob?.cancel()
         amplitudeJob = null
         _agentVoiceAmplitude.value = 0f
+        _agentVoiceLevels.value = emptyList()
     }
 
     private fun drainQueue() {
@@ -306,13 +334,18 @@ class VoiceManager(private val context: Context) {
     }
 
     fun stop() {
-        stopAmplitudeAnimation()
+        stopOutputVisualization()
         _isSpeaking.value = false
         VoiceActivityGate.markAgentSpeechEnded()
         synchronized(speechQueue) {
             speechQueue.clear()
         }
         activeEngine?.stop()
+    }
+
+    fun setMuted(muted: Boolean) {
+        _muted.value = muted
+        if (muted) stop()
     }
 
     val isActivelySpeaking: Boolean get() = _isSpeaking.value

@@ -32,7 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -106,11 +106,11 @@ fun ClawSkinBackground(
             listOf(colors.background, colors.background),
         )
     }
+    val configuration = LocalConfiguration.current
 
     Box(modifier = modifier.fillMaxSize()) {
         if (skin == ClawSkin.LiquidGlass) {
-            val context = LocalContext.current
-            val isDark = context.resources.configuration.uiMode and
+            val isDark = configuration.uiMode and
                     android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
             val bgRes = if (isDark) R.drawable.bg_dark else R.drawable.bg_light
