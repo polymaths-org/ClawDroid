@@ -1,7 +1,12 @@
 package com.clawdroid.app.core.engine
 
 import android.content.Context
+import com.clawdroid.app.core.assistant.AssistantInvocation
+import com.clawdroid.app.core.assistant.AssistantInvocationSource
+import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.overlay.AssistantOverlayCoordinator
+import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
+import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.tools.BrowseWebTool
 import com.clawdroid.app.core.tools.CheckProcessTool
 import com.clawdroid.app.core.tools.CommandTool
@@ -11,6 +16,7 @@ import com.clawdroid.app.core.tools.ListDirectoryTool
 import com.clawdroid.app.core.tools.ListProcessesTool
 import com.clawdroid.app.core.tools.NotificationTool
 import com.clawdroid.app.core.tools.ReadFileTool
+import com.clawdroid.app.core.tools.ReminderTool
 import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
 import com.clawdroid.app.core.tools.WebSearchTool
@@ -18,10 +24,20 @@ import com.clawdroid.app.core.tools.WriteFileTool
 import com.clawdroid.app.core.tools.GoogleTools
 import com.clawdroid.app.core.tools.GoogleDriveTools
 import com.clawdroid.app.core.tools.GithubTools
+import com.clawdroid.app.core.tools.InterpoleTools
 import com.clawdroid.app.core.tools.NotionTools
 import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.core.control.AndroidControlTools
+import com.clawdroid.app.core.interpole.DesktopEnvironment
+import com.clawdroid.app.core.interpole.FileTransferClient
+import com.clawdroid.app.core.interpole.InterpoleConfig
+import com.clawdroid.app.core.interpole.InterpoleConfigRepository
+import com.clawdroid.app.core.interpole.InterpoleMemorySync
+import com.clawdroid.app.core.interpole.InterpoleTerminalTools
+import com.clawdroid.app.core.memory.MemoryManager
+import com.clawdroid.app.core.selfmanage.AgentAskTools
+import com.clawdroid.app.core.selfmanage.SelfManageTools
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
 import org.json.JSONObject
@@ -40,6 +56,9 @@ object ToolExecutor {
         onProgress: (suspend (String) -> Unit)? = null,
     ): ToolExecutionResult = runCatching {
         val args = DefensiveJsonParser.parseObjectOrError(call.arguments).getOrThrow()
+        if (AndroidControlTools.isScreenControlTool(call.name)) {
+            ensureExternalTaskOverlay(context, call.name)
+        }
         when (call.name) {
             "execute_command" -> {
                 val command = args.getString("command")
@@ -86,6 +105,78 @@ object ToolExecutor {
                 context = context,
                 title = args.getString("title"),
                 body = args.getString("body"),
+                triggerAction = args.optString("trigger_action").takeIf { it.isNotBlank() },
+            )
+            "set_reminder" -> ReminderTool.setReminder(context, args)
+            "list_reminders" -> ReminderTool.listReminders(
+                context = context,
+                includeCompleted = args.optBoolean("include_completed", false),
+            )
+            "cancel_reminder" -> ReminderTool.cancelReminder(
+                context = context,
+                reminderId = args.getString("reminder_id"),
+            )
+            "memory_read" -> JSONObject()
+                .put("context", MemoryManager(context).getRelevantContext(args.optString("query")))
+                .put("matches", MemoryManager(context).searchMemory(args.optString("query")))
+            "memory_write" -> {
+                MemoryManager(context).saveMemory(
+                    section = args.optString("section", "memory"),
+                    content = args.getString("content"),
+                )
+                JSONObject().put("ok", true).put("section", args.optString("section", "memory"))
+            }
+            "self_manage_add_alarm" -> SelfManageTools.addAlarm(context, args)
+            "self_manage_add_reminder" -> SelfManageTools.addReminder(context, args)
+            "self_manage_add_todo" -> SelfManageTools.addTodo(context, args)
+            "self_manage_list" -> SelfManageTools.list(context)
+            "self_manage_complete_reminder" -> SelfManageTools.completeReminder(context, args)
+            "self_manage_complete_todo" -> SelfManageTools.completeTodo(context, args)
+            "agent_ask" -> AgentAskTools.ask(context, args)
+            "agent_answer" -> AgentAskTools.answer(context, args)
+            "interpole_terminal_create" -> InterpoleTerminalTools.create(
+                context = context,
+                name = args.getString("name"),
+                cwd = args.optString("cwd").takeIf { it.isNotBlank() },
+                command = args.optString("command").takeIf { it.isNotBlank() },
+                shell = args.optString("shell").takeIf { it.isNotBlank() },
+                cols = args.optInt("cols", 120),
+                rows = args.optInt("rows", 40),
+            )
+            "interpole_terminal_send" -> InterpoleTerminalTools.send(
+                context = context,
+                name = args.getString("name"),
+                keys = args.getString("keys"),
+                enter = args.optBoolean("enter", true),
+            )
+            "interpole_terminal_read" -> InterpoleTerminalTools.read(
+                context = context,
+                name = args.getString("name"),
+                lines = args.optInt("lines", 100),
+            )
+            "interpole_terminal_resize" -> InterpoleTerminalTools.resize(
+                context = context,
+                name = args.getString("name"),
+                cols = args.getInt("cols"),
+                rows = args.getInt("rows"),
+            )
+            "interpole_terminal_list" -> InterpoleTerminalTools.list(context)
+            "interpole_terminal_kill" -> InterpoleTerminalTools.kill(
+                context = context,
+                name = args.getString("name"),
+            )
+            "interpole_transfer_push" -> JSONObject()
+                .put("ok", FileTransferClient(context).pushFile(args.getString("local_path"), args.getString("desktop_path")))
+                .put("local_path", args.getString("local_path"))
+                .put("desktop_path", args.getString("desktop_path"))
+            "interpole_transfer_pull" -> JSONObject()
+                .put("ok", FileTransferClient(context).pullFile(args.getString("desktop_path"), args.getString("local_path")))
+                .put("desktop_path", args.getString("desktop_path"))
+                .put("local_path", args.getString("local_path"))
+            "interpole_configure" -> configureInterpole(context, args)
+            "interpole_memory_sync" -> InterpoleMemorySync(context).sync(
+                direction = args.optString("direction", "bidirectional"),
+                force = args.optBoolean("force", false),
             )
             "gmail_list_messages", "gmail_get_message", "gmail_send_message", "gmail_create_draft" -> {
                 if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
@@ -212,6 +303,31 @@ object ToolExecutor {
                     else -> error("Unreachable")
                 }
             }
+            "interpole_status" -> InterpoleTools.status()
+            "interpole_list_dir" -> InterpoleTools.listDir(args.getString("path"))
+            "interpole_read_file" -> InterpoleTools.readFile(
+                path = args.getString("path"),
+                startLine = args.optIntOrNull("start_line"),
+                endLine = args.optIntOrNull("end_line"),
+                maxBytes = args.optIntOrNull("max_bytes"),
+            )
+            "interpole_write_file" -> InterpoleTools.writeFile(
+                path = args.getString("path"),
+                content = args.getString("content"),
+                approvalId = args.optString("approval_id").takeIf { it.isNotBlank() },
+            )
+            "interpole_execute" -> InterpoleTools.execute(
+                command = args.getString("command"),
+                cwd = args.optString("cwd").takeIf { it.isNotBlank() },
+                timeoutSeconds = args.optInt("timeout_seconds", 60),
+                maxOutputLines = args.optIntOrNull("max_output_lines"),
+                approvalId = args.optString("approval_id").takeIf { it.isNotBlank() },
+            )
+            "interpole_notify" -> InterpoleTools.notify(
+                title = args.optString("title").ifBlank { "ClawDroid" },
+                body = args.getString("body"),
+            )
+            "interpole_batch" -> InterpoleTools.batch(args.getJSONArray("actions"))
             "get_screen" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getScreen(context) }
             "tap" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tap(
                 args.getDouble("x").toFloat(),
@@ -237,8 +353,24 @@ object ToolExecutor {
             "press_home" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressHome() }
             "press_recents" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressRecents() }
             "open_notifications" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.openNotifications() }
-            "launch_app" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.launchApp(args.getString("package_name")) }
-            "get_installed_apps" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getInstalledApps(context) }
+            "launch_app", "open_app" -> {
+                val appQuery = args.optString("package_name")
+                    .ifBlank { args.optString("app_name") }
+                    .ifBlank { args.optString("name") }
+                    .ifBlank { args.optString("query") }
+                AssistantOverlayCoordinator.updateStatus("Opening app")
+                AssistantOverlayCoordinator.updateProgress("Opening $appQuery")
+                AndroidControlTools.launchApp(appQuery, context).also { result ->
+                    if (result.optBoolean("success", false)) {
+                        val launchedName = result.optString("app_name").ifBlank { appQuery }
+                        AssistantOverlayCoordinator.updateStatus("App opened")
+                        AssistantOverlayCoordinator.updateProgress("Opened $launchedName")
+                    } else {
+                        AssistantOverlayCoordinator.showError(result.optString("message").ifBlank { "Could not launch $appQuery" })
+                    }
+                }
+            }
+            "get_installed_apps" -> AndroidControlTools.getInstalledApps(context)
             "screenshot" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.screenshot(context) }
             "wait" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.wait(args.optInt("ms", 500)) }
             "perform_android_actions" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.performActions(
@@ -290,6 +422,58 @@ object ToolExecutor {
 
     private fun JSONObject.optIntOrNull(name: String): Int? = if (has(name) && !isNull(name)) optInt(name) else null
 
+    private fun configureInterpole(context: Context, args: JSONObject): JSONObject {
+        val currentRepo = InterpoleConfigRepository(context)
+        val current = currentRepo.getConfig()
+        val host = args.optString("host")
+            .ifBlank { args.optString("tailscale_host") }
+            .ifBlank { AppConfigManager.interpoleHost }
+        val port = args.optInt("port", AppConfigManager.interpolePort).coerceIn(1, 65535)
+        val connectionType = when (args.optString("connection_type", AppConfigManager.interpoleConnectionType)) {
+            "tailscale" -> "tailscale"
+            else -> "local"
+        }
+        val baseUrl = if (host.isBlank()) current.baseUrl else "http://$host:$port"
+        val desktopEnv = args.optString("desktop_env")
+            .takeIf { it.isNotBlank() }
+            ?.let { raw -> runCatching { DesktopEnvironment.valueOf(raw.uppercase()) }.getOrNull() }
+            ?: current.desktopEnv
+        val updated = InterpoleConfig(
+            enabled = args.optBoolean("enabled", AppConfigManager.interpoleEnabled),
+            baseUrl = baseUrl,
+            deviceId = AppConfigManager.interpoleDeviceId.ifBlank { current.deviceId },
+            desktopEnv = desktopEnv,
+            fileTransferPort = args.optInt("file_transfer_port", current.fileTransferPort).coerceIn(1024, 65535),
+            downloadPath = args.optString("download_path", current.downloadPath).ifBlank { current.downloadPath },
+            autoStartFileServer = args.optBoolean("auto_start_file_server", current.autoStartFileServer),
+            tailscaleIp = if (connectionType == "tailscale") host else args.optString("tailscale_host", current.tailscaleIp),
+            allowExecute = args.optBoolean("allow_execute", AppConfigManager.interpoleAllowExecute),
+            commandTimeout = args.optInt("command_timeout", current.commandTimeout).coerceIn(1, 3600),
+            desktopHarnessEnabled = args.optBoolean("desktop_harness", AppConfigManager.interpoleDesktopHarnessEnabled),
+            desktopWebPanelEnabled = args.optBoolean("web_panel", AppConfigManager.interpoleDesktopWebPanelEnabled),
+            cliInterfaceEnabled = args.optBoolean("cli_interface", AppConfigManager.interpoleCliInterfaceEnabled),
+            memorySyncEnabled = args.optBoolean("memory_sync", AppConfigManager.memorySyncEnabled),
+            memoryAutoSyncEnabled = args.optBoolean("memory_auto_sync", AppConfigManager.memoryAutoSyncEnabled),
+            memorySyncIntervalMinutes = args.optInt("memory_sync_interval_minutes", AppConfigManager.memorySyncIntervalMinutes),
+        )
+        currentRepo.saveConfig(updated)
+        AppConfigManager.interpoleConnectionType = connectionType
+        AppConfigManager.interpoleHost = host
+        AppConfigManager.interpolePort = port
+        return JSONObject()
+            .put("ok", true)
+            .put("enabled", updated.enabled)
+            .put("host", host)
+            .put("port", port)
+            .put("connection_type", connectionType)
+            .put("desktop_harness", updated.desktopHarnessEnabled)
+            .put("web_panel", updated.desktopWebPanelEnabled)
+            .put("cli_interface", updated.cliInterfaceEnabled)
+            .put("memory_sync", updated.memorySyncEnabled)
+            .put("memory_auto_sync", updated.memoryAutoSyncEnabled)
+            .put("advice", if (host.isBlank()) "Ask the user for their desktop IP, Tailscale IP, or MagicDNS name before using INTERPOLE." else "INTERPOLE config updated.")
+    }
+
     private suspend fun withOverlayHiddenForTool(
         name: String,
         block: suspend () -> JSONObject,
@@ -304,5 +488,62 @@ object ToolExecutor {
             settleMs = settleMs,
             block = block,
         )
+    }
+
+    private fun ensureExternalTaskOverlay(context: Context, toolName: String) {
+        val appContext = context.applicationContext
+        if (!AssistantOverlayCoordinator.visible.value || AssistantOverlayCoordinator.currentInvocation.value == null) {
+            val invocation = AssistantInvocation(
+                id = "android_control_${System.currentTimeMillis()}",
+                source = AssistantInvocationSource.ANDROID_CONTROL_TASK,
+                mode = AssistantMode.AUTOMATE,
+                userText = null,
+                contextSnapshot = null,
+                mediaPath = null,
+                mediaMimeType = null,
+                projectId = AppConfigManager.activeProjectId,
+                conversationId = AppConfigManager.activeConversationId,
+                createdAt = System.currentTimeMillis(),
+            )
+            AssistantOverlayCoordinator.showOverlay(appContext, invocation)
+            runCatching { OverlayWindowService.startChat(appContext, invocation) }
+        }
+        AssistantOverlayCoordinator.updateStatus(statusForAndroidTool(toolName))
+        AssistantOverlayCoordinator.recordAction(actionForAndroidTool(toolName))
+    }
+
+    private fun statusForAndroidTool(name: String): String = when (name) {
+        "get_screen", "screenshot" -> "Checking screen"
+        "launch_app", "open_app" -> "Opening app"
+        "tap", "tap_text", "tap_resource_id" -> "Tapping"
+        "long_press" -> "Long pressing"
+        "swipe", "scroll" -> "Scrolling"
+        "type_text", "clear_text" -> "Typing"
+        "press_back", "press_home", "press_recents" -> "Pressing key"
+        "open_notifications" -> "Opening notifications"
+        "perform_android_actions" -> "Working in app"
+        "send_message_in_current_chat" -> "Sending message"
+        "wait" -> "Waiting"
+        else -> "Working outside ClawDroid"
+    }
+
+    private fun actionForAndroidTool(name: String): String = when (name) {
+        "get_screen" -> "Read current screen"
+        "screenshot" -> "Capture screen"
+        "launch_app", "open_app" -> "Open app"
+        "tap", "tap_text", "tap_resource_id" -> "Tap screen"
+        "long_press" -> "Long-press screen"
+        "swipe" -> "Swipe screen"
+        "scroll" -> "Scroll screen"
+        "type_text" -> "Type text"
+        "clear_text" -> "Clear text"
+        "press_back" -> "Press Back"
+        "press_home" -> "Press Home"
+        "press_recents" -> "Open Recents"
+        "open_notifications" -> "Open notifications"
+        "perform_android_actions" -> "Run screen actions"
+        "send_message_in_current_chat" -> "Send chat message"
+        "wait" -> "Wait for screen"
+        else -> "Use Android tool"
     }
 }

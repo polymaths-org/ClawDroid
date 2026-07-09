@@ -1,6 +1,11 @@
 package com.clawdroid.app.core.voice
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.clawdroid.app.core.config.AppConfigManager
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +39,9 @@ data class TtsEngineInfo(
     val isDownloading: Boolean = false,
     val downloadProgress: Float = 0f,
     val requiresApiKey: Boolean = false,
-    val hasApiKey: Boolean = false
+    val hasApiKey: Boolean = false,
+    val packageName: String? = null,
+    val isDeviceEngine: Boolean = false,
 )
 
 /**
@@ -53,6 +60,19 @@ class TtsEngineManager(private val context: Context) {
 
     companion object {
         private const val TAG = "TtsEngineManager"
+        private const val DEVICE_ENGINE_PREFIX = "device:"
+        private const val TTS_DEFAULT_SYNTH = "tts_default_synth"
+
+        fun isDeviceEngineId(engineId: String): Boolean {
+            return engineId == "device" || engineId.startsWith(DEVICE_ENGINE_PREFIX)
+        }
+
+        fun deviceEngineId(packageName: String): String = "$DEVICE_ENGINE_PREFIX$packageName"
+
+        fun packageNameFromDeviceEngineId(engineId: String): String? {
+            return engineId.removePrefix(DEVICE_ENGINE_PREFIX)
+                .takeIf { engineId.startsWith(DEVICE_ENGINE_PREFIX) && it.isNotBlank() }
+        }
     }
 
     init {
@@ -67,15 +87,7 @@ class TtsEngineManager(private val context: Context) {
     private suspend fun detectAvailableEngines() {
         val engineList = mutableListOf<TtsEngineInfo>()
 
-        // Check Android (device) TTS - always available
-        engineList.add(TtsEngineInfo(
-            id = "device",
-            name = "Android TTS",
-            description = "Built-in system TTS (offline)",
-            isAvailable = true,
-            requiresApiKey = false,
-            hasApiKey = true
-        ))
+        engineList.addAll(scanDeviceTtsEngines())
 
         // Check Piper - check if installed
         val piperEngine = PiperEngine(context, scope)
@@ -245,15 +257,16 @@ class TtsEngineManager(private val context: Context) {
 
         // Otherwise, try to find the best alternative
         val available = getAvailableEngines()
-        return available.firstOrNull { it.id == "device" }  // Device TTS as last resort
+        return available.firstOrNull { isDeviceEngineId(it.id) }  // Device TTS as last resort
             ?: available.firstOrNull()
             ?: TtsEngineInfo(
                 id = "device",
-                name = "Android TTS",
-                description = "Built-in system TTS (offline)",
+                name = "System default TTS",
+                description = "Use Android's selected default TTS engine",
                 isAvailable = true,
                 requiresApiKey = false,
-                hasApiKey = true
+                hasApiKey = true,
+                isDeviceEngine = true,
             )
     }
 
@@ -266,12 +279,81 @@ class TtsEngineManager(private val context: Context) {
             ?: findFallbackEngine(current)
             ?: TtsEngineInfo(
                 id = "device",
-                name = "Android TTS",
-                description = "Built-in system TTS (offline)",
+                name = "System default TTS",
+                description = "Use Android's selected default TTS engine",
                 isAvailable = true,
                 requiresApiKey = false,
-                hasApiKey = true
+                hasApiKey = true,
+                isDeviceEngine = true,
             )
+    }
+
+    private fun scanDeviceTtsEngines(): List<TtsEngineInfo> {
+        val packageManager = context.packageManager
+        val defaultPackage = Settings.Secure.getString(
+            context.contentResolver,
+            TTS_DEFAULT_SYNTH,
+        ).orEmpty()
+        val engines = mutableListOf(
+            TtsEngineInfo(
+                id = "device",
+                name = "System default TTS",
+                description = if (defaultPackage.isBlank()) {
+                    "Use Android's selected default TTS engine"
+                } else {
+                    "Use Android default engine: $defaultPackage"
+                },
+                isAvailable = true,
+                requiresApiKey = false,
+                hasApiKey = true,
+                packageName = defaultPackage.ifBlank { null },
+                isDeviceEngine = true,
+            ),
+        )
+
+        val services = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.queryIntentServices(
+                Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE),
+                PackageManager.ResolveInfoFlags.of(PackageManager.GET_META_DATA.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentServices(
+                Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE),
+                PackageManager.GET_META_DATA,
+            )
+        }
+
+        services
+            .mapNotNull { resolveInfo ->
+                val serviceInfo = resolveInfo.serviceInfo ?: return@mapNotNull null
+                val packageName = serviceInfo.packageName?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val label = serviceInfo.loadLabel(packageManager)?.toString()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: runCatching {
+                        packageManager.getApplicationInfo(packageName, 0).loadLabel(packageManager).toString()
+                    }.getOrNull()
+                    ?: packageName
+                TtsEngineInfo(
+                    id = deviceEngineId(packageName),
+                    name = label,
+                    description = buildString {
+                        append("Phone TTS engine")
+                        if (packageName == defaultPackage) append(" · Android default")
+                        append(" · $packageName")
+                    },
+                    isAvailable = true,
+                    requiresApiKey = false,
+                    hasApiKey = true,
+                    packageName = packageName,
+                    isDeviceEngine = true,
+                )
+            }
+            .distinctBy { it.id }
+            .sortedWith(compareByDescending<TtsEngineInfo> { it.packageName == defaultPackage }.thenBy { it.name.lowercase() })
+            .forEach { engines.add(it) }
+
+        return engines
     }
 
     /**

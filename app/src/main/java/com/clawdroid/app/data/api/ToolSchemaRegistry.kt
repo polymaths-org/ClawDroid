@@ -7,30 +7,116 @@ object ToolSchemaRegistry {
     fun overlayTools(): JSONArray {
         val array = JSONArray()
 
-        array.put(tool("launch_app", "Launch an installed app by package name.") {
-            putString("package_name", "Android package name, for example org.telegram.messenger.")
+        array.put(tool("launch_app", "Launch an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example org.telegram.messenger, WhatsApp, Chrome, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
-        array.put(tool("get_screen", "Read the current Android screen UI tree.") {
+        array.put(tool("open_app", "Alias for launch_app. Open an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example org.telegram.messenger, WhatsApp, Chrome, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
+            required("package_name")
+        })
+        array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot when configured for visual context.") {
             required()
+        })
+        array.put(tool("screenshot", "Capture a screenshot as base64 JPEG when visual details are required and screen capture permission is active.") {
+            required()
+        })
+        array.put(tool("web_search", "Search the web for current information when the user asks to look something up or when current facts are needed.") {
+            putString("query", "Search query.")
+            required("query")
+        })
+        array.put(tool("browse_web", "Open a URL and extract readable page content.") {
+            putString("url", "URL to browse.")
+            required("url")
         })
         array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
             putString("label", "Text or content description to tap.")
             required("label")
+        })
+        array.put(tool("tap_resource_id", "Tap a UI element by Android resource id.") {
+            putString("id", "View resource id, for example com.app:id/button.")
+            required("id")
         })
         array.put(tool("tap", "Tap at absolute screen coordinates.") {
             putNumber("x", "X coordinate in pixels.")
             putNumber("y", "Y coordinate in pixels.")
             required("x", "y")
         })
+        array.put(tool("long_press", "Long-press at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("swipe", "Swipe between two screen coordinates.") {
+            putNumber("x1", "Start X coordinate.")
+            putNumber("y1", "Start Y coordinate.")
+            putNumber("x2", "End X coordinate.")
+            putNumber("y2", "End Y coordinate.")
+            putInteger("duration_ms", "Swipe duration in milliseconds. Default 400.")
+            required("x1", "y1", "x2", "y2")
+        })
+        array.put(tool("scroll", "Scroll the first scrollable UI element.") {
+            putString("direction", "Scroll direction: up, down, left, or right.")
+            required("direction")
+        })
+        array.put(tool("type_text", "Type text into the focused editable field.") {
+            putString("text", "Text to type.")
+            required("text")
+        })
+        array.put(tool("clear_text", "Clear text in the focused editable field.") {
+            required()
+        })
         array.put(tool("press_back", "Press the Android Back button.") {
             required()
         })
-        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch. Use this for typing plus taps, like the successful app flow did.") {
-            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, type_text, wait, press_back.")
+        array.put(tool("press_home", "Press the Android Home button.") {
+            required()
+        })
+        array.put(tool("press_recents", "Open the Android Recents screen.") {
+            required()
+        })
+        array.put(tool("open_notifications", "Open the notification shade.") {
+            required()
+        })
+        array.put(tool("wait", "Wait briefly for UI to settle. Prefer batching actions instead of separate wait turns.") {
+            putInteger("ms", "Milliseconds to wait, max 5000.")
+            required()
+        })
+        array.put(tool("get_installed_apps", "List installed launchable apps.") {
+            required()
+        })
+        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps. Use this first when the user asks to send a specific message in the current chat.") {
+            putString("text", "Exact message text to send.")
+            putInteger("count", "How many times to send it. Default 1, max 20.")
+            required("text")
+        })
+        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch. Prefer this for related taps, waits, scrolling, and typing.") {
+            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, tap_resource_id, type_text, clear_text, wait, press_back, scroll, swipe, or long_press.")
             putBoolean("verify", "Return get_screen after all actions complete. Default true.")
             required("actions")
         })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
+        })
+
+        appendGoogleConnectorTools(array)
 
         return array
     }
@@ -77,6 +163,24 @@ object ToolSchemaRegistry {
         array.put(tool("web_search", "Search the web for current information when the user asks to search something up.") {
             putString("query", "Search query.")
             required("query")
+        })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible, for example 2026-06-19T18:30:00+05:30. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
         })
 
         return array
@@ -145,7 +249,152 @@ object ToolSchemaRegistry {
         array.put(tool("send_notification", "Send a concise user notification.") {
             putString("title", "Notification title.")
             putString("body", "Notification body.")
+            putString("trigger_action", "Optional action string to feed back to the agent when the notification is tapped.")
             required("title", "body")
+        })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible, for example 2026-06-19T18:30:00+05:30. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
+        })
+        array.put(tool("memory_read", "Read relevant layered memory and skill index context for a task.") {
+            putString("query", "Task, keyword, or topic to retrieve memory for.")
+            required("query")
+        })
+        array.put(tool("memory_write", "Save durable facts, preferences, changes, app access notes, or heartbeat notes to long-term memory.") {
+            putString("section", "Target section: memory, user, changes, access, heartbeats, or skills.")
+            putString("content", "Markdown content to append.")
+            required("section", "content")
+        })
+        array.put(tool("agent_ask", "Proactively ask the user a question via overlay/notification.") {
+            putString("question", "Question to ask the user.")
+            putString("context", "What triggered the question.")
+            putArray("suggested_actions", "Suggested action labels.")
+            putInteger("priority", "Priority 1-10. Default 5.")
+            putInteger("expires_at", "Optional Unix timestamp in milliseconds after which this question expires.")
+            required("question", "context")
+        })
+        array.put(tool("agent_answer", "Mark a pending proactive question as answered after the user responds.") {
+            putString("question_id", "Question id, usually from answer_question:<id> notification context.")
+            putString("answer", "The user's answer or decision.")
+            required("question_id", "answer")
+        })
+        array.put(tool("self_manage_add_alarm", "Add an alarm to the Self Manage system.") {
+            putString("label", "Alarm label.")
+            putInteger("hour", "Hour, 0-23.")
+            putInteger("minute", "Minute, 0-59.")
+            putArray("days_of_week", "Optional ISO day numbers 1-7. Empty means one-time.")
+            putBoolean("enabled", "Whether alarm is enabled. Default true.")
+            required("label", "hour", "minute")
+        })
+        array.put(tool("self_manage_add_reminder", "Add a reminder to the Self Manage system.") {
+            putString("title", "Reminder title.")
+            putString("description", "Optional details.")
+            putInteger("due_at", "Due timestamp in milliseconds since epoch.")
+            putInteger("priority", "Priority 1-10.")
+            putBoolean("recurring", "Whether reminder repeats.")
+            putInteger("interval_minutes", "Repeat interval in minutes.")
+            putString("category", "Category, e.g. work, personal, health.")
+            putString("created_by", "user or agent. Default agent.")
+            required("title", "due_at")
+        })
+        array.put(tool("self_manage_add_todo", "Add a todo to the Self Manage system.") {
+            putString("title", "Todo title.")
+            putString("description", "Optional details.")
+            putInteger("due_at", "Optional due timestamp in milliseconds since epoch.")
+            putInteger("priority", "Priority 1-10.")
+            putArray("tags", "Optional string tags.")
+            putString("created_by", "user or agent. Default agent.")
+            required("title")
+        })
+        array.put(tool("self_manage_list", "List alarms, reminders, and todos.") {
+            required()
+        })
+        array.put(tool("self_manage_complete_reminder", "Mark a reminder complete.") {
+            putString("id", "Reminder id.")
+            required("id")
+        })
+        array.put(tool("self_manage_complete_todo", "Mark a todo complete.") {
+            putString("id", "Todo id.")
+            required("id")
+        })
+        array.put(tool("interpole_terminal_create", "Create a persistent tmux-backed terminal UI session on the paired INTERPOLE desktop.") {
+            putString("name", "Short session name, for example lazygit or nvim-main.")
+            putString("cwd", "Desktop working directory, for example /home/paris/project.")
+            putString("command", "Optional command to start inside the terminal, for example nvim main.py.")
+            putString("shell", "Shell to start when command is omitted. Default /bin/bash.")
+            putInteger("cols", "Terminal columns. Default 120.")
+            putInteger("rows", "Terminal rows. Default 40.")
+            required("name")
+        })
+        array.put(tool("interpole_terminal_send", "Send text or special key tokens to an INTERPOLE terminal session. Supports [ENTER], [TAB], arrows, [CTRL+C], [CTRL+D], [ESC].") {
+            putString("name", "Terminal session name.")
+            putString("keys", "Keys to send. Use enter=false for single TUI navigation keys like j, k, q.")
+            putBoolean("enter", "Whether to append Enter after sending keys. Default true.")
+            required("name", "keys")
+        })
+        array.put(tool("interpole_terminal_read", "Read recent visible output from an INTERPOLE terminal session.") {
+            putString("name", "Terminal session name.")
+            putInteger("lines", "How many recent lines to capture. Default 100.")
+            required("name")
+        })
+        array.put(tool("interpole_terminal_resize", "Resize an INTERPOLE terminal session.") {
+            putString("name", "Terminal session name.")
+            putInteger("cols", "Terminal columns.")
+            putInteger("rows", "Terminal rows.")
+            required("name", "cols", "rows")
+        })
+        array.put(tool("interpole_terminal_list", "List active tmux terminal sessions on the paired INTERPOLE desktop.") {
+            required()
+        })
+        array.put(tool("interpole_terminal_kill", "Kill an INTERPOLE terminal session and its running TUI program.") {
+            putString("name", "Terminal session name.")
+            required("name")
+        })
+        array.put(tool("interpole_transfer_push", "Upload a local Android/sandbox file to the paired INTERPOLE desktop file server.") {
+            putString("local_path", "Local file path on Android/sandbox.")
+            putString("desktop_path", "Destination path under the desktop download_path.")
+            required("local_path", "desktop_path")
+        })
+        array.put(tool("interpole_transfer_pull", "Download a file from the paired INTERPOLE desktop file server to Android/sandbox.") {
+            putString("desktop_path", "Desktop source path under download_path.")
+            putString("local_path", "Local destination path on Android/sandbox.")
+            required("desktop_path", "local_path")
+        })
+        array.put(tool("interpole_configure", "Update INTERPOLE desktop settings after the user provides missing details such as Tailscale IP, MagicDNS host, LAN IP, file-transfer port, or desktop mode flags.") {
+            putString("host", "Desktop LAN IP, Tailscale IP, or MagicDNS name.")
+            putString("tailscale_host", "Alias for host when the user gives a Tailscale address.")
+            putInteger("port", "INTERPOLE RPC port. Default 8765.")
+            putString("connection_type", "local or tailscale.")
+            putString("desktop_env", "HYPRLAND, KDE, GNOME, XFCE, I3, or GENERIC.")
+            putInteger("file_transfer_port", "File transfer service port. Default 8787.")
+            putString("download_path", "Desktop download/sync base path.")
+            putBoolean("allow_execute", "Whether desktop command execution is allowed.")
+            putBoolean("desktop_harness", "Enable desktop harness mode.")
+            putBoolean("web_panel", "Enable desktop web panel mode.")
+            putBoolean("cli_interface", "Enable INTERPOLE CLI interface mode.")
+            putBoolean("memory_sync", "Enable shared memory sync protocol.")
+            putBoolean("memory_auto_sync", "Automatically sync memory on interval.")
+            putInteger("memory_sync_interval_minutes", "Auto sync interval, 15-1440 minutes.")
+            required()
+        })
+        array.put(tool("interpole_memory_sync", "Sync ClawDroid long-term memory with the paired desktop using protocol clawdroid.memory.v1. Use push before desktop work, pull after desktop work, and bidirectional for manual sync.") {
+            putString("direction", "push, pull, or bidirectional. Default bidirectional.")
+            putBoolean("force", "Ignore auto-sync interval and sync now.")
+            required()
         })
 
         val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&
@@ -263,6 +512,52 @@ object ToolSchemaRegistry {
             })
         }
 
+        // INTERPOLE desktop bridge tools. Only offered when enabled and paired,
+        // so the schema costs zero tokens when the desktop is not in use.
+        val isInterpoleActive = com.clawdroid.app.core.config.AppConfigManager.interpoleEnabled &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleHost.isNotBlank() &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleDeviceId.isNotBlank() &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleDeviceToken.isNotBlank()
+        if (isInterpoleActive) {
+            array.put(tool("interpole_status", "Check the paired INTERPOLE desktop and its current permissions (trust mode, whether execute is allowed, trusted folders). Call this first when a task depends on the desktop, and cache the answer for the turn.") {
+                required()
+            })
+            array.put(tool("interpole_list_dir", "List a directory on the paired INTERPOLE desktop. The path must be inside the desktop trusted folders.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                required("path")
+            })
+            array.put(tool("interpole_read_file", "Read a file on the paired INTERPOLE desktop. Pass start_line and end_line to read only the range you need and keep context small. total_lines is returned so you know the full size.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                putInteger("start_line", "Optional first 1-based line to read.")
+                putInteger("end_line", "Optional last 1-based line to read.")
+                putInteger("max_bytes", "Optional byte cap for the returned content.")
+                required("path")
+            })
+            array.put(tool("interpole_write_file", "Create or overwrite a file on the paired INTERPOLE desktop. In zero-trust mode this returns approval_required; retry the same call with approval_id after the user approves.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                putString("content", "Full file content.")
+                putString("approval_id", "Optional desktop approval id to retry a previously approval-gated write.")
+                required("path", "content")
+            })
+            array.put(tool("interpole_execute", "Run a shell command on the paired INTERPOLE desktop. Output is summarized (head + tail with line/byte counts) to save context. Prefer non-interactive flags. Requires desktop execute enabled, and approval in zero-trust mode (retry with approval_id).") {
+                putString("command", "Command to run via the desktop shell.")
+                putString("cwd", "Working directory on the desktop, inside a trusted folder.")
+                putInteger("timeout_seconds", "Maximum time to wait. Default 60, max 3600.")
+                putInteger("max_output_lines", "Optional cap on returned output lines. Default 40.")
+                putString("approval_id", "Optional desktop approval id to retry a previously approval-gated command.")
+                required("command", "cwd")
+            })
+            array.put(tool("interpole_notify", "Send a desktop notification to the user through the paired INTERPOLE desktop, for example when a long desktop task finishes.") {
+                putString("title", "Notification title.")
+                putString("body", "Notification body.")
+                required("body")
+            })
+            array.put(tool("interpole_batch", "Run several INTERPOLE desktop actions in ONE signed round-trip to save time and context. Use this whenever you need 2 or more related desktop operations. Each item is an object with an action field (list_dir, read_file, write_file, execute, notify, ping, or status) and a params field. Returns a results array; each item is policy-checked independently.") {
+                putArray("actions", "Ordered list of {action, params} objects. action is one of list_dir, read_file, write_file, execute, notify, ping, status.")
+                required("actions")
+            })
+        }
+
         array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot if tree is empty.") {
             required()
         })
@@ -315,8 +610,14 @@ object ToolSchemaRegistry {
         array.put(tool("open_notifications", "Open the notification shade.") {
             required()
         })
-        array.put(tool("launch_app", "Launch an installed app by package name.") {
-            putString("package_name", "Android package name (e.g. com.android.chrome).")
+        array.put(tool("launch_app", "Launch an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example com.android.chrome, Chrome, WhatsApp, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
+            required("package_name")
+        })
+        array.put(tool("open_app", "Alias for launch_app. Open an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example com.android.chrome, Chrome, WhatsApp, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
         array.put(tool("get_installed_apps", "List installed non-system apps.") {
@@ -343,6 +644,67 @@ object ToolSchemaRegistry {
         return array
     }
 
+
+    private fun appendGoogleConnectorTools(array: JSONArray) {
+        val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&
+            com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled
+
+        if (!isGoogleActive) return
+
+        if (com.clawdroid.app.core.config.AppConfigManager.googleGmailEnabled) {
+            array.put(tool("gmail_list_messages", "List or search the user's Gmail messages.") {
+                putString("query", "Search query in Gmail search syntax. Optional.")
+                putInteger("max_results", "Maximum number of results to fetch. Default 10.")
+            })
+            array.put(tool("gmail_get_message", "Retrieve details and body of a specific Gmail message.") {
+                putString("id", "The unique Gmail message id.")
+                required("id")
+            })
+            array.put(tool("gmail_send_message", "Send an email through the connected Google account.") {
+                putString("to", "Recipient email address.")
+                putString("subject", "Email subject.")
+                putString("body", "Email body content.")
+                required("to", "subject", "body")
+            })
+            array.put(tool("gmail_create_draft", "Create a Gmail draft through the connected Google account.") {
+                putString("to", "Recipient email address.")
+                putString("subject", "Email subject.")
+                putString("body", "Email body content.")
+                required("to", "subject", "body")
+            })
+        }
+
+        if (com.clawdroid.app.core.config.AppConfigManager.googleCalendarEnabled) {
+            array.put(tool("calendar_list_events", "List upcoming Google Calendar events.") {
+                putString("time_min", "Lower bound for event start time in ISO-8601 format. Optional.")
+                putString("time_max", "Upper bound for event end time in ISO-8601 format. Optional.")
+                putInteger("max_results", "Maximum number of events to return. Default 15.")
+            })
+            array.put(tool("calendar_create_event", "Create a Google Calendar event.") {
+                putString("summary", "Event title.")
+                putString("description", "Event description. Optional.")
+                putString("start_time", "Start time in ISO-8601 format, for example 2026-06-19T15:00:00+05:30.")
+                putString("end_time", "End time in ISO-8601 format, for example 2026-06-19T16:00:00+05:30.")
+                required("summary", "start_time", "end_time")
+            })
+        }
+
+        array.put(tool("google_drive_create_file", "Create or upload a text-backed file in Google Drive.") {
+            putString("name", "Name of the file.")
+            putString("mimeType", "MIME type, for example text/plain or application/json.")
+            putString("content", "Raw text content of the file.")
+            required("name", "mimeType", "content")
+        })
+        array.put(tool("google_drive_search_files", "Search for files in Google Drive.") {
+            putString("query", "Search term or file name query.")
+            required("query")
+        })
+        array.put(tool("google_docs_write_doc", "Create a new Google Doc and write content to it.") {
+            putString("title", "Document title.")
+            putString("body", "Document body content.")
+            required("title", "body")
+        })
+    }
 
     private fun tool(
         name: String,

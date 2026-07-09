@@ -51,7 +51,7 @@ class AgentEngine(
 
     init {
         // Load persistent memory into the message builder on engine creation
-        val memory = memoryManager.readMemory()
+        val memory = memoryManager.getRelevantContext("")
         MessageBuilder.setMemoryContext(memory)
     }
 
@@ -154,6 +154,7 @@ class AgentEngine(
         hidePromptInChat: Boolean = false,
     ): Flow<AgentRunEvent> = channelFlow {
         stopRequested.set(false)
+        MessageBuilder.setMemoryContext(memoryManager.getRelevantContext(prompt))
         Log.i("AgentEngine", "runInternal started assistant=$isAssistantMode promptLen=${prompt.length} targetConversationId=$targetConversationId mediaPath=$mediaPath mediaMimeType=$mediaMimeType")
         val result = BootstrapManager.ensureBootstrapped(context) { }
         Log.i("AgentEngine", "ensureBootstrapped completed. Result: $result")
@@ -391,7 +392,7 @@ class AgentEngine(
                     screenCaptureBlocked = true
                 }
                 if (isAssistantMode && emptyScreenCount >= 3 && screenCaptureBlocked) {
-                    val message = "I could not read the current app UI tree, and screenshot permission is off. Enable screen capture or reopen the app screen, then try again."
+                    val message = "I could not read the current app UI tree, and screenshot permission is off. Open Settings > Permissions and tap Screen Capture, or reopen the app screen and try again."
                     Log.w("AgentEngine", "assistant blocked conversationId=$conversationId emptyScreenCount=$emptyScreenCount screenCaptureBlocked=$screenCaptureBlocked")
                     send(AgentRunEvent.RunError(message))
                     saveSummary(finalText.toString())
@@ -426,7 +427,7 @@ class AgentEngine(
         val summary = "Completed task. Summary: $preview"
         memoryManager.appendSessionSummary(summary)
         // Reload memory context for next run
-        MessageBuilder.setMemoryContext(memoryManager.readMemory())
+        MessageBuilder.setMemoryContext(memoryManager.getRelevantContext(text))
     }
 
     private fun String.toUserFacingStreamError(mediaPath: String?): String {
@@ -439,6 +440,21 @@ class AgentEngine(
         }
         if (lower.contains("429") || lower.contains("rate limit")) {
             return "The model provider is rate limiting requests. Wait a moment and try again."
+        }
+        if (
+            lower.contains("context_length_exceeded") ||
+            lower.contains("maximum context") ||
+            lower.contains("context window") ||
+            lower.contains("too many tokens") ||
+            lower.contains("prompt is too long") ||
+            lower.contains("input is too long") ||
+            (lower.contains("400") && lower.contains("token")) ||
+            (lower.contains("400") && lower.contains("context"))
+        ) {
+            return "The model provider says this chat is too large for its context window. Start a new chat, or compact/clear old context, then retry. For simple Android actions like opening an app, ClawDroid will now try the local launcher first."
+        }
+        if (lower.contains("provider") && lower.contains("error")) {
+            return "The model provider returned an error. If this happened during a simple Android action, start a new chat and retry; ClawDroid will use local Android control when it can. If it repeats, check Settings > Provider."
         }
         return "Assistant run failed: $this"
     }
@@ -467,7 +483,7 @@ class AgentEngine(
         if (toolName == "get_screen" && error == "empty_ui_tree") {
             return AssistantBlocker.EmptyScreen
         }
-        if (toolName == "screenshot" && error == "permission_required") {
+        if (toolName == "screenshot" && (error == "permission_required" || error == "screen_capture_not_active")) {
             return AssistantBlocker.ScreenCapturePermission
         }
         val verification = parsed.optJSONObject("verification")

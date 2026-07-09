@@ -888,3 +888,25 @@ Things we explicitly **won't** build this week:
 ## The One-Line Pitch
 
 **"An AI agent on your phone with its own Linux terminal, browser, and files — you see everything it does, and it figures out the rest."**
+
+---
+
+## Current Agent Skills Update
+
+### TUI via INTERPOLE
+
+When a task requires interacting with a terminal UI program on the paired desktop, use the tmux-backed INTERPOLE terminal tools:
+
+1. Create a session with `interpole_terminal_create` using a short name, desktop cwd, and optional command such as `lazygit` or `nvim main.py`.
+2. Send keys with `interpole_terminal_send`; use `enter=false` for navigation keys such as `j`, `k`, `q`, `[UP]`, `[DOWN]`, or `[ESC]`.
+3. Read the visible terminal buffer with `interpole_terminal_read`.
+4. Resize with `interpole_terminal_resize` when layouts are cramped.
+5. Kill the session with `interpole_terminal_kill` when finished.
+
+### Layered Memory
+
+At session start, always include the compact skill index from `home/.skills/INDEX.md`. Load detailed skill files and long-term memory from `home/.memory/` only when relevant to the current task.
+
+### Proactive Questions
+
+Use `agent_ask` to create a proactive user question. When the user responds to an `answer_question:<id>` notification flow, call `agent_answer` with the question id and the user's answer so the pending question is closed out.

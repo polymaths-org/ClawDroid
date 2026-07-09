@@ -20,7 +20,7 @@ object GithubAuthManager {
         try {
             Log.i(TAG, "Exchanging GitHub auth code...")
             val clientID = com.clawdroid.app.BuildConfig.GITHUB_OAUTH_CLIENT_ID
-            val clientSecret = com.clawdroid.app.BuildConfig.GITHUB_OAUTH_CLIENT_SECRET
+            val clientSecret = AppConfigManager.githubClientSecret
             var postData = "client_id=" + URLEncoder.encode(clientID, "UTF-8") +
                     "&code=" + URLEncoder.encode(authCode, "UTF-8")
             if (clientSecret.isNotBlank()) {

@@ -135,6 +135,60 @@ data class SettingsEntity(
     val value: String,
 )
 
+@Entity(tableName = "self_manage_alarms", indices = [Index("enabled")])
+data class SelfManageAlarmEntity(
+    @PrimaryKey val id: String,
+    val label: String,
+    val hour: Int,
+    val minute: Int,
+    val daysOfWeekCsv: String = "",
+    val enabled: Boolean = true,
+    val createdAt: Long,
+    val lastTriggered: Long? = null,
+)
+
+@Entity(tableName = "self_manage_reminders", indices = [Index("dueAt"), Index("completed")])
+data class SelfManageReminderEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val description: String = "",
+    val dueAt: Long,
+    val priority: Int = 5,
+    val completed: Boolean = false,
+    val recurring: Boolean = false,
+    val intervalMinutes: Int? = null,
+    val category: String = "general",
+    val createdBy: String = "user",
+    val createdAt: Long,
+)
+
+@Entity(tableName = "self_manage_todos", indices = [Index("dueAt"), Index("completed")])
+data class SelfManageTodoEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val description: String = "",
+    val dueAt: Long? = null,
+    val completed: Boolean = false,
+    val priority: Int = 5,
+    val tagsCsv: String = "",
+    val createdBy: String = "user",
+    val createdAt: Long,
+    val completedAt: Long? = null,
+)
+
+@Entity(tableName = "agent_questions", indices = [Index("answered"), Index("expiresAt"), Index("priority")])
+data class AgentQuestionEntity(
+    @PrimaryKey val id: String,
+    val question: String,
+    val context: String,
+    val suggestedActionsCsv: String = "",
+    val priority: Int = 5,
+    val createdAt: Long,
+    val expiresAt: Long? = null,
+    val answered: Boolean = false,
+    val answer: String? = null,
+)
+
 @Dao
 interface ProjectDao {
     @Query("SELECT * FROM projects ORDER BY updatedAt DESC")
@@ -259,6 +313,78 @@ interface SettingsDao {
     suspend fun upsert(setting: SettingsEntity)
 }
 
+@Dao
+interface SelfManageDao {
+    @Query("SELECT * FROM self_manage_alarms ORDER BY enabled DESC, hour ASC, minute ASC")
+    fun observeAlarms(): Flow<List<SelfManageAlarmEntity>>
+
+    @Query("SELECT * FROM self_manage_reminders ORDER BY completed ASC, dueAt ASC, priority DESC")
+    fun observeReminders(): Flow<List<SelfManageReminderEntity>>
+
+    @Query("SELECT * FROM self_manage_todos ORDER BY completed ASC, COALESCE(dueAt, 9223372036854775807) ASC, priority DESC")
+    fun observeTodos(): Flow<List<SelfManageTodoEntity>>
+
+    @Query("SELECT * FROM self_manage_reminders WHERE completed = 0 AND dueAt <= :now ORDER BY priority DESC, dueAt ASC")
+    suspend fun getDueReminders(now: Long): List<SelfManageReminderEntity>
+
+    @Query("SELECT * FROM self_manage_todos WHERE completed = 0 AND dueAt IS NOT NULL AND dueAt <= :now ORDER BY priority DESC, dueAt ASC")
+    suspend fun getOverdueTodos(now: Long): List<SelfManageTodoEntity>
+
+    @Query("SELECT * FROM self_manage_alarms WHERE enabled = 1 ORDER BY hour ASC, minute ASC LIMIT 1")
+    suspend fun getNextEnabledAlarm(): SelfManageAlarmEntity?
+
+    @Query("SELECT * FROM self_manage_alarms WHERE enabled = 1")
+    suspend fun getAllEnabledAlarms(): List<SelfManageAlarmEntity>
+
+    @Query("SELECT * FROM self_manage_reminders WHERE completed = 0 AND dueAt > :now")
+    suspend fun getFutureReminders(now: Long): List<SelfManageReminderEntity>
+
+    @Query("SELECT * FROM self_manage_todos WHERE completed = 0 AND dueAt IS NOT NULL AND dueAt > :now")
+    suspend fun getFutureTodos(now: Long): List<SelfManageTodoEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAlarm(alarm: SelfManageAlarmEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertReminder(reminder: SelfManageReminderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTodo(todo: SelfManageTodoEntity)
+
+    @Query("UPDATE self_manage_reminders SET completed = 1 WHERE id = :id")
+    suspend fun completeReminder(id: String)
+
+    @Query("UPDATE self_manage_todos SET completed = 1, completedAt = :completedAt WHERE id = :id")
+    suspend fun completeTodo(id: String, completedAt: Long)
+
+    @Query("DELETE FROM self_manage_alarms WHERE id = :id")
+    suspend fun deleteAlarm(id: String)
+
+    @Query("DELETE FROM self_manage_reminders WHERE id = :id")
+    suspend fun deleteReminder(id: String)
+
+    @Query("DELETE FROM self_manage_todos WHERE id = :id")
+    suspend fun deleteTodo(id: String)
+}
+
+@Dao
+interface AgentQuestionDao {
+    @Query("SELECT * FROM agent_questions WHERE answered = 0 AND (expiresAt IS NULL OR expiresAt > :now) ORDER BY priority DESC, createdAt ASC")
+    fun observePending(now: Long): Flow<List<AgentQuestionEntity>>
+
+    @Query("SELECT * FROM agent_questions WHERE answered = 0 AND (expiresAt IS NULL OR expiresAt > :now) ORDER BY priority DESC, createdAt ASC")
+    suspend fun getPending(now: Long): List<AgentQuestionEntity>
+
+    @Query("SELECT * FROM agent_questions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): AgentQuestionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(question: AgentQuestionEntity)
+
+    @Query("UPDATE agent_questions SET answered = 1, answer = :answer WHERE id = :id")
+    suspend fun answer(id: String, answer: String)
+}
+
 @Database(
     entities = [
         ProjectEntity::class,
@@ -267,8 +393,12 @@ interface SettingsDao {
         ToolCallEntity::class,
         AutomationEntity::class,
         SettingsEntity::class,
+        SelfManageAlarmEntity::class,
+        SelfManageReminderEntity::class,
+        SelfManageTodoEntity::class,
+        AgentQuestionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class ClawDroidDatabase : RoomDatabase() {
@@ -278,6 +408,8 @@ abstract class ClawDroidDatabase : RoomDatabase() {
     abstract fun toolCalls(): ToolCallDao
     abstract fun automations(): AutomationDao
     abstract fun settings(): SettingsDao
+    abstract fun selfManage(): SelfManageDao
+    abstract fun agentQuestions(): AgentQuestionDao
 
     companion object {
         @Volatile private var instance: ClawDroidDatabase? = null

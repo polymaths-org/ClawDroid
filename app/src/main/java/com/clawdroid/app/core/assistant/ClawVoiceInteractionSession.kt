@@ -22,6 +22,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.clawdroid.app.core.assistant.context.ScreenContextManager
 import com.clawdroid.app.core.assistant.overlay.AssistantOverlayCoordinator
+import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.ui.theme.ClawDroidTheme
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +55,7 @@ class ClawVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
     private var pendingStructure: AssistStructure? = null
     private var pendingScreenshot: Bitmap? = null
     private var currentInvocationId: String = UUID.randomUUID().toString()
+    private var presentedInvocationId: String? = null
 
     init {
         Log.i(TAG, "init session owner=${context.packageName}")
@@ -77,7 +79,9 @@ class ClawVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
         pendingStructure = null
         pendingScreenshot = null
         currentInvocationId = UUID.randomUUID().toString()
+        presentedInvocationId = null
         Log.i(TAG, "onShow invocationId=$currentInvocationId showFlags=$showFlags argsKeys=${args?.keySet()?.joinToString() ?: "none"}")
+        presentVoiceOverlay(contextSnapshot = null)
     }
 
     override fun onHide() {
@@ -159,21 +163,38 @@ class ClawVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
                     "focused=${snapshot.focusedText?.take(48)}"
             )
 
-            val invocation = AssistantInvocation(
-                id = currentInvocationId,
-                source = AssistantInvocationSource.SYSTEM_ASSIST,
-                mode = AssistantMode.ASK_SCREEN,
-                userText = null,
-                contextSnapshot = snapshot,
-                mediaPath = null,
-                mediaMimeType = null,
-                projectId = null,
-                conversationId = null,
-                createdAt = System.currentTimeMillis()
-            )
+            val invocation = buildSystemAssistInvocation(contextSnapshot = snapshot)
 
-            Log.i(TAG, "present overlay invocationId=${invocation.id}")
-            AssistantInvocationRouter.present(context, invocation)
+            if (presentedInvocationId == invocation.id) {
+                Log.i(TAG, "attach snapshot to active overlay invocationId=${invocation.id}")
+                AssistantOverlayCoordinator.updateCurrentInvocation(invocation)
+            } else {
+                Log.i(TAG, "present overlay with snapshot invocationId=${invocation.id}")
+                AssistantInvocationRouter.present(context, invocation)
+                presentedInvocationId = invocation.id
+            }
         }
+    }
+
+    private fun presentVoiceOverlay(contextSnapshot: AssistantContextSnapshot?) {
+        val invocation = buildSystemAssistInvocation(contextSnapshot)
+        Log.i(TAG, "present voice system assistant overlay invocationId=${invocation.id}")
+        AssistantInvocationRouter.present(context, invocation)
+        presentedInvocationId = invocation.id
+    }
+
+    private fun buildSystemAssistInvocation(contextSnapshot: AssistantContextSnapshot?): AssistantInvocation {
+        return AssistantInvocation(
+            id = currentInvocationId,
+            source = AssistantInvocationSource.SYSTEM_ASSIST,
+            mode = AssistantMode.VOICE_CHAT,
+            userText = null,
+            contextSnapshot = contextSnapshot,
+            mediaPath = null,
+            mediaMimeType = null,
+            projectId = AppConfigManager.activeProjectId,
+            conversationId = AppConfigManager.activeConversationId,
+            createdAt = System.currentTimeMillis(),
+        )
     }
 }

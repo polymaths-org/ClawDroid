@@ -18,14 +18,42 @@ val localProperties = Properties().apply {
     }
 }
 
+val releaseSigningProperties = Properties().apply {
+    val file = rootProject.file("signing/release-signing.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun releaseSigningProperty(localName: String, envName: String = localName): String? {
+    return releaseSigningProperties.getProperty(localName)
+        ?: localProperties.getProperty(localName)
+        ?: System.getenv(envName)
+}
+
+val releaseStoreFile = releaseSigningProperty("storeFile", "RELEASE_STORE_FILE")
+val releaseStorePassword = releaseSigningProperty("storePassword", "RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = releaseSigningProperty("keyAlias", "RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseSigningProperty("keyPassword", "RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.clawdroid.app"
     compileSdk = 36
 
+    lint {
+        disable += "ExpiredTargetSdkVersion"
+    }
+
     defaultConfig {
         applicationId = "com.clawdroid.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 28
         versionCode = 2
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -48,6 +76,16 @@ android {
         val spotifyClientId = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_ID") ?: ""
         val spotifyClientSecret = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_SECRET") ?: ""
 
+        // Google OAuth (server-auth-code flow). The WEB client carries the secret used for
+        // token exchange; the Android client authenticates on-device via package + SHA-1.
+        // Prefer local.properties/.env overrides, then fall back to the web client JSON in root.
+        val googleClientId = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID")
+            ?: readGoogleWebCredential("client_id")
+            ?: "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com"
+        val googleClientSecret = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_SECRET")
+            ?: readGoogleWebCredential("client_secret")
+            ?: ""
+
         buildConfigField("String", "LLM_BASE_URL", llmBaseUrl.asBuildConfigString())
         buildConfigField("String", "LLM_MODEL", llmModel.asBuildConfigString())
         buildConfigField("String", "LLM_API_KEY", llmApiKey.asBuildConfigString())
@@ -61,11 +99,33 @@ android {
         buildConfigField("String", "NOTION_OAUTH_CLIENT_SECRET", notionClientSecret.asBuildConfigString())
         buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_ID", spotifyClientId.asBuildConfigString())
         buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_SECRET", spotifyClientSecret.asBuildConfigString())
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", googleClientId.asBuildConfigString())
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_SECRET", googleClientSecret.asBuildConfigString())
     }
 
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
@@ -75,6 +135,24 @@ android {
 }
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+fun readGoogleWebCredential(key: String): String? {
+    return try {
+        val webJson = rootProject.projectDir.listFiles()
+            ?.firstOrNull {
+                it.isFile &&
+                    it.name.startsWith("client_secret_") &&
+                    it.name.contains("-niqg2") &&
+                    it.name.endsWith(".json")
+            }
+        if (webJson != null && webJson.exists()) {
+            val parsed = groovy.json.JsonSlurper().parse(webJson) as Map<*, *>
+            (parsed["web"] as? Map<*, *>)?.get(key) as? String
+        } else null
+    } catch (_: Exception) {
+        null
+    }
+}
 
 kotlin {
     compilerOptions {

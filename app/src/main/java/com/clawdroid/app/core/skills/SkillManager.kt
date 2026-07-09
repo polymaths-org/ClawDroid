@@ -29,6 +29,7 @@ object SkillManager {
      * Load configured skills from agent config and register built-in skills.
      */
     fun loadConfigured(context: Context) {
+        registered.clear()
         val config = AgentConfigLoader.load(context)
         val env = EnvironmentSetup.build(context)
 
@@ -67,8 +68,21 @@ object SkillManager {
     }
 
     private fun registerBuiltins(env: LinuxEnvironment) {
-        // Check for user-created skill scripts in ~/skills/
         val skillsDir = File(env.home, "skills")
+        runCatching {
+            InterpoleProtocolSkill.installInto(env)
+            register(
+                PromptSkill(
+                    InterpoleProtocolSkill.NAME,
+                    InterpoleProtocolSkill.DESCRIPTION,
+                    InterpoleProtocolSkill.SYSTEM_PROMPT,
+                ),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to install built-in INTERPOLE protocol skill", error)
+        }
+
+        // Check for user-created skill prompts in ~/skills/.
         if (!skillsDir.isDirectory) return
 
         skillsDir.listFiles()?.filter { it.isFile && it.name.endsWith(".md") }?.forEach { file ->

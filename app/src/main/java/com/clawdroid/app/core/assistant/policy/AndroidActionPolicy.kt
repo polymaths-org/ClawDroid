@@ -19,7 +19,7 @@ object AndroidActionPolicy {
         val isAccessibilityTool = toolName in setOf(
             "get_screen", "tap", "tap_text", "tap_resource_id", "long_press",
             "swipe", "scroll", "type_text", "clear_text", "press_back",
-            "press_home", "press_recents", "open_notifications", "launch_app",
+            "press_home", "press_recents", "open_notifications",
             "perform_android_actions", "send_message_in_current_chat"
         )
         if (isAccessibilityTool) {

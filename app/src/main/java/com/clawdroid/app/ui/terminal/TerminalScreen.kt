@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.terminal.ProcessManagerProvider
 import com.clawdroid.app.core.terminal.ProcessState
+import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.theme.Dimens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -69,7 +72,10 @@ import kotlin.time.Duration.Companion.hours
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen(onBack: () -> Unit) {
+fun TerminalScreen(
+    onBack: () -> Unit,
+    onNavigateToSelfManage: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -90,15 +96,24 @@ fun TerminalScreen(onBack: () -> Unit) {
 
     fun submitCommand(command: String = input) {
         val text = command.trim()
-        if (text.isBlank() || processId == null || state in terminalStates) return
+        if (text.isBlank()) return
+        if (processId == null || state in terminalStates) {
+            lines.add("Shell not running. Press ↻ to restart.")
+            return
+        }
+        val commandToSend = if (text.equals("clear", ignoreCase = true)) "clear" else text
         input = ""
-        history.add(text)
+        history.add(commandToSend)
         historyIndex = history.size
-        sendRaw("$text[ENTER]")
+        if (commandToSend == "clear") {
+            lines.clear()
+            processId?.let { id -> scope.launch { runCatching { pm.clearProcessOutput(id) } } }
+        }
+        sendRaw("$commandToSend[ENTER]")
     }
 
     fun appendOutput(text: String) {
-        val next = text.lines().filter { it.isNotBlank() }
+        val next = text.lines()
         if (next.isNotEmpty()) {
             lines.clear()
             lines.addAll(next.takeLast(500))
@@ -109,8 +124,9 @@ fun TerminalScreen(onBack: () -> Unit) {
         lines.add("Starting ClawDroid Linux shell...")
         val start = runCatching {
             pm.startProcess(
-                command = "export PS1='clawdroid:\\w$ '; exec bash --noprofile --norc -i",
+                command = terminalStartupCommand(),
                 timeout = 3.hours,
+                usePty = true,
             )
         }
         if (start.isFailure) {
@@ -120,14 +136,14 @@ fun TerminalScreen(onBack: () -> Unit) {
         }
         val result = start.getOrThrow()
         processId = result.processId
-        appendOutput(result.initialOutput.ifBlank { "Shell ready." })
+        appendOutput(pm.getProcessOutput(result.processId).ifBlank { result.initialOutput.ifBlank { "Shell ready." } })
 
         while (isActive) {
             val id = processId ?: break
             val status = runCatching { pm.checkProcess(id) }.getOrNull() ?: break
             state = status.state
             cwd = status.cwd
-            appendOutput(status.recentOutput)
+            appendOutput(pm.getProcessOutput(id))
             delay(600)
         }
     }
@@ -142,8 +158,9 @@ fun TerminalScreen(onBack: () -> Unit) {
         }
     }
 
+    ClawSkinBackground {
     Scaffold(
-        containerColor = Color(0xFF090B0D),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
@@ -170,7 +187,12 @@ fun TerminalScreen(onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Restart shell")
                     }
-                    IconButton(onClick = { lines.clear() }) {
+                    IconButton(
+                        onClick = {
+                            lines.clear()
+                            processId?.let { id -> scope.launch { runCatching { pm.clearProcessOutput(id) } } }
+                        },
+                    ) {
                         Icon(Icons.Rounded.ClearAll, contentDescription = "Clear")
                     }
                     IconButton(
@@ -185,7 +207,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         Icon(Icons.Rounded.Stop, contentDescription = "Interrupt")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF090B0D)),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.62f)),
             )
         },
     ) { padding ->
@@ -193,7 +215,6 @@ fun TerminalScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFF090B0D)),
         ) {
             StatusStrip(state = state)
 
@@ -209,7 +230,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                 items(lines.size) { index ->
                     Text(
                         text = lines[index],
-                        color = Color(0xFFE7ECEF),
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
@@ -221,29 +242,32 @@ fun TerminalScreen(onBack: () -> Unit) {
                 onCommand = { submitCommand(it) },
                 onCtrlC = { sendRaw("[CTRL+C]") },
                 onCtrlD = { sendRaw("[CTRL+D]") },
+                onSelfManagement = onNavigateToSelfManage,
             )
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(12.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF11161A))
-                    .border(1.dp, Color(0xFF2B3339), RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f), RoundedCornerShape(14.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("$", color = Color(0xFFA8C7FA), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                Text("$", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.width(Dimens.sm))
                 TextField(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    enabled = processId != null && state !in terminalStates,
-                    placeholder = { Text("Run a Linux command...", color = Color(0xFF7D8790)) },
+                    enabled = true,
+                    placeholder = { Text("Run a Linux command...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.66f)) },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFE7ECEF),
+                        color = MaterialTheme.colorScheme.onSurface,
                     ),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -256,7 +280,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        cursorColor = Color(0xFFA8C7FA),
+                        cursorColor = MaterialTheme.colorScheme.primary,
                     ),
                 )
                 Spacer(modifier = Modifier.width(Dimens.sm))
@@ -272,7 +296,7 @@ fun TerminalScreen(onBack: () -> Unit) {
                         }
                     },
                 ) {
-                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous command", tint = Color(0xFFB8C7D9))
+                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous command", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(
                     onClick = {
@@ -282,15 +306,16 @@ fun TerminalScreen(onBack: () -> Unit) {
                         }
                     },
                 ) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next command", tint = Color(0xFFB8C7D9))
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next command", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(
                     onClick = { submitCommand() },
                 ) {
-                    Icon(Icons.Rounded.KeyboardReturn, contentDescription = "Send", tint = Color(0xFFA8C7FA))
+                    Icon(Icons.Rounded.KeyboardReturn, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
+    }
     }
 }
 
@@ -299,6 +324,7 @@ private fun QuickCommandRow(
     onCommand: (String) -> Unit,
     onCtrlC: () -> Unit,
     onCtrlD: () -> Unit,
+    onSelfManagement: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -312,6 +338,7 @@ private fun QuickCommandRow(
         }
         TerminalChip(label = "Ctrl+C", danger = true, onClick = onCtrlC)
         TerminalChip(label = "Ctrl+D", danger = false, onClick = onCtrlD)
+        TerminalChip(label = "Self-management", onClick = onSelfManagement)
     }
 }
 
@@ -321,31 +348,42 @@ private fun TerminalChip(
     danger: Boolean = false,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = label,
-        color = if (danger) Color(0xFFFFB4AB) else Color(0xFFE7ECEF),
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp,
+    Box(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (danger) Color(0xFF35161A) else Color(0xFF18212A))
-            .border(1.dp, if (danger) Color(0xFF6C2A32) else Color(0xFF2E3A45), RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+            .background(
+                if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.82f)
+            )
+            .border(
+                1.dp,
+                if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.36f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
+                RoundedCornerShape(10.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Text(
+            text = label,
+            color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+    }
 }
 
 @Composable
 private fun StatusStrip(state: ProcessState) {
     val color = when (state) {
         ProcessState.RUNNING, ProcessState.WAITING_FOR_INPUT -> Color(0xFF81C784)
-        ProcessState.COMPLETED -> Color(0xFFA8C7FA)
-        else -> Color(0xFFFFB4AB)
+        ProcessState.COMPLETED -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF11161A))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -366,6 +404,25 @@ private fun StatusStrip(state: ProcessState) {
         )
     }
 }
+
+private fun terminalStartupCommand(): String {
+    val banner = CLAWDROID_TERMINAL_BANNER.replace("'", "'\"'\"'")
+    return "printf '%s\\n' '$banner'\n" +
+        "export PS1='clawdroid:\\w${'$'} '\n" +
+        "clear() { printf '\\033[H\\033[2J\\033[3J'; }\n" +
+        "export -f clear\n" +
+        "exec \"${'$'}SHELL\" --noprofile --norc -i\n"
+}
+
+private val CLAWDROID_TERMINAL_BANNER = """
+  ____ _                 ____            _     _
+ / ___| | __ ___      _ |  _ \ _ __ ___ (_) __| |
+| |   | |/ _` \ \ /\ / /| | | | '__/ _ \| |/ _` |
+| |___| | (_| |\ V  V / | |_| | | | (_) | | (_| |
+ \____|_|\__,_| \_/\_/  |____/|_|  \___/|_|\__,_|
+
+Sandbox shell ready. Keep commands non-interactive when possible.
+""".trim('\n', '\r')
 
 private val terminalStates = setOf(
     ProcessState.COMPLETED,

@@ -1,81 +1,86 @@
 package com.clawdroid.app.core.assistant.overlay
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import com.clawdroid.app.R
 import com.clawdroid.app.core.assistant.AssistantInvocation
-import com.clawdroid.app.core.voice.OpenAIRealtimeClient
+import com.clawdroid.app.core.assistant.AssistantInvocationSource
+import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
-import java.io.File
-import kotlinx.coroutines.launch
+import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.ui.components.FifMascot
+import kotlin.math.PI
+import kotlin.math.sin
 
 @Composable
 fun AssistantOverlayView(
@@ -86,25 +91,21 @@ fun AssistantOverlayView(
     answer: String,
     error: String,
     actionLog: List<String>,
+    voiceGreeting: String? = null,
+    voiceListenTimeoutSeconds: Int? = null,
     onWindowDrag: (Float, Float) -> Unit,
-    onSubmit: (String) -> Unit,
-    onTranslate: () -> Unit,
-    onStop: () -> Unit,
-    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit = {},
+    onTranslate: () -> Unit = {},
+    onStop: () -> Unit = {},
+    onDismiss: () -> Unit = {},
 ) {
     val tag = "AssistantOverlayView"
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val recognizer = remember(context) { SpeechRecognizerClient(context.applicationContext) }
-    val realtimeClient = remember { OpenAIRealtimeClient() }
     var prompt by remember(invocation?.id) { mutableStateOf("") }
     var helperText by remember(invocation?.id) {
         mutableStateOf("Ask about this screen or choose an action.")
     }
-
-    DisposableEffect(recognizer) {
-        onDispose { recognizer.destroy() }
-    }
+    var showTextOverlayFromVoice by remember(invocation?.id) { mutableStateOf(false) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "assistant_pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
@@ -117,297 +118,106 @@ fun AssistantOverlayView(
         label = "pulseAlpha",
     )
 
-    val isActing = status.startsWith("Doing:")
-    val isRunning = status != "Ready" && status != "Done" && status != "Error"
-    val screenshotPath = invocation?.contextSnapshot?.screenshotPath ?: invocation?.mediaPath
-    val screenshotBitmap = remember(screenshotPath) {
-        screenshotPath
-            ?.takeIf { File(it).exists() }
-            ?.let { BitmapFactory.decodeFile(it) }
-            ?.asImageBitmap()
+    val isRunning = !status.isTerminalOverlayStatus()
+    val preferredInputMode = when (invocation?.source) {
+        AssistantInvocationSource.SYSTEM_ASSIST -> AppConfigManager.assistantOverlayInputMode
+        AssistantInvocationSource.VOICE_CALL,
+        AssistantInvocationSource.NOTIFICATION_ACTION -> "voice"
+        else -> AppConfigManager.overlayInputMode
     }
+    val isVoiceOnly = preferredInputMode == "voice"
 
-    FloatingAssistantWidget(
-        status = status,
-        shortLine = shortLine,
-        textDelta = textDelta,
-        answer = answer,
-        error = error,
-        actionLog = actionLog,
-        prompt = prompt,
-        onPromptChange = {
-            prompt = it
-            helperText = "Ready when you are."
-        },
-        isRunning = isRunning,
-        pulseAlpha = pulseAlpha,
-        onWindowDrag = onWindowDrag,
-        onSubmit = {
-            val text = prompt.trim()
-            if (text.isNotEmpty()) {
-                Log.i(tag, "floating submit invocationId=${invocation?.id} len=${text.length}")
-                prompt = ""
-                onSubmit(text)
-            }
-        },
-        onStop = onStop,
-        onDismiss = onDismiss,
-    )
-    return
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = if (isActing) 0.04f else 0.18f)),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        if (isActing) {
-            CompactStatusPill(
-                status = status,
-                shortLine = shortLine.ifBlank { "Working in the current app..." },
-                pulseAlpha = pulseAlpha,
-                onStop = onStop,
-                onDismiss = onDismiss,
-            )
-            return@Box
+    if (isVoiceOnly && !showTextOverlayFromVoice) {
+        val initialGreeting = when {
+            invocation?.source == AssistantInvocationSource.SYSTEM_ASSIST -> ""
+            !AppConfigManager.voiceLaunchGreetingEnabled -> ""
+            else -> voiceGreeting?.takeIf { it.isNotBlank() }.orEmpty()
         }
-
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 16.dp)
-                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(28.dp)),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-            tonalElevation = 8.dp,
-            shadowElevation = 12.dp,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    when (status) {
-                                        "Done" -> Color(0xFF4ADE80)
-                                        "Error" -> MaterialTheme.colorScheme.error
-                                        "Ready" -> MaterialTheme.colorScheme.primary
-                                        else -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
-                                    },
-                                ),
-                        )
-                        Column {
-                            Text(
-                                text = if (status == "Ready") "ClawDroid" else status,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 0.sp,
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = if (isRunning || status == "Done" || status == "Error") {
-                                    shortLine.ifBlank { helperText }
-                                } else {
-                                    helperText
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (isRunning) {
-                            IconButton(onClick = onStop, modifier = Modifier.size(36.dp)) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Stop,
-                                    contentDescription = "Stop assistant",
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        }
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Dismiss",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+        VoiceAssistantWidget(
+            invocationId = invocation?.id,
+            isRunning = isRunning,
+            status = status,
+            textDelta = textDelta,
+            answer = answer,
+            error = error,
+            actionLog = actionLog,
+            initialGreeting = initialGreeting,
+            listenTimeoutSeconds = voiceListenTimeoutSeconds,
+            pulseAlpha = pulseAlpha,
+            onWindowDrag = onWindowDrag,
+            onSubmit = { text ->
+                val clean = text.trim()
+                if (clean.isBlank()) return@VoiceAssistantWidget
+                if (invocation?.source == AssistantInvocationSource.NOTIFICATION_ACTION && isAffirmativeTaskAnswer(clean)) {
+                    NotificationHelper.sendAgentNotification(
+                        context = context,
+                        title = "Marked complete",
+                        body = "ClawDroid marked the task complete.",
+                    )
+                    onDismiss()
+                    return@VoiceAssistantWidget
                 }
-
-                ScreenPreview(
-                    screenshotBitmap = screenshotBitmap,
-                    visibleText = invocation?.contextSnapshot?.visibleText.orEmpty(),
-                    contentDescriptionText = invocation?.contextSnapshot?.contentDescriptionText.orEmpty(),
-                )
-
-                AnimatedVisibility(visible = error.isNotBlank() || answer.isNotBlank() || textDelta.isNotBlank()) {
-                    ResponsePane(
-                        error = error,
-                        answer = answer,
-                        textDelta = textDelta,
-                    )
+                onSubmit(clean)
+            },
+            onKeyboard = {
+                showTextOverlayFromVoice = true
+            },
+            onStop = onStop,
+            onDismiss = onDismiss,
+        )
+    } else {
+        ChatAssistantWidget(
+            status = status,
+            shortLine = shortLine,
+            textDelta = textDelta,
+            answer = answer,
+            error = error,
+            actionLog = actionLog,
+            prompt = prompt,
+            onPromptChange = {
+                prompt = it
+                helperText = "Ready when you are."
+            },
+            isRunning = isRunning,
+            pulseAlpha = pulseAlpha,
+            onWindowDrag = onWindowDrag,
+            onSubmit = {
+                val text = prompt.trim()
+                if (text.isNotEmpty()) {
+                    Log.i(tag, "floating submit invocationId=${invocation?.id} len=${text.length}")
+                    prompt = ""
+                    onSubmit(text)
                 }
-
-                AnimatedVisibility(visible = status == "Done") {
-                    Text(
-                        text = "Ask a follow-up to continue this assistant session.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                OutlinedTextField(
-                    value = prompt,
-                    onValueChange = {
-                        prompt = it
-                        helperText = "Ready when you are."
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Ask about this screen") },
-                    singleLine = false,
-                    maxLines = 3,
-                    enabled = !isRunning,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = ImeAction.Send,
-                    ),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onSend = {
-                            val text = prompt.trim()
-                            if (text.isNotEmpty()) {
-                                Log.i(tag, "keyboard submit invocationId=${invocation?.id} len=${text.length}")
-                                prompt = ""
-                                onSubmit(text)
-                            }
-                        },
-                    ),
-                    trailingIcon = {
-                        IconButton(
-                            enabled = !isRunning && prompt.isNotBlank(),
-                            onClick = {
-                                val text = prompt.trim()
-                                if (text.isNotEmpty()) {
-                                    Log.i(tag, "button submit invocationId=${invocation?.id} len=${text.length}")
-                                    prompt = ""
-                                    onSubmit(text)
-                                }
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.Send,
-                                contentDescription = "Send",
-                            )
-                        }
-                    },
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AnimatedVisibility(visible = isRunning) {
-                        AssistantActionButton(
-                            label = "Stop",
-                            icon = { Icon(Icons.Rounded.Stop, contentDescription = null) },
-                            enabled = true,
-                            onClick = {
-                                Log.i(tag, "stop clicked invocationId=${invocation?.id}")
-                                onStop()
-                            },
-                        )
-                    }
-                    AssistantActionButton(
-                        modifier = Modifier.weight(1f),
-                        label = "Voice",
-                        icon = { Icon(Icons.Rounded.Mic, contentDescription = null) },
-                        enabled = !isRunning,
-                        onClick = {
-                            Log.i(tag, "voice clicked invocationId=${invocation?.id}")
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                                Log.w(tag, "voice blocked missing RECORD_AUDIO invocationId=${invocation?.id}")
-                                helperText = "Microphone permission is needed for voice input. You can still type."
-                                return@AssistantActionButton
-                            }
-                            helperText = "Listening..."
-                            recognizer.startListening(
-                                onResult = { text ->
-                                    Log.i(tag, "voice result invocationId=${invocation?.id} len=${text.length}")
-                                    if (text.isNotBlank()) {
-                                        prompt = text
-                                        helperText = "Voice captured. Edit or send."
-                                    } else {
-                                        helperText = "No speech detected. Try again or type."
-                                    }
-                                },
-                                onError = { message ->
-                                    Log.w(tag, "voice error invocationId=${invocation?.id} message=$message")
-                                    helperText = message
-                                },
-                            )
-                        },
-                    )
-                    AssistantActionButton(
-                        modifier = Modifier.weight(1f),
-                        label = "Translate",
-                        icon = { Icon(Icons.Rounded.Translate, contentDescription = null) },
-                        enabled = !isRunning,
-                        onClick = {
-                            Log.i(tag, "translate clicked invocationId=${invocation?.id}")
-                            onTranslate()
-                        },
-                    )
-                    AssistantActionButton(
-                        modifier = Modifier.weight(1f),
-                        label = "Realtime",
-                        icon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
-                        enabled = !isRunning,
-                        onClick = {
-                            Log.i(tag, "realtime clicked invocationId=${invocation?.id}")
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                                Log.w(tag, "realtime blocked missing RECORD_AUDIO invocationId=${invocation?.id}")
-                                helperText = "Microphone permission is needed for realtime voice. You can still type."
-                                return@AssistantActionButton
-                            }
-                            helperText = "Preparing Realtime voice..."
-                            coroutineScope.launch {
-                                val result = realtimeClient.createClientSecret()
-                                helperText = result.fold(
-                                    onSuccess = {
-                                        Log.i(tag, "realtime token success invocationId=${invocation?.id}")
-                                        "Realtime voice is ready, but native audio transport is not connected in this build yet. Use Voice for speech-to-text."
-                                    },
-                                    onFailure = { error ->
-                                        Log.e(tag, "realtime token failed invocationId=${invocation?.id}", error)
-                                        "Realtime voice unavailable: ${error.message ?: "token request failed"}. Use Voice or type instead."
-                                    },
-                                )
-                            }
-                        },
-                    )
-                }
-            }
-        }
+            },
+            onStop = onStop,
+            onDismiss = onDismiss,
+        )
     }
 }
 
+private fun isAffirmativeTaskAnswer(text: String): Boolean {
+    val normalized = text.lowercase().replace(Regex("[^a-z0-9 ]"), " ").replace(Regex("\\s+"), " ").trim()
+    if (normalized in setOf("yes", "yeah", "yep", "done", "mark done", "mark it done", "mark complete", "complete")) {
+        return true
+    }
+    return normalized.contains("mark it complete") ||
+        normalized.contains("mark it done") ||
+        normalized.contains("task is done") ||
+        normalized.contains("it is done") ||
+        normalized.contains("its done")
+}
+
+private fun String.isTerminalOverlayStatus(): Boolean {
+    return this == "Ready" ||
+        this == "Done" ||
+        this == "Error" ||
+        startsWith("Stopped", ignoreCase = true)
+}
+
+// ── Chat Assistant Widget (Gemini-style bottom dock) ──────────────────────
+
 @Composable
-private fun FloatingAssistantWidget(
+private fun ChatAssistantWidget(
     status: String,
     shortLine: String,
     textDelta: String,
@@ -424,139 +234,756 @@ private fun FloatingAssistantWidget(
     onDismiss: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
-    val displayLine = when {
+    var outputExpanded by remember { mutableStateOf(false) }
+    val mascotRandomKey = remember { System.nanoTime() }
+    val context = LocalContext.current
+    val isComplete = status == "Done" && error.isBlank()
+    val currentTaskLine = when {
+        error.isNotBlank() -> "Needs attention"
+        isRunning -> status.ifBlank { actionLog.lastOrNull() ?: "Working" }
+        isComplete -> "Task completed"
+        status == "Ready" -> "Ready"
+        else -> status.ifBlank { "Ready" }
+    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(140)
+    val latestResponseText = when {
         error.isNotBlank() -> error
         answer.isNotBlank() -> answer
         textDelta.isNotBlank() -> textDelta
-        shortLine.isNotBlank() -> shortLine
-        else -> "Watching the screen and planning the next move."
-    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(180)
+        !isRunning && shortLine.isNotBlank() && shortLine != currentTaskLine -> shortLine
+        else -> ""
+    }.trim()
+    val latestResponseLine = latestResponseText.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(180)
+    val outputText = latestResponseText.ifBlank {
+        currentTaskLine.ifBlank { "Watching the screen and planning the next move." }
+    }
+    val headerLine = when {
+        error.isNotBlank() -> "Needs attention"
+        isRunning -> "In progress"
+        isComplete -> "Task completed"
+        else -> "Ready"
+    }
 
-    Row(
-        modifier = Modifier.padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-            Box(
-                modifier = Modifier
-                    .size(62.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.94f),
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                            ),
-                        ),
-                        CircleShape,
-                    )
-                    .border(
-                        2.dp,
-                        when {
-                            error.isNotBlank() -> MaterialTheme.colorScheme.error
-                            isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
-                            else -> MaterialTheme.colorScheme.primary
-                        },
-                        CircleShape,
-                    )
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            onWindowDrag(dragAmount.x, dragAmount.y)
-                        }
-                    }
-                    .clickable { expanded = !expanded }
-                    .padding(9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.clawdroid_logo),
-                    contentDescription = "ClawDroid overlay",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
-                )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    onWindowDrag(dragAmount.x, dragAmount.y)
+                }
             }
-
-            AnimatedVisibility(visible = expanded) {
-                Surface(
-                    modifier = Modifier.width(286.dp),
-                    shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-                    tonalElevation = 4.dp,
-                    shadowElevation = 5.dp,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
-                    ),
+    ) {
+        AnimatedVisibility(
+            visible = expanded,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)) + slideInVertically(
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                initialOffsetY = { fullHeight -> (fullHeight * 0.16f).toInt().coerceAtLeast(18) },
+            ),
+            exit = fadeOut(tween(100)) + slideOutVertically(
+                animationSpec = tween(120, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> (fullHeight * 0.10f).toInt().coerceAtLeast(12) },
+            ),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                tonalElevation = 6.dp,
+                shadowElevation = 10.dp,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
+                ),
+            ) {
+                Column(
+                    modifier = Modifier.padding(start = 12.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            error.isNotBlank() -> MaterialTheme.colorScheme.error
+                                            isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                                            isComplete -> MaterialTheme.colorScheme.tertiary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                        },
+                                    ),
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (status == "Ready") "ClawDroid" else status,
+                                    text = when {
+                                        status == "Ready" -> "ClawDroid"
+                                        isComplete -> "Task completed"
+                                        else -> status
+                                    },
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                 )
                                 Text(
-                                    text = if (isRunning) "Acting on the current screen" else "Ready for follow-up",
+                                    text = headerLine,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                        IconButton(onClick = { expanded = false }, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Hide dock", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = outputText.isNotBlank() || isRunning || actionLog.isNotEmpty() || isComplete,
+                        enter = fadeIn(tween(90)),
+                        exit = fadeOut(tween(70)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.50f))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f),
+                                    RoundedCornerShape(18.dp),
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(999.dp)),
+                            ) {
+                                if (isRunning) {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(3.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when {
+                                            error.isNotBlank() -> "Error"
+                                            isComplete -> "Completed"
+                                            else -> "Current task"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        text = currentTaskLine.ifBlank { "Waiting for the next update." },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { outputExpanded = !outputExpanded },
+                                    modifier = Modifier.size(38.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = if (outputExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                        contentDescription = if (outputExpanded) "Collapse output" else "Expand output",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "Latest response",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = latestResponseLine.ifBlank {
+                                        if (isRunning) "Waiting for the assistant response..." else "Ready for a follow-up."
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                 )
                             }
-                            if (isRunning) {
-                                IconButton(onClick = onStop, modifier = Modifier.size(34.dp)) {
-                                    Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                            IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = outputText.ifBlank { "Working..." },
+                                color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp, letterSpacing = 0.sp),
+                                maxLines = if (outputExpanded) 8 else 2,
+                                modifier = Modifier.heightIn(min = 42.dp, max = if (outputExpanded) 156.dp else 46.dp),
+                            )
+                            if (outputExpanded && actionLog.isNotEmpty()) {
+                                ActionTimeline(actions = actionLog, isRunning = isRunning, pulseAlpha = pulseAlpha)
                             }
                         }
+                    }
 
-                        Text(
-                            text = displayLine.ifBlank { "Thinking..." },
-                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                            color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 4,
-                        )
-
-                        ActionTimeline(
-                            actions = actionLog,
-                            isRunning = isRunning,
-                            pulseAlpha = pulseAlpha,
-                        )
-
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         OutlinedTextField(
                             value = prompt,
                             onValueChange = onPromptChange,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isRunning,
-                            placeholder = { Text(if (isRunning) "Working..." else "Type a follow-up") },
+                            modifier = Modifier.weight(1f),
+                            enabled = true,
+                            placeholder = { Text(if (isRunning) "Add note" else "Ask") },
                             minLines = 1,
-                            maxLines = 3,
+                            maxLines = 2,
+                            shape = RoundedCornerShape(18.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.58f),
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.34f),
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.82f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.64f),
+                            ),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { onSubmit() }),
                             trailingIcon = {
-                                IconButton(enabled = !isRunning && prompt.isNotBlank(), onClick = onSubmit) {
+                                IconButton(enabled = prompt.isNotBlank(), onClick = onSubmit) {
                                     Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send")
                                 }
                             },
                         )
+                        if (isRunning) {
+                            IconButton(
+                                onClick = onStop,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.78f)),
+                            ) {
+                                Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.onErrorContainer)
+                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                OverlayWindowService.startVoice(context)
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.44f), CircleShape),
+                        ) {
+                            Icon(Icons.Rounded.Mic, contentDescription = "Start voice chat", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+                                .border(
+                                    1.dp,
+                                    if (isRunning) MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.60f),
+                                    CircleShape,
+                                )
+                                .padding(5.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            FifMascot(
+                                modifier = Modifier.fillMaxSize(),
+                                contentDescription = "ClawDroid assistant mascot",
+                                randomize = true,
+                                randomKey = mascotRandomKey,
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        AnimatedVisibility(
+            visible = !expanded,
+            modifier = Modifier.align(Alignment.BottomEnd),
+            enter = fadeIn(tween(140, easing = FastOutSlowInEasing)) + slideInVertically(
+                animationSpec = tween(160, easing = FastOutSlowInEasing),
+                initialOffsetY = { fullHeight -> (fullHeight * 0.24f).toInt().coerceAtLeast(10) },
+            ),
+            exit = fadeOut(tween(90)) + slideOutVertically(
+                animationSpec = tween(110, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> (fullHeight * 0.18f).toInt().coerceAtLeast(8) },
+            ),
+        ) {
+            Surface(
+                onClick = { expanded = true },
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.60f),
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FifMascot(
+                        modifier = Modifier.size(34.dp),
+                        contentDescription = "Show ClawDroid dock",
+                        randomize = true,
+                        randomKey = mascotRandomKey,
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowUp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
     }
 }
+
+// ── Voice Assistant Widget (audio-focused bottom overlay) ─────────────────
+
+@Composable
+private fun VoiceAssistantWidget(
+    invocationId: String?,
+    isRunning: Boolean,
+    status: String,
+    textDelta: String,
+    answer: String,
+    error: String,
+    actionLog: List<String>,
+    initialGreeting: String,
+    listenTimeoutSeconds: Int?,
+    pulseAlpha: Float,
+    onWindowDrag: (Float, Float) -> Unit,
+    onSubmit: (String) -> Unit,
+    onKeyboard: () -> Unit,
+    onStop: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val recognizer = remember(context) {
+        SpeechRecognizerClient(context.applicationContext, forceSystemRecognizer = true, fastMode = true)
+    }
+    val voiceManager = remember(context) { VoiceManager(context.applicationContext) }
+    val isListening by recognizer.isListening.collectAsState()
+    val partial by recognizer.partialResult.collectAsState()
+    val userAmplitude by recognizer.userVoiceAmplitude.collectAsState()
+    val agentSpeaking by voiceManager.isSpeaking.collectAsState()
+    val agentAmplitude by voiceManager.agentVoiceAmplitude.collectAsState()
+    var lastSpokenAnswer by remember { mutableStateOf("") }
+    var listenTick by remember { mutableIntStateOf(0) }
+    val shouldPlayGreeting = remember(invocationId) {
+        AssistantOverlayCoordinator.shouldPlayVoiceGreeting(invocationId)
+    }
+    var speechMuted by remember(invocationId) { mutableStateOf(false) }
+    var greetingComplete by remember(invocationId, initialGreeting, shouldPlayGreeting) {
+        mutableStateOf(initialGreeting.isBlank() || !shouldPlayGreeting)
+    }
+    var greetingStarted by remember(invocationId, initialGreeting, shouldPlayGreeting) {
+        mutableStateOf(!shouldPlayGreeting)
+    }
+
+    fun submitRecognizedSpeech(text: String) {
+        val clean = text.trim()
+        if (clean.isNotBlank()) {
+            onSubmit(clean)
+        } else {
+            listenTick++
+        }
+    }
+
+    fun startInterruptListening() {
+        speechMuted = false
+        greetingComplete = true
+        voiceManager.stop()
+        recognizer.cancelListening()
+        recognizer.startListening(
+            onResult = { text -> submitRecognizedSpeech(text) },
+            onError = {
+                if (!isRunning) {
+                    listenTick++
+                }
+            },
+        )
+    }
+
+    DisposableEffect(Unit) {
+        AssistantOverlayCoordinator.setVoiceInputActive(true)
+        onDispose {
+            AssistantOverlayCoordinator.setVoiceInputActive(false)
+            recognizer.destroy()
+            voiceManager.destroy()
+        }
+    }
+
+    LaunchedEffect(invocationId, initialGreeting, shouldPlayGreeting, speechMuted) {
+        if (!shouldPlayGreeting || initialGreeting.isBlank()) {
+            greetingComplete = true
+            return@LaunchedEffect
+        }
+        if (!greetingStarted && !speechMuted) {
+            greetingStarted = true
+            voiceManager.speakWithNaturalBreaks(initialGreeting) {
+                greetingComplete = true
+                listenTick++
+            }
+        } else if (speechMuted) {
+            greetingComplete = true
+        }
+    }
+
+    LaunchedEffect(isRunning, agentSpeaking, listenTick, greetingComplete) {
+        if (greetingComplete && !isRunning && !agentSpeaking) {
+            recognizer.startListening(
+                onResult = { text -> submitRecognizedSpeech(text) },
+                onError = {
+                    listenTick++
+                },
+            )
+        } else {
+            recognizer.cancelListening()
+        }
+    }
+
+    LaunchedEffect(isListening, listenTick, listenTimeoutSeconds, greetingComplete) {
+        val timeoutSeconds = listenTimeoutSeconds ?: return@LaunchedEffect
+        if (greetingComplete && isListening && timeoutSeconds > 0) {
+            kotlinx.coroutines.delay(timeoutSeconds * 1_000L)
+            if (recognizer.isListening.value) {
+                recognizer.cancelListening()
+                voiceManager.speakWithNaturalBreaks("I did not hear a response.") {
+                    onDismiss()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(answer) {
+        val clean = answer.trim()
+        if (clean.isNotBlank() && clean != lastSpokenAnswer) {
+            lastSpokenAnswer = clean
+            if (speechMuted) {
+                listenTick++
+                return@LaunchedEffect
+            }
+            voiceManager.speakWithNaturalBreaks(clean) {
+                listenTick++
+            }
+        }
+    }
+
+    val transition = rememberInfiniteTransition(label = "voice_particles")
+    val ripple by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isListening || agentSpeaking || isRunning) 900 else 1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ), label = "ripple",
+    )
+
+    val activeAmplitude = when {
+        agentSpeaking -> agentAmplitude
+        isListening -> userAmplitude
+        isRunning -> 0.35f + 0.18f * kotlin.math.sin(ripple * PI.toFloat() * 2)
+        else -> 0.08f
+    }.coerceIn(0f, 1f)
+    val primaryLine = when {
+        error.isNotBlank() -> error
+        partial.isNotBlank() -> partial
+        answer.isNotBlank() -> answer
+        textDelta.isNotBlank() -> textDelta
+        status == "Done" -> "Task completed."
+        isRunning -> status.ifBlank { "Thinking..." }
+        isListening -> "Listening..."
+        else -> "Ready"
+    }.replace('\n', ' ').replace(Regex("\\s+"), " ").trim()
+    val compactLine = primaryLine.take(170)
+    val detailLine = primaryLine.take(420)
+    val stateLabel = when {
+        error.isNotBlank() -> "Error"
+        status == "Done" -> "Completed"
+        agentSpeaking -> "Speaking"
+        isRunning -> "Thinking"
+        isListening -> "Listening"
+        else -> "Tap the keyboard to type"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 520.dp)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        onWindowDrag(dragAmount.x, dragAmount.y)
+                    }
+                },
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 22.dp, bottomEnd = 22.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f),
+            ),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    error.isNotBlank() -> MaterialTheme.colorScheme.error
+                                    isListening || agentSpeaking || isRunning -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                                    status == "Done" -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                },
+                            ),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stateLabel,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = compactLine.ifBlank { "Waiting for speech..." },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp, letterSpacing = 0.sp),
+                            maxLines = 2,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            recognizer.cancelListening()
+                            voiceManager.stop()
+                            onKeyboard()
+                        },
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.70f)),
+                    ) {
+                        Icon(Icons.Rounded.Keyboard, contentDescription = "Switch to keyboard", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                    if (isRunning) {
+                        IconButton(
+                            onClick = onStop,
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.84f)),
+                        ) {
+                            Icon(Icons.Rounded.Stop, contentDescription = "Stop", tint = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            recognizer.cancelListening()
+                            voiceManager.stop()
+                            onDismiss()
+                        },
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.70f)),
+                    ) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Close voice overlay", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.52f))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = when {
+                            partial.isNotBlank() -> "Heard"
+                            status == "Done" -> "Completed"
+                            answer.isNotBlank() || textDelta.isNotBlank() -> "Response"
+                            isRunning -> "Working"
+                            else -> "Voice"
+                        },
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = detailLine.ifBlank { "Listening for your request." },
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp, letterSpacing = 0.sp),
+                        maxLines = 4,
+                    )
+                }
+
+                if (actionLog.isNotEmpty()) {
+                    ActionTimeline(actions = actionLog, isRunning = isRunning, pulseAlpha = pulseAlpha)
+                }
+
+                VoiceLineBarVisualizer(
+                    amplitude = activeAmplitude,
+                    phase = ripple,
+                    active = isListening || agentSpeaking || isRunning,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = { startInterruptListening() },
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.56f), CircleShape),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = "Talk now and interrupt assistant",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(18.dp))
+                    IconButton(
+                        onClick = {
+                            speechMuted = !speechMuted
+                            if (speechMuted) {
+                                voiceManager.stop()
+                            }
+                        },
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (speechMuted) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.86f)
+                                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                            )
+                            .border(
+                                1.dp,
+                                if (speechMuted) MaterialTheme.colorScheme.error.copy(alpha = 0.38f)
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f),
+                                CircleShape,
+                            ),
+                    ) {
+                        Icon(
+                            imageVector = if (speechMuted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                            contentDescription = if (speechMuted) "Unmute assistant voice" else "Mute assistant voice",
+                            tint = if (speechMuted) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(25.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceLineBarVisualizer(
+    amplitude: Float,
+    phase: Float,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Canvas(modifier = modifier) {
+        val barCount = 34
+        val gap = 4.dp.toPx()
+        val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(2.dp.toPx())
+        val centerY = size.height / 2f
+        for (i in 0 until barCount) {
+            val x = i * (barWidth + gap)
+            val wave = ((sin(phase * PI.toFloat() * 2f + i * 0.48f) + 1f) / 2f)
+            val base = if (active) amplitude.coerceAtLeast(0.08f) else 0.05f
+            val height = (8.dp.toPx() + size.height * base * (0.35f + wave * 0.75f))
+                .coerceIn(6.dp.toPx(), size.height)
+            val alpha = if (active) (0.34f + wave * 0.52f).coerceIn(0.34f, 0.86f) else 0.22f
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        colors.primary.copy(alpha = alpha),
+                        colors.secondary.copy(alpha = alpha * 0.72f),
+                    ),
+                ),
+                topLeft = Offset(x, centerY - height / 2f),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth),
+            )
+        }
+    }
+}
+
+// ── Action Timeline (shared) ──────────────────────────────────────────────
 
 @Composable
 private fun ActionTimeline(
@@ -587,11 +1014,8 @@ private fun ActionTimeline(
                         .size(if (active) 8.dp else 6.dp)
                         .clip(CircleShape)
                         .background(
-                            if (active) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f)
-                            },
+                            if (active) MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f),
                         ),
                 )
                 Text(
@@ -602,171 +1026,5 @@ private fun ActionTimeline(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CompactStatusPill(
-    status: String,
-    shortLine: String,
-    pulseAlpha: Float,
-    onStop: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 16.dp)
-            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp)),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)),
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                )
-                Text(
-                    text = shortLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            IconButton(onClick = onStop, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Rounded.Stop,
-                    contentDescription = "Stop assistant",
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "Dismiss",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScreenPreview(
-    screenshotBitmap: androidx.compose.ui.graphics.ImageBitmap?,
-    visibleText: String,
-    contentDescriptionText: String,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 120.dp, max = 220.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (screenshotBitmap != null) {
-            Image(
-                bitmap = screenshotBitmap,
-                contentDescription = "Current screen screenshot",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(screenshotBitmap.width.toFloat() / screenshotBitmap.height.toFloat()),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            val fallbackText = visibleText.ifBlank { contentDescriptionText }
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = "Current screen",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = fallbackText.ifBlank { "No screenshot was available. I can still use visible screen text when present." }.take(220),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResponsePane(
-    error: String,
-    answer: String,
-    textDelta: String,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 180.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f))
-            .padding(12.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        val displayContent = when {
-            error.isNotBlank() -> error
-            answer.isNotBlank() -> answer
-            else -> textDelta
-        }
-
-        Text(
-            text = displayContent,
-            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-            color = if (error.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@Composable
-private fun AssistantActionButton(
-    modifier: Modifier = Modifier,
-    label: String,
-    icon: @Composable () -> Unit,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(44.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        shape = RoundedCornerShape(14.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
-    ) {
-        icon()
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-        )
     }
 }
