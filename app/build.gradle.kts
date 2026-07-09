@@ -18,9 +18,37 @@ val localProperties = Properties().apply {
     }
 }
 
+val releaseSigningProperties = Properties().apply {
+    val file = rootProject.file("signing/release-signing.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun releaseSigningProperty(localName: String, envName: String = localName): String? {
+    return releaseSigningProperties.getProperty(localName)
+        ?: localProperties.getProperty(localName)
+        ?: System.getenv(envName)
+}
+
+val releaseStoreFile = releaseSigningProperty("storeFile", "RELEASE_STORE_FILE")
+val releaseStorePassword = releaseSigningProperty("storePassword", "RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = releaseSigningProperty("keyAlias", "RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseSigningProperty("keyPassword", "RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.clawdroid.app"
     compileSdk = 36
+
+    lint {
+        disable += "ExpiredTargetSdkVersion"
+    }
 
     defaultConfig {
         applicationId = "com.clawdroid.app"
@@ -80,6 +108,26 @@ android {
         compose = true
     }
 
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            isMinifyEnabled = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -91,12 +139,17 @@ fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace(
 fun readGoogleWebCredential(key: String): String? {
     return try {
         val webJson = rootProject.projectDir.listFiles()
-            ?.firstOrNull { it.isFile && it.name.startsWith("client_secret_") && it.name.contains("-niqg2") && it.name.endsWith(".json") }
+            ?.firstOrNull {
+                it.isFile &&
+                    it.name.startsWith("client_secret_") &&
+                    it.name.contains("-niqg2") &&
+                    it.name.endsWith(".json")
+            }
         if (webJson != null && webJson.exists()) {
             val parsed = groovy.json.JsonSlurper().parse(webJson) as Map<*, *>
             (parsed["web"] as? Map<*, *>)?.get(key) as? String
         } else null
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         null
     }
 }

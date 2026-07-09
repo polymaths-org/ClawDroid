@@ -7,16 +7,25 @@ import org.json.JSONObject
 
 object SelfManageTools {
     suspend fun addAlarm(context: Context, args: JSONObject): JSONObject {
+        val hour = args.getInt("hour").coerceIn(0, 23)
+        val minute = args.getInt("minute").coerceIn(0, 59)
         val alarm = Alarm(
-            label = args.getString("label"),
-            hour = args.getInt("hour"),
-            minute = args.getInt("minute"),
+            label = args.optString("label").ifBlank { "Alarm" },
+            hour = hour,
+            minute = minute,
             daysOfWeek = args.optJSONArray("days_of_week").toIntSet(),
             enabled = args.optBoolean("enabled", true),
             createdAt = System.currentTimeMillis(),
         )
         SelfManageRepository(context).addAlarm(alarm)
-        return JSONObject().put("ok", true).put("type", "alarm").put("id", alarm.id)
+        return JSONObject()
+            .put("ok", true)
+            .put("type", "alarm")
+            .put("id", alarm.id)
+            .put("label", alarm.label)
+            .put("hour", alarm.hour)
+            .put("minute", alarm.minute)
+            .put("enabled", alarm.enabled)
     }
 
     suspend fun addReminder(context: Context, args: JSONObject): JSONObject {

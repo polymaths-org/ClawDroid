@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.config.SavedProviderProfile
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassTextField
@@ -41,6 +42,7 @@ fun ProviderConfigScreen(
     var baseUrl by remember { mutableStateOf(AppConfigManager.baseUrl) }
     var apiKey by remember { mutableStateOf(AppConfigManager.apiKey) }
     var model by remember { mutableStateOf(AppConfigManager.model) }
+    var profileName by remember { mutableStateOf(AppConfigManager.provider.ifBlank { "Main" }) }
     var showKey by remember { mutableStateOf(false) }
 
     val onSurface = MaterialTheme.colorScheme.onSurface
@@ -98,6 +100,16 @@ fun ProviderConfigScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("Endpoint", color = accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Saved name", color = onVariant, style = MaterialTheme.typography.bodySmall)
+                            GlassTextField(
+                                value = profileName,
+                                onValueChange = { profileName = it },
+                                placeholder = "Main, Work, Local, Research...",
+                                singleLine = true,
+                            )
+                        }
 
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Provider", color = onVariant, style = MaterialTheme.typography.bodySmall)
@@ -181,8 +193,18 @@ fun ProviderConfigScreen(
 
                 Button(
                     onClick = {
-                        if (baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()) {
+                        val keyOptional = provider.equals("ollama", ignoreCase = true) || baseUrl.contains("localhost")
+                        if (baseUrl.isNotBlank() && model.isNotBlank() && (apiKey.isNotBlank() || keyOptional)) {
                             AppConfigManager.save(provider.trim(), baseUrl.trim(), apiKey.trim(), model.trim())
+                            AppConfigManager.saveProviderProfile(
+                                SavedProviderProfile(
+                                    name = profileName.trim().ifBlank { provider.trim() },
+                                    provider = provider.trim(),
+                                    baseUrl = baseUrl.trim(),
+                                    apiKey = apiKey.trim(),
+                                    model = model.trim(),
+                                ),
+                            )
                             Toast.makeText(context, "Provider settings saved", Toast.LENGTH_SHORT).show()
                             onBack()
                         } else {
