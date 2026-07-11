@@ -8,7 +8,7 @@ Built by **TEAM POLYMATH** for the Codex Community Hackathon.
 
 Creators: **Nabil**, **Paris**, **Rushi**, and **Talib**.
 
-Website: [clawdriod.pages.dev](https://clawdriod.pages.dev)
+Website: [clawdroid.pages.dev](https://clawdroid.pages.dev)
 
 ---
 
