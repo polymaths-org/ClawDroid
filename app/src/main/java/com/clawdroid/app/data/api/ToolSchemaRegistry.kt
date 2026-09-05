@@ -556,6 +556,67 @@ object ToolSchemaRegistry {
                 putArray("actions", "Ordered list of {action, params} objects. action is one of list_dir, read_file, write_file, execute, notify, ping, status.")
                 required("actions")
             })
+
+        // ── Desktop (Interpole) control: paired Linux/Windows desktop ──
+        array.put(tool("desktop_mouse_move", "Move the desktop mouse cursor to absolute screen coordinates.") {
+            putInteger("x", "X coordinate in pixels.")
+            putInteger("y", "Y coordinate in pixels.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("x", "y")
+        })
+        array.put(tool("desktop_left_click", "Left-click on the desktop, optionally at x/y.") {
+            putInteger("x", "X coordinate in pixels (optional, clicks current position when omitted).")
+            putInteger("y", "Y coordinate in pixels (optional).")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+        })
+        array.put(tool("desktop_right_click", "Right-click on the desktop, optionally at x/y.") {
+            putInteger("x", "X coordinate in pixels (optional).")
+            putInteger("y", "Y coordinate in pixels (optional).")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+        })
+        array.put(tool("desktop_double_click", "Double-click on the desktop, optionally at x/y.") {
+            putInteger("x", "X coordinate in pixels (optional).")
+            putInteger("y", "Y coordinate in pixels (optional).")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+        })
+        array.put(tool("desktop_drag", "Click-drag from one desktop point to another (select, move windows).") {
+            putInteger("x1", "Start X coordinate.")
+            putInteger("y1", "Start Y coordinate.")
+            putInteger("x2", "End X coordinate.")
+            putInteger("y2", "End Y coordinate.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("x1", "y1", "x2", "y2")
+        })
+        array.put(tool("desktop_scroll", "Scroll on the desktop.") {
+            putString("direction", "up, down, left, or right. Default down.")
+            putInteger("amount", "Scroll steps, 1-20. Default 3.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+        })
+        array.put(tool("desktop_key_press", "Press a key or combo on the desktop (Enter, Escape, Tab, super, ctrl+l, alt+F4).") {
+            putString("key", "Key or +-joined combo, e.g. Enter, super, ctrl+shift+t.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("key")
+        })
+        array.put(tool("desktop_type_text", "Type text into the focused desktop window.") {
+            putString("text", "Text to type.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("text")
+        })
+        array.put(tool("desktop_open_app", "Launch an app on the desktop (uses hyprctl on Hyprland).") {
+            putString("app", "App command, e.g. kitty, firefox, code.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("app")
+        })
+        array.put(tool("desktop_screenshot", "Capture a desktop screenshot. The PNG path is returned and shown to the user as visual proof.") {
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+        })
+        array.put(tool("smart_desktop_action", "SMART desktop batch: run many actions in one call with per-step retry plus before/after screenshots. Prefer this over single clicks.") {
+            putArray("actions", "Ordered actions, each with an action field: mouse_move, left_click, right_click, double_click, drag, scroll, key_press, type_text, open_app, screenshot, wait.")
+            putBoolean("verify", "Capture before/after screenshots as visual proof. Default true.")
+            putInteger("retries", "Retries per failed step, 0-3. Default 1.")
+            putString("os", "Target: auto, hyprland, wayland, x11, debian, windows. Default auto.")
+            required("actions")
+        })
         }
 
         array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot if tree is empty.") {
@@ -640,6 +701,7 @@ object ToolSchemaRegistry {
             putInteger("count", "How many times to send it. Default 1, max 20.")
             required("text")
         })
+
 
         return array
     }

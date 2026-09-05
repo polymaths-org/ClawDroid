@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,6 +43,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import com.clawdroid.app.R
 
 private data class ProcessingQuote(
     val text: String,
@@ -52,6 +58,7 @@ fun CustomProcessingLoader(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
     val quotes = remember {
         listOf(
@@ -129,11 +136,32 @@ fun CustomProcessingLoader(
                 .padding(6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.fillMaxSize().padding(8.dp),
-                strokeWidth = 3.dp,
-                color = colors.primary,
-            )
+            // thinking.gif avatar; falls back to the spinner when it can't decode.
+            var gifFailed by remember { mutableStateOf(false) }
+            if (gifFailed) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    strokeWidth = 3.dp,
+                    color = colors.primary,
+                )
+            } else {
+                val gifLoader = remember(context) {
+                    ImageLoader.Builder(context)
+                        .components { add(GifDecoder.Factory()) }
+                        .crossfade(false)
+                        .build()
+                }
+                AsyncImage(
+                    model = R.drawable.thinking,
+                    contentDescription = "Agent thinking",
+                    imageLoader = gifLoader,
+                    onError = { gifFailed = true },
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+            }
         }
 
         AnimatedContent(

@@ -881,6 +881,16 @@ object AppConfigManager {
         get() = p.getBoolean("spotify_connector_enabled", true)
         set(value) = p.edit().putBoolean("spotify_connector_enabled", value).apply()
 
+    // Desktop input additions: Hyprland easy-mode + OS target.
+    // (interpoleEnabled/Host/Port live in the main INTERPOLE section above.)
+    var interpoleHyprlandEnabled: Boolean
+        get() = p.getBoolean("interpole_hyprland_enabled", true)
+        set(value) = p.edit().putBoolean("interpole_hyprland_enabled", value).apply()
+
+    var desktopOsTarget: String
+        get() = p.getString("desktop_os_target", "auto") ?: "auto"
+        set(value) = p.edit().putString("desktop_os_target", value).apply()
+
     fun syncToSandbox(context: Context) {
         val channelsList = mutableListOf<ChannelConfig>()
         channelsList.add(ChannelConfig(

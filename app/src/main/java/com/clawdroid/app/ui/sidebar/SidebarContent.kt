@@ -85,6 +85,8 @@ fun SidebarContent(
     onNewConversation: (projectId: String?) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
+    onNavigateToInterpole: () -> Unit = {},
+    onNavigateToAgentConfig: () -> Unit = {},
     onNavigateToTerminal: () -> Unit,
     onNavigateToSelfManage: () -> Unit = {},
 ) {
@@ -186,6 +188,7 @@ fun SidebarContent(
                 detail = "${conversations.size} chats tracked",
             )
             SidebarTerminalButton(onClick = onNavigateToTerminal)
+            SidebarInterpoleButton(onClick = onNavigateToInterpole)
             SidebarSelfManageButton(onClick = onNavigateToSelfManage)
         }
 
@@ -471,6 +474,52 @@ private fun SidebarTerminalButton(
         Text(
             text = "Open terminal",
             color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SidebarInterpoleButton(
+    onClick: () -> Unit,
+) {
+    val skin = currentClawSkin()
+    val isMagic = skin == ClawSkin.ClawMagic
+    val isLiquid = skin == ClawSkin.LiquidGlass
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .shadow(if (isLiquid) 8.dp else 0.dp, shape)
+            .clip(shape)
+            .background(
+                when {
+                    isMagic -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f)
+                    isLiquid -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                }
+            )
+            .border(
+                1.dp,
+                if (isLiquid) Color.White.copy(alpha = 0.30f) else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f),
+                shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Cable,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "Interpole desktop",
+            color = MaterialTheme.colorScheme.tertiary,
             style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
             fontWeight = FontWeight.SemiBold,
         )

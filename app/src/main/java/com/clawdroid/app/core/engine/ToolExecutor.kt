@@ -29,6 +29,7 @@ import com.clawdroid.app.core.tools.NotionTools
 import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.core.control.AndroidControlTools
+import com.clawdroid.app.core.control.DesktopControlTools
 import com.clawdroid.app.core.interpole.DesktopEnvironment
 import com.clawdroid.app.core.interpole.FileTransferClient
 import com.clawdroid.app.core.interpole.InterpoleConfig
@@ -383,6 +384,71 @@ object ToolExecutor {
                 text = args.getString("text"),
                 count = args.optInt("count", 1),
             ) }
+            // ── Desktop (Interpole) control ──────────────────────────────
+            "desktop_mouse_move" -> DesktopControlTools.mouseMove(
+                context = context,
+                x = args.getInt("x"),
+                y = args.getInt("y"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_left_click" -> DesktopControlTools.leftClick(
+                context = context,
+                x = args.optIntOrNullCompat("x"),
+                y = args.optIntOrNullCompat("y"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_right_click" -> DesktopControlTools.rightClick(
+                context = context,
+                x = args.optIntOrNullCompat("x"),
+                y = args.optIntOrNullCompat("y"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_double_click" -> DesktopControlTools.doubleClick(
+                context = context,
+                x = args.optIntOrNullCompat("x"),
+                y = args.optIntOrNullCompat("y"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_drag" -> DesktopControlTools.drag(
+                context = context,
+                x1 = args.getInt("x1"),
+                y1 = args.getInt("y1"),
+                x2 = args.getInt("x2"),
+                y2 = args.getInt("y2"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_scroll" -> DesktopControlTools.scroll(
+                context = context,
+                direction = args.optString("direction", "down"),
+                amount = args.optInt("amount", 3),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_key_press" -> DesktopControlTools.keyPress(
+                context = context,
+                key = args.getString("key"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_type_text" -> DesktopControlTools.typeText(
+                context = context,
+                text = args.getString("text"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_open_app" -> DesktopControlTools.openApp(
+                context = context,
+                app = args.getString("app"),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "desktop_screenshot" -> DesktopControlTools.screenshot(
+                context = context,
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
+            "smart_desktop_action" -> DesktopControlTools.smartAction(
+                context = context,
+                actions = args.getJSONArray("actions"),
+                verify = args.optBoolean("verify", true),
+                retries = args.optInt("retries", 1),
+                os = args.optString("os").takeIf { it.isNotBlank() },
+            )
             else -> {
                 McpServerLauncher.executeMcpTool(call.name, args)?.toString()
                     ?: error("Unsupported tool: ${call.name}")
@@ -421,6 +487,14 @@ object ToolExecutor {
     }
 
     private fun JSONObject.optIntOrNull(name: String): Int? = if (has(name) && !isNull(name)) optInt(name) else null
+
+    private fun JSONObject.optIntOrNullCompat(name: String): Int? =
+        if (has(name) && !isNull(name)) {
+            runCatching { getInt(name) }.getOrNull()
+                ?: runCatching { getDouble(name).toInt() }.getOrNull()
+        } else {
+            null
+        }
 
     private fun configureInterpole(context: Context, args: JSONObject): JSONObject {
         val currentRepo = InterpoleConfigRepository(context)

@@ -184,6 +184,7 @@ fun ChatScreen(
     onNavigateToMcp: () -> Unit,
     onNavigateToTerminal: () -> Unit = {},
     onNavigateToSelfManage: () -> Unit = {},
+    onNavigateToInterpole: () -> Unit = onNavigateToSettings,
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -1056,6 +1057,10 @@ fun ChatScreen(
                     onNavigateToMcp = {
                         scope.launch { drawerState.close() }
                         onNavigateToMcp()
+                    },
+                    onNavigateToInterpole = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToInterpole()
                     },
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
@@ -3155,6 +3160,9 @@ private fun String.toActivityStepType(): ActivityStepType = when (this) {
     "browse_web", "web_search" -> ActivityStepType.Web
     "send_notification" -> ActivityStepType.Service
     "start_process", "check_process", "send_input", "kill_process", "list_processes", "execute_command" -> ActivityStepType.Command
+    "desktop_mouse_move", "desktop_left_click", "desktop_right_click", "desktop_double_click",
+    "desktop_drag", "desktop_scroll", "desktop_key_press", "desktop_type_text",
+    "desktop_open_app", "desktop_screenshot", "smart_desktop_action" -> ActivityStepType.Desktop
     else -> ActivityStepType.Service
 }
 
@@ -3473,11 +3481,39 @@ private fun formatStepContent(step: ActivityStepItem): StepDetails {
             }
         }
 
+        // ── Desktop (Interpole) visual-feedback branch ──
+        toolName.startsWith("desktop_") || toolName == "smart_desktop_action" -> {
+            title = "Desktop action:"
+            copyText = step.arguments
+            displayText = step.summary.ifBlank { toolName.readableToolName() }
+
+            val proofPaths = listOfNotNull(
+                resultObj?.optString("path")?.takeIf { it.isNotBlank() },
+                resultObj?.optString("before_path")?.takeIf { it.isNotBlank() },
+                resultObj?.optString("after_path")?.takeIf { it.isNotBlank() },
+            )
+            outputText = when {
+                errorMessage != null -> "Error: $errorMessage"
+                resultObj != null -> buildString {
+                    append(if (resultObj.optBoolean("success")) "✅ Done" else "❌ Failed")
+                    if (proofPaths.isNotEmpty()) {
+                        append("\n\n📸 Visual proof (tap Preview → to view):")
+                        proofPaths.forEach { append("\n$it") }
+                    } else {
+                        val fallback = step.result ?: ""
+                        if (fallback.isNotBlank()) append("\n$fallback")
+                    }
+                }
+                step.running -> "Controlling desktop..."
+                else -> ""
+            }
+        }
+
         else -> {
             title = "Arguments:"
             copyText = step.arguments
             displayText = step.arguments
-            
+
             outputText = when {
                 errorMessage != null -> "Error: $errorMessage"
                 resultObj != null -> step.result ?: ""
@@ -3514,14 +3550,32 @@ private data class ParsedFilePath(
 private fun extractFilePaths(steps: List<ActivityStepItem>): List<ParsedFilePath> {
     val results = mutableListOf<ParsedFilePath>()
     for (step in steps) {
-        if (step.type != ActivityStepType.Edit && step.type != ActivityStepType.File) continue
+        if (step.type != ActivityStepType.Edit && step.type != ActivityStepType.File &&
+            step.type != ActivityStepType.Desktop
+        ) continue
+        // 1. "path" from tool arguments (file tools, desktop_screenshot flow)
         val json = try {
             JSONObject(step.arguments)
-        } catch (_: Exception) { continue }
-        val path = json.optString("path").takeIf { it.isNotBlank() } ?: continue
-        val ext = path.substringAfterLast('.', "").lowercase()
-        if (ext in PREVIEWABLE_EXTENSIONS) {
-            results.add(ParsedFilePath(path, ext))
+        } catch (_: Exception) { null }
+        val argPath = json?.optString("path")?.takeIf { it.isNotBlank() }
+        if (argPath != null) {
+            val ext = argPath.substringAfterLast('.', "").lowercase()
+            if (ext in PREVIEWABLE_EXTENSIONS) {
+                results.add(ParsedFilePath(argPath, ext))
+            }
+        }
+        // 2. Visual-proof paths from desktop tool results (screenshot / smart batch)
+        if (step.type == ActivityStepType.Desktop && !step.result.isNullOrBlank()) {
+            val resultJson = runCatching { JSONObject(step.result) }.getOrNull()
+            if (resultJson != null) {
+                listOf("path", "before_path", "after_path").forEach { key ->
+                    val p = resultJson.optString(key)?.takeIf { it.isNotBlank() } ?: return@forEach
+                    val ext = p.substringAfterLast('.', "").lowercase()
+                    if (ext in PREVIEWABLE_EXTENSIONS && results.none { it.path == p }) {
+                        results.add(ParsedFilePath(p, ext))
+                    }
+                }
+            }
         }
     }
     return results

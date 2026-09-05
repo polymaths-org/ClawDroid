@@ -1207,6 +1207,8 @@ fun InterpoleConfigScreen(onBack: () -> Unit) {
     var memoryAutoSync by remember { mutableStateOf(AppConfigManager.memoryAutoSyncEnabled) }
     var memorySyncInterval by remember { mutableStateOf(AppConfigManager.memorySyncIntervalMinutes.toString()) }
     var pairedDeviceName by remember { mutableStateOf(AppConfigManager.interpolePairedDeviceName) }
+    var hyprlandEasy by remember { mutableStateOf(AppConfigManager.interpoleHyprlandEnabled) }
+    var osTarget by remember { mutableStateOf(AppConfigManager.desktopOsTarget) }
     var showConnect by remember { mutableStateOf(false) }
 
     val safePort = port.toIntOrNull()?.coerceIn(1, 65535) ?: 8765
@@ -1310,8 +1312,40 @@ fun InterpoleConfigScreen(onBack: () -> Unit) {
         }
 
         AnimatedVisibility(visible = isPaired) {
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionTitle("Desktop input (mouse & keys)")
+                    Text(
+                        "Hyprland easy-mode picks hyprctl + ydotool + grim on Arch Hyprland. Turn it OFF for generic Wayland/X11 input with no hyprctl calls.",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    ConfigSwitch("Hyprland easy-mode", "Smooth input + screenshots on Arch Hyprland demo.", hyprlandEasy) { hyprlandEasy = it }
+                    val targets = listOf(
+                        "auto" to "Auto — Hyprland easy-mode when ON, generic Wayland otherwise.",
+                        "hyprland" to "Hyprland — hyprctl + ydotool + grim.",
+                        "wayland" to "Wayland generic — wtype/ydotool, no hyprctl.",
+                        "x11" to "X11 — xdotool + scrot/import.",
+                        "debian" to "Debian — grim, scrot, import fallback chain.",
+                        "windows" to "Windows — PowerShell input + screenshot.",
+                    )
+                    targets.forEach { (value, description) ->
+                        ConfigChoice(
+                            label = value.replaceFirstChar { it.titlecase() },
+                            description = description,
+                            selected = osTarget == value,
+                        ) { osTarget = value }
+                    }
+                    DetailRow("Arch setup", "ydotool, wtype, grim, slurp, wl-clipboard")
+                }
+            }
+        }
+
+        AnimatedVisibility(visible = isPaired) {
             SaveConfigButton {
                 AppConfigManager.interpoleEnabled = enabled
+                AppConfigManager.interpoleHyprlandEnabled = hyprlandEasy
+                AppConfigManager.desktopOsTarget = osTarget
                 AppConfigManager.interpoleConnectionType = connectionType
                 AppConfigManager.interpoleHost = host.trim()
                 AppConfigManager.interpolePort = safePort

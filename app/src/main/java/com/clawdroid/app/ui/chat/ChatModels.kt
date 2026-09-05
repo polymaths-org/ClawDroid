@@ -60,6 +60,7 @@ enum class ActivityStepType(val icon: String) {
     Edit("📝"),
     Package("📦"),
     Service("🔌"),
+    Desktop("🖥️"),
 }
 
 enum class AgentRuntimeState {

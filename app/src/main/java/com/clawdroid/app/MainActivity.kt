@@ -365,6 +365,7 @@ private fun ClawDroidApp(
                 ChatScreen(
                     onNavigateToSettings = { currentScreen = Screen.Settings },
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
+                    onNavigateToInterpole = { currentScreen = Screen.Interpole },
                     onNavigateToTerminal = { currentScreen = Screen.Terminal },
                     onNavigateToSelfManage = { currentScreen = Screen.SelfManage },
                     startVoiceTrigger = startVoiceTrigger,
