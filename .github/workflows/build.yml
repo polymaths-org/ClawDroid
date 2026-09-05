@@ -1,40 +1,35 @@
-name: Android CI/CD
+name: Android Build CI/CD
 
 on:
   push:
     branches:
       - main
+      - feat/**
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Debug APK
+    name: Build APK
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
-
-      - name: Install Android SDK packages
-        run: |
-          set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;35.0.0"
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -54,9 +49,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,14 +57,8 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
-
-      - name: Install Android SDK packages
-        run: |
-          set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;35.0.0"
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -84,68 +70,44 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
           for name in RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing required GitHub Secret: ${name}"
+              echo "::error::Missing secret: ${name}"
               exit 1
             fi
           done
 
-      - name: Decode release keystore
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/keystore"
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystore/release.jks"
-
       - name: Build release APK
         run: ./gradlew assembleRelease
 
-      - name: Sign release APK
+      - name: Sign and align release APK
         env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
-          unsigned_apk="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
-          if [ -z "$unsigned_apk" ]; then
-            echo "::error::No release APK found in app/build/outputs/apk/release"
-            exit 1
-          fi
-
-          build_tools_dir="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          if [ -z "$build_tools_dir" ]; then
-            echo "::error::No Android build-tools directory found"
-            exit 1
-          fi
-
-          aligned_apk="$RUNNER_TEMP/clawdroid-release-aligned.apk"
-          signed_apk="release/ClawDroid-${TAG_NAME}-release-signed.apk"
-
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          unsigned_apk="$(find app/build/outputs/apk/release -name '*.apk' | head -1)"
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           mkdir -p release
-          "$build_tools_dir/zipalign" -p -f 4 "$unsigned_apk" "$aligned_apk"
-          "$build_tools_dir/apksigner" sign \
-            --ks "$RUNNER_TEMP/keystore/release.jks" \
-            --ks-pass "pass:${RELEASE_KEYSTORE_PASSWORD}" \
-            --ks-key-alias "${RELEASE_KEY_ALIAS}" \
-            --key-pass "pass:${RELEASE_KEY_PASSWORD}" \
-            --out "$signed_apk" \
-            "$aligned_apk"
-          "$build_tools_dir/apksigner" verify --verbose --print-certs "$signed_apk"
-          sha256sum "$signed_apk" > "$signed_apk.sha256"
+          "$build_tools/zipalign" -p -f 4 "$unsigned_apk" "$RUNNER_TEMP/aligned.apk"
+          "$build_tools/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.jks" \
+            --ks-pass "pass:$RELEASE_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$RELEASE_KEY_ALIAS" \
+            --key-pass "pass:$RELEASE_KEY_PASSWORD" \
+            --out "release/ClawDroid-${TAG_NAME}-signed.apk" \
+            "$RUNNER_TEMP/aligned.apk"
+          sha256sum "release/ClawDroid-${TAG_NAME}-signed.apk" > "release/ClawDroid-${TAG_NAME}-signed.apk.sha256"
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
           name: clawdroid-release-apk
-          path: |
-            release/*.apk
-            release/*.sha256
+          path: release/*.apk
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -153,14 +115,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
-          apk_path="release/ClawDroid-${TAG_NAME}-release-signed.apk"
-          checksum_path="${apk_path}.sha256"
-
+          apk="release/ClawDroid-${TAG_NAME}-signed.apk"
+          checksum="${apk}.sha256"
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" "$apk_path" "$checksum_path" --clobber
+            gh release upload "$TAG_NAME" "$apk" "$checksum" --clobber
           else
-            gh release create "$TAG_NAME" "$apk_path" "$checksum_path" \
+            gh release create "$TAG_NAME" "$apk" "$checksum" \
               --title "$TAG_NAME" \
-              --notes "Automated release for ${TAG_NAME}."
+              --notes "Automated release $TAG_NAME"
           fi
