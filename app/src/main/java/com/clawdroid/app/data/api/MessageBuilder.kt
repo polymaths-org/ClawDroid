@@ -2,6 +2,7 @@ package com.clawdroid.app.data.api
 
 import android.content.Context
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.control.ScreenReaderService
 import java.io.File
 
 object MessageBuilder {
@@ -72,6 +73,23 @@ object MessageBuilder {
                 appendLine("The following is what you remember from previous sessions. Read it carefully:")
                 appendLine(memory)
             }
+
+            if (ScreenReaderService.instance != null) {
+                appendLine()
+                appendLine("## Android Screen Control")
+                appendLine("You have access to Android screen control tools. Use them to autonomously complete tasks on the user's phone.")
+                appendLine("Standard workflow for any app task:")
+                appendLine("1. Call get_screen to see the current UI state")
+                appendLine("2. Reason about which element to interact with based on the tree")
+                appendLine("3. Call the appropriate action tool (tap_text, tap, swipe, type_text, etc.)")
+                appendLine("4. Call get_screen again to verify the action worked and see the new state")
+                appendLine("5. Repeat until the task is complete")
+                appendLine("6. If get_screen returns a screenshot instead of a tree, analyze image coordinates and use tap with absolute x/y")
+                appendLine("Always call wait(ms=300) between actions to let the UI settle.")
+                appendLine("If an action fails, try an alternative approach before giving up.")
+                appendLine("Never assume an action worked without calling get_screen to verify.")
+            }
+
             appendLine()
             appendLine("When a task is complete, save a brief summary of what was done so it is remembered for next time.")
         }
