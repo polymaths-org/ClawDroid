@@ -38,18 +38,18 @@ sealed interface StreamEvent {
 }
 
 class LlmApiClient(
-    private val baseUrl: String = BuildConfig.OPENROUTER_BASE_URL.trimEnd('/'),
-    private val apiKey: String = BuildConfig.OPENROUTER_API_KEY,
-    private val model: String = BuildConfig.OPENROUTER_MODEL,
+    private val baseUrl: String = BuildConfig.LLM_BASE_URL.trimEnd('/'),
+    private val apiKey: String = BuildConfig.LLM_API_KEY,
+    private val model: String = BuildConfig.LLM_MODEL,
 ) {
     fun streamChat(
         messages: List<ChatMessage>,
         tools: JSONArray? = null,
         forcedToolName: String? = null,
     ): Flow<StreamEvent> = flow {
-        check(baseUrl.isNotBlank()) { "Missing OpenRouter base URL" }
-        check(apiKey.isNotBlank()) { "Missing OpenRouter API key" }
-        check(model.isNotBlank()) { "Missing OpenRouter model" }
+        check(baseUrl.isNotBlank()) { "Missing LLM base URL" }
+        check(apiKey.isNotBlank()) { "Missing LLM API key" }
+        check(model.isNotBlank()) { "Missing LLM model" }
 
         val payload = JSONObject()
             .put("model", model)

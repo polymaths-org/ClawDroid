@@ -26,21 +26,17 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField(
-            "String",
-            "OPENROUTER_BASE_URL",
-            (localProperties.getProperty("OPENROUTER_BASE_URL") ?: "").asBuildConfigString(),
-        )
-        buildConfigField(
-            "String",
-            "OPENROUTER_MODEL",
-            (localProperties.getProperty("OPENROUTER_MODEL") ?: "").asBuildConfigString(),
-        )
-        buildConfigField(
-            "String",
-            "OPENROUTER_API_KEY",
-            (localProperties.getProperty("OPENROUTER_API_KEY") ?: "").asBuildConfigString(),
-        )
+        val llmBaseUrl = localProperties.getProperty("LLM_BASE_URL")
+            ?: "https://api.siliconflow.com/v1"
+        val llmModel = localProperties.getProperty("LLM_MODEL")
+            ?: "moonshotai/Kimi-K2.6"
+        val llmApiKey = localProperties.getProperty("LLM_API_KEY") ?: ""
+        val llmProvider = localProperties.getProperty("LLM_PROVIDER") ?: "siliconflow"
+
+        buildConfigField("String", "LLM_BASE_URL", llmBaseUrl.asBuildConfigString())
+        buildConfigField("String", "LLM_MODEL", llmModel.asBuildConfigString())
+        buildConfigField("String", "LLM_API_KEY", llmApiKey.asBuildConfigString())
+        buildConfigField("String", "LLM_PROVIDER", llmProvider.asBuildConfigString())
     }
 
     buildFeatures {

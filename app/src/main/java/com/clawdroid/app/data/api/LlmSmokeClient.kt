@@ -14,14 +14,14 @@ data class ModelTestResult(
     val content: String,
 )
 
-object OpenRouterClient {
+object LlmSmokeClient {
     suspend fun runSmokeTest(): ModelTestResult = withContext(Dispatchers.IO) {
-        val baseUrl = BuildConfig.OPENROUTER_BASE_URL.trimEnd('/')
-        val apiKey = BuildConfig.OPENROUTER_API_KEY
-        val model = BuildConfig.OPENROUTER_MODEL
-        check(baseUrl.isNotBlank()) { "Missing OpenRouter base URL" }
-        check(apiKey.isNotBlank()) { "Missing OpenRouter API key" }
-        check(model.isNotBlank()) { "Missing OpenRouter model" }
+        val baseUrl = BuildConfig.LLM_BASE_URL.trimEnd('/')
+        val apiKey = BuildConfig.LLM_API_KEY
+        val model = BuildConfig.LLM_MODEL
+        check(baseUrl.isNotBlank()) { "Missing LLM base URL" }
+        check(apiKey.isNotBlank()) { "Missing LLM API key" }
+        check(model.isNotBlank()) { "Missing LLM model" }
 
         val payload = JSONObject()
             .put("model", model)
@@ -60,7 +60,7 @@ object OpenRouterClient {
             connection.inputStream.bufferedReader().use { it.readText() }
         } else {
             val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            error("OpenRouter HTTP ${connection.responseCode}: $errorText")
+            error("LLM HTTP ${connection.responseCode}: $errorText")
         }
 
         val response = JSONObject(responseText)
@@ -71,7 +71,7 @@ object OpenRouterClient {
             .optString("content")
             .trim()
 
-        check(content.isNotBlank()) { "OpenRouter returned an empty message" }
+        check(content.isNotBlank()) { "LLM returned an empty message" }
         ModelTestResult(model = model, content = content)
     }
 
@@ -98,7 +98,7 @@ object OpenRouterClient {
         }
 
         val content = text.toString().trim()
-        check(content.isNotBlank()) { "OpenRouter stream returned an empty message" }
-        return ModelTestResult(model = BuildConfig.OPENROUTER_MODEL, content = content)
+        check(content.isNotBlank()) { "LLM stream returned an empty message" }
+        return ModelTestResult(model = BuildConfig.LLM_MODEL, content = content)
     }
 }
