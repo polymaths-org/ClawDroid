@@ -145,8 +145,9 @@ class LocalPromptToolsTest {
 
     @Test
     fun `per-model context gives 4B a smaller window`() {
-        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_4B))
+        assertEquals(1_024, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_4B))
         assertEquals(4_096, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_06B))
+        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_17B))
         assertEquals(4_096, LocalLlmConfig.nCtxFor("unknown-model"))
     }
 

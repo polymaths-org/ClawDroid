@@ -42,18 +42,27 @@ object LocalModelManager {
 
     val options = listOf(
         LocalModelOption(
-            id = LocalLlmConfig.GGUF_MODEL_4B,
-            label = "Qwen3-4B (recommended)",
-            sizeNote = "~2.5 GB download · Hexagon NPU",
+            id = LocalLlmConfig.GGUF_MODEL_06B,
+            label = "Qwen3-0.6B (stable, low RAM)",
+            sizeNote = "~0.4 GB download · ~1.5 GB RAM · best for tool calls",
             hub = HubSource.HUGGINGFACE,
             precision = LocalLlmConfig.GGUF_PRECISION_Q4_0,
             chipset = null,
             runtimeId = LocalLlmConfig.RUNTIME_LLAMA_CPP,
         ),
         LocalModelOption(
-            id = LocalLlmConfig.GGUF_MODEL_06B,
-            label = "Qwen3-0.6B (fast, small)",
-            sizeNote = "~0.4 GB download · any Snapdragon",
+            id = LocalLlmConfig.GGUF_MODEL_17B,
+            label = "Qwen3-1.7B (balanced)",
+            sizeNote = "~1.3 GB download · ~2.4 GB RAM · better tools",
+            hub = HubSource.HUGGINGFACE,
+            precision = LocalLlmConfig.GGUF_PRECISION_Q4_0,
+            chipset = null,
+            runtimeId = LocalLlmConfig.RUNTIME_LLAMA_CPP,
+        ),
+        LocalModelOption(
+            id = LocalLlmConfig.GGUF_MODEL_4B,
+            label = "Qwen3-4B (powerful, high RAM)",
+            sizeNote = "~2.5 GB download · ~3.8 GB RAM · may be killed on busy phones",
             hub = HubSource.HUGGINGFACE,
             precision = LocalLlmConfig.GGUF_PRECISION_Q4_0,
             chipset = null,

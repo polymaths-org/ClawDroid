@@ -37,7 +37,7 @@ import org.json.JSONArray
 class GenieXLocalProvider(
     private val appContext: Context,
     private val modelId: String = AppConfigManager.model
-        .takeIf { it.isNotBlank() } ?: LocalLlmConfig.GGUF_MODEL_4B,
+        .takeIf { it.isNotBlank() } ?: LocalLlmConfig.GGUF_MODEL_06B,
 ) : LlmProvider {
     override val contextLimit: Int get() = LocalLlmConfig.nCtxFor(modelId)
     override val isLocal: Boolean = true
@@ -66,6 +66,11 @@ class GenieXLocalProvider(
                         model_path = paths.model_path,
                         config = ModelConfig(nCtx = LocalLlmConfig.nCtxFor(modelId)).apply {
                             nGpuLayers = 0
+                            // 4 threads caps peak CPU buffers vs default 8; small batch caps compute RAM.
+                            nThreads = 4
+                            nThreadsBatch = 4
+                            nBatch = 128
+                            nUBatch = 64
                         },
                         runtime_id = paths.runtime_id?.takeIf { r -> r.isNotBlank() } ?: opt.runtimeId,
                         // CPU avoids the Hexagon NPU SIGABRT in ggml-hexagon dspqueue.

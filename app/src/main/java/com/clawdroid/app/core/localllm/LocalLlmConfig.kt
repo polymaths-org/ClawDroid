@@ -22,6 +22,7 @@ object LocalLlmConfig {
     /** Bring-up models: portable GGUF, no chipset pinning, fastest iteration. */
     const val GGUF_MODEL_4B = "unsloth/Qwen3-4B-GGUF"
     const val GGUF_MODEL_06B = "unsloth/Qwen3-0.6B-GGUF"
+    const val GGUF_MODEL_17B = "unsloth/Qwen3-1.7B-GGUF"
     const val GGUF_PRECISION_Q4_0 = "Q4_0"
     const val RUNTIME_LLAMA_CPP = "llama_cpp"
 
@@ -29,16 +30,21 @@ object LocalLlmConfig {
     const val QAIRT_MODEL = "ai-hub-models/Qwen3-4B-Instruct-2507"
     const val RUNTIME_QAIRT = "qairt"
 
-    /** Cap per generation — full answers without runaway output on small models. */
-    const val LOCAL_MAX_TOKENS = 2_048
+    /** Cap per generation — tool calls need <200 tokens; 1024 caps KV growth on low-RAM phones. */
+    const val LOCAL_MAX_TOKENS = 1_024
 
     /**
-     * Per-model context windows. The 4B weights (~2.5 GB, mmap disabled) plus
-     * a 4K KV cache exceed free RAM on a loaded phone and Android LMK-kills
-     * the app mid-generation; 2K keeps it alive. The 0.6B model keeps 4K.
+     * Per-model context windows. GenieX llama_cpp uses use_mmap=false, so the
+     * full weights sit in RAM (4B file 2.2 GB -> 2.8 GB RSS -> LMK OOM kill).
+     * 4B gets 1K context, 1.7B gets 2K, 0.6B keeps 4K.
      */
-    const val N_CTX_4B = 2_048
+    const val N_CTX_4B = 1_024
+    const val N_CTX_17B = 2_048
     const val N_CTX_06B = 4_096
 
-    fun nCtxFor(modelId: String): Int = if (modelId == GGUF_MODEL_4B) N_CTX_4B else N_CTX_06B
+    fun nCtxFor(modelId: String): Int = when (modelId) {
+        GGUF_MODEL_4B -> N_CTX_4B
+        GGUF_MODEL_17B -> N_CTX_17B
+        else -> N_CTX_06B
+    }
 }
