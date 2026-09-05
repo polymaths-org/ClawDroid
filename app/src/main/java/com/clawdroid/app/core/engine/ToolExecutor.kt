@@ -11,6 +11,7 @@ import com.clawdroid.app.core.tools.ListDirectoryTool
 import com.clawdroid.app.core.tools.ListProcessesTool
 import com.clawdroid.app.core.tools.NotificationTool
 import com.clawdroid.app.core.tools.ReadFileTool
+import com.clawdroid.app.core.tools.ReminderTool
 import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
 import com.clawdroid.app.core.tools.WebSearchTool
@@ -18,6 +19,7 @@ import com.clawdroid.app.core.tools.WriteFileTool
 import com.clawdroid.app.core.tools.GoogleTools
 import com.clawdroid.app.core.tools.GoogleDriveTools
 import com.clawdroid.app.core.tools.GithubTools
+import com.clawdroid.app.core.tools.InterpoleTools
 import com.clawdroid.app.core.tools.NotionTools
 import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
@@ -86,6 +88,15 @@ object ToolExecutor {
                 context = context,
                 title = args.getString("title"),
                 body = args.getString("body"),
+            )
+            "set_reminder" -> ReminderTool.setReminder(context, args)
+            "list_reminders" -> ReminderTool.listReminders(
+                context = context,
+                includeCompleted = args.optBoolean("include_completed", false),
+            )
+            "cancel_reminder" -> ReminderTool.cancelReminder(
+                context = context,
+                reminderId = args.getString("reminder_id"),
             )
             "gmail_list_messages", "gmail_get_message", "gmail_send_message", "gmail_create_draft" -> {
                 if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
@@ -212,6 +223,31 @@ object ToolExecutor {
                     else -> error("Unreachable")
                 }
             }
+            "interpole_status" -> InterpoleTools.status()
+            "interpole_list_dir" -> InterpoleTools.listDir(args.getString("path"))
+            "interpole_read_file" -> InterpoleTools.readFile(
+                path = args.getString("path"),
+                startLine = args.optIntOrNull("start_line"),
+                endLine = args.optIntOrNull("end_line"),
+                maxBytes = args.optIntOrNull("max_bytes"),
+            )
+            "interpole_write_file" -> InterpoleTools.writeFile(
+                path = args.getString("path"),
+                content = args.getString("content"),
+                approvalId = args.optString("approval_id").takeIf { it.isNotBlank() },
+            )
+            "interpole_execute" -> InterpoleTools.execute(
+                command = args.getString("command"),
+                cwd = args.optString("cwd").takeIf { it.isNotBlank() },
+                timeoutSeconds = args.optInt("timeout_seconds", 60),
+                maxOutputLines = args.optIntOrNull("max_output_lines"),
+                approvalId = args.optString("approval_id").takeIf { it.isNotBlank() },
+            )
+            "interpole_notify" -> InterpoleTools.notify(
+                title = args.optString("title").ifBlank { "ClawDroid" },
+                body = args.getString("body"),
+            )
+            "interpole_batch" -> InterpoleTools.batch(args.getJSONArray("actions"))
             "get_screen" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getScreen(context) }
             "tap" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tap(
                 args.getDouble("x").toFloat(),
@@ -237,11 +273,14 @@ object ToolExecutor {
             "press_home" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressHome() }
             "press_recents" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressRecents() }
             "open_notifications" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.openNotifications() }
-            "launch_app" -> withOverlayHiddenForTool(call.name) {
-                val appQuery = args.optString("package_name").ifBlank { args.optString("app_name") }
+            "launch_app", "open_app" -> {
+                val appQuery = args.optString("package_name")
+                    .ifBlank { args.optString("app_name") }
+                    .ifBlank { args.optString("name") }
+                    .ifBlank { args.optString("query") }
                 AndroidControlTools.launchApp(appQuery, context)
             }
-            "get_installed_apps" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getInstalledApps(context) }
+            "get_installed_apps" -> AndroidControlTools.getInstalledApps(context)
             "screenshot" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.screenshot(context) }
             "wait" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.wait(args.optInt("ms", 500)) }
             "perform_android_actions" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.performActions(

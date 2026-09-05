@@ -21,7 +21,7 @@ object NotionAuthManager {
         try {
             Log.i(TAG, "Exchanging Notion auth code...")
             val clientID = com.clawdroid.app.BuildConfig.NOTION_OAUTH_CLIENT_ID
-            val clientSecret = com.clawdroid.app.BuildConfig.NOTION_OAUTH_CLIENT_SECRET
+            val clientSecret = AppConfigManager.notionClientSecret
 
             val credentials = "$clientID:$clientSecret"
             val basicAuth = "Basic " + Base64.encodeToString(

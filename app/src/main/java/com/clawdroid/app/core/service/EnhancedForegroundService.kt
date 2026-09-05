@@ -19,6 +19,7 @@ import com.clawdroid.app.core.notifications.NotificationHelper
 class EnhancedForegroundService : Service() {
 
     private var backgroundAgent: BackgroundAgent? = null
+    private var lastNotificationStatus: String? = null
 
     companion object {
         private const val TAG = "EnhancedForegroundService"
@@ -58,12 +59,15 @@ class EnhancedForegroundService : Service() {
                 val agent = backgroundAgent
                 if (agent != null && agent.isRunning.value) {
                     val status = agent.status.value
-                    val notification = NotificationHelper.foregroundNotification(
-                        this@EnhancedForegroundService,
-                        status
-                    )
-                    val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    manager.notify(NOTIFICATION_ID, notification)
+                    if (status != lastNotificationStatus) {
+                        lastNotificationStatus = status
+                        val notification = NotificationHelper.foregroundNotification(
+                            this@EnhancedForegroundService,
+                            status
+                        )
+                        val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        manager.notify(NOTIFICATION_ID, notification)
+                    }
                 }
                 if (backgroundAgent?.isRunning?.value == true) {
                     android.os.Handler(mainLooper).postDelayed(this, 30_000)

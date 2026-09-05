@@ -5,6 +5,8 @@ import android.system.Os
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -27,11 +29,12 @@ object BootstrapManager {
     private const val BOOTSTRAP_URL =
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-aarch64.zip"
     private const val TERMUX_PREFIX = "/data/data/com.termux/files/usr"
+    private val bootstrapMutex = Mutex()
 
     suspend fun ensureBootstrapped(
         context: Context,
         onProgress: (BootstrapProgress) -> Unit,
-    ): BootstrapResult = withContext(Dispatchers.IO) {
+    ): BootstrapResult = bootstrapMutex.withLock { withContext(Dispatchers.IO) {
         val env = EnvironmentSetup.build(context)
         createBaseDirectories(context, env)
         runCatching { SharedFolderManager.ensureSharedFolders() }
@@ -88,7 +91,7 @@ object BootstrapManager {
             homeDir = env.home.absolutePath,
             bashOutput = output,
         )
-    }
+    } }
 
     private fun createBaseDirectories(context: Context, env: LinuxEnvironment) {
         listOf(
@@ -316,6 +319,7 @@ object BootstrapManager {
                     file.setReadable(true, true)
                     file.setWritable(true, true)
                 }
+                Os.chmod(file.absolutePath, if (file.isDirectory) 0b111_000_000 else 0b111_000_000)
             }.onFailure {
                 Log.w(TAG, "Unable to set permissions on ${file.absolutePath}", it)
             }

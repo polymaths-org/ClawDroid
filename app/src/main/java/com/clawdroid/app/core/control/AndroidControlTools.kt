@@ -1,11 +1,13 @@
 package com.clawdroid.app.core.control
 
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
 import android.util.Log
+import com.clawdroid.app.core.config.AppConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -40,12 +42,17 @@ object AndroidControlTools {
         "phone" to "com.google.android.dialer",
         "dialer" to "com.google.android.dialer",
         "messages" to "com.google.android.apps.messaging",
+        "camera" to "com.google.android.GoogleCamera",
+        "calculator" to "com.google.android.calculator",
+        "clock" to "com.google.android.deskclock",
+        "files" to "com.google.android.documentsui",
+        "photos" to "com.google.android.apps.photos",
     )
 
     private val screenControlToolNames = setOf(
         "get_screen", "tap", "tap_text", "tap_resource_id", "long_press", "swipe",
         "scroll", "type_text", "clear_text", "press_back", "press_home", "press_recents",
-        "open_notifications", "launch_app", "get_installed_apps", "screenshot", "wait",
+        "open_notifications", "launch_app", "open_app", "get_installed_apps", "screenshot", "wait",
         "perform_android_actions", "send_message_in_current_chat",
     )
 
@@ -58,17 +65,39 @@ object AndroidControlTools {
                 "User must enable ClawDroid Screen Control in Settings > Accessibility",
             )
 
+        val mode = AppConfigManager.screenContextMode
         val tree = service.dumpNodeTree()
-        if (ScreenCaptureManager.isTreeMeaningful(tree)) {
+        val treeJson = if (ScreenCaptureManager.isTreeMeaningful(tree)) org.json.JSONObject(tree) else null
+
+        if (mode == "tree_only" && treeJson != null) {
             return@runTool JSONObject()
                 .put("success", true)
                 .put("type", "tree")
-                .put("data", org.json.JSONObject(tree))
+                .put("data", treeJson)
         }
 
-        if (ScreenCaptureManager.isActive()) {
+        if (mode == "tree_first" && treeJson != null) {
+            return@runTool JSONObject()
+                .put("success", true)
+                .put("type", "tree")
+                .put("data", treeJson)
+                .put("visual_fallback_available", ScreenCaptureManager.isActive())
+        }
+
+        val shouldCaptureScreenshot = mode == "screenshot_only" ||
+            mode == "both" ||
+            (mode == "tree_first" && AppConfigManager.visualContextFallbackEnabled && treeJson == null)
+
+        if (shouldCaptureScreenshot && ScreenCaptureManager.isActive()) {
             val base64 = ScreenCaptureManager.captureAsBase64(context)
             if (base64 != null) {
+                if (mode == "both" && treeJson != null) {
+                    return@runTool JSONObject()
+                        .put("success", true)
+                        .put("type", "both")
+                        .put("tree", treeJson)
+                        .put("screenshot", base64)
+                }
                 return@runTool JSONObject()
                     .put("success", true)
                     .put("type", "screenshot")
@@ -76,9 +105,17 @@ object AndroidControlTools {
             }
         }
 
+        if (treeJson != null) {
+            return@runTool JSONObject()
+                .put("success", true)
+                .put("type", "tree")
+                .put("data", treeJson)
+                .put("screenshot", "unavailable_or_disabled")
+        }
+
         errorResult(
             "empty_ui_tree",
-            "Accessibility tree is empty or unhelpful. Enable screen capture in Settings for vision fallback.",
+            "Accessibility tree is empty or unhelpful. Enable screen capture or visual fallback in Settings for vision context.",
         )
     }
 
@@ -205,6 +242,22 @@ object AndroidControlTools {
             } catch (e: Exception) {
                 Log.w(TAG, "launchApp: application context threw: ${e.message}")
             }
+
+            Log.i(TAG, "launchApp: trying PendingIntent activity launch")
+            try {
+                val intent = buildLaunchIntent(appContext, target, resolvedPackage)
+                val pendingIntent = PendingIntent.getActivity(
+                    appContext,
+                    resolvedPackage.hashCode(),
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                pendingIntent.send()
+                Log.i(TAG, "launchApp: success via PendingIntent")
+                return@runToolSync buildResult("launched", true, resolvedPackage, "pending_intent", query, resolvedLabel)
+            } catch (e: Exception) {
+                Log.w(TAG, "launchApp: PendingIntent threw: ${e.message}")
+            }
         }
 
         Log.e(TAG, "launchApp: all methods failed for query=$query resolvedPackage=$resolvedPackage")
@@ -241,7 +294,7 @@ object AndroidControlTools {
         if (!ScreenCaptureManager.isActive()) {
             return@runToolSync errorResult(
                 "screen_capture_not_active",
-                "Request screen capture permission in Settings > Android Control",
+                "Open Settings > Permissions and tap Screen Capture to approve Android's screen-share prompt.",
             )
         }
         val base64 = ScreenCaptureManager.captureAsBase64(context)

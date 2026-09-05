@@ -27,8 +27,10 @@ import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.SettingsInputComponent
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -61,11 +63,13 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToProvider: () -> Unit = {},
     onNavigateToAudio: () -> Unit = {},
+    onNavigateToNotifications: () -> Unit = {},
     onNavigateToAutomations: () -> Unit = {},
     onNavigateToConnections: () -> Unit = {},
     onNavigateToChannels: () -> Unit = {},
     onNavigateToSkills: () -> Unit = {},
     onNavigateToMcp: () -> Unit = {},
+    onNavigateToInterpole: () -> Unit = {},
     onNavigateToAgentConfig: () -> Unit = {},
     onNavigateToThemes: () -> Unit = {},
     onNavigateToPermissions: () -> Unit = {},
@@ -131,6 +135,7 @@ fun SettingsScreen(
                     SettingsRow(Icons.Outlined.Security, "Permissions", "Access control", accent, onSurface, onVariant, onNavigateToPermissions)
                     SettingsRow(Icons.Outlined.SettingsInputComponent, "Provider", "Model settings", accent, onSurface, onVariant, onNavigateToProvider)
                     SettingsRow(Icons.Outlined.Headphones, "Audio", "Voice & sound", accent, onSurface, onVariant, onNavigateToAudio)
+                    SettingsRow(Icons.Outlined.Notifications, "Notifications", "Task alerts & ASK mode", accent, onSurface, onVariant, onNavigateToNotifications)
                     SettingsRow(Icons.Outlined.ColorLens, "Themes", "Appearance", accent, onSurface, onVariant, onNavigateToThemes)
                 }
 
@@ -139,6 +144,7 @@ fun SettingsScreen(
                     SettingsRow(Icons.Outlined.Extension, "MCP", "Plugins & addons", accent, onSurface, onVariant, onNavigateToMcp)
                     SettingsRow(Icons.Outlined.Link, "Channels", "Communication", accent, onSurface, onVariant, onNavigateToChannels)
                     SettingsRow(Icons.Outlined.Extension, "Skills", "Skill library", accent, onSurface, onVariant, onNavigateToSkills)
+                    SettingsRow(Icons.Outlined.Storage, "INTERPOLE", "Desktop bridge", accent, onSurface, onVariant, onNavigateToInterpole)
                     SettingsRow(Icons.Outlined.Timer, "Automations", "Background tasks", accent, onSurface, onVariant, onNavigateToAutomations)
                 }
 

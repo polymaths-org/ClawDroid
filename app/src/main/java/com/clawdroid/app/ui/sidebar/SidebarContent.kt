@@ -59,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.ProjectEntity
@@ -154,18 +155,39 @@ fun SidebarContent(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        NavRow(
-            item = NavItem("New chat", Icons.Rounded.Add) { onNewConversation(null) },
-            prominent = true,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        NavRow(item = NavItem("Chats", Icons.Rounded.ChatBubble) { onNewConversation(null) }, selected = isMagic)
-        NavRow(item = NavItem("Projects", Icons.Rounded.Folder) { showCreateProject = true })
-        NavRow(item = NavItem("Skills", Icons.Rounded.AutoAwesome, onNavigateToSkills))
-        NavRow(item = NavItem("Channels", Icons.Rounded.Hub, onNavigateToChannels))
-        NavRow(item = NavItem("Automations", Icons.Rounded.Schedule, onNavigateToAutomations))
-        NavRow(item = NavItem("MCP", Icons.Rounded.Extension, onNavigateToMcp))
-        NavRow(item = NavItem("Terminal", Icons.Rounded.Terminal, onNavigateToTerminal))
+        val activeConversation = conversations.firstOrNull { it.id == activeConversationId }
+        val totalCost = conversations.sumOf { it.costUsd }
+        val totalTokens = conversations.sumOf {
+            it.totalPromptTokens + it.totalCompletionTokens + it.totalCachedTokens
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SidebarInfoCard(
+                icon = Icons.Rounded.Settings,
+                title = "Provider",
+                value = AppConfigManager.provider.replaceFirstChar { it.uppercaseChar() },
+                detail = AppConfigManager.baseUrl.removePrefix("https://").removePrefix("http://"),
+            )
+            SidebarInfoCard(
+                icon = Icons.Rounded.AutoAwesome,
+                title = "Model",
+                value = AppConfigManager.model.substringAfterLast('/'),
+                detail = AppConfigManager.model,
+            )
+            SidebarInfoCard(
+                icon = Icons.Rounded.Extension,
+                title = "Context",
+                value = formatTokenCount(activeConversation?.lastPromptTokens?.toLong() ?: 0L),
+                detail = "Last request · ${formatTokenCount(totalTokens)} total",
+            )
+            SidebarInfoCard(
+                icon = Icons.Rounded.Schedule,
+                title = "Billing",
+                value = "$" + String.format("%.4f", totalCost),
+                detail = "${conversations.size} chats tracked",
+            )
+            SidebarTerminalButton(onClick = onNavigateToTerminal)
+        }
 
         Spacer(modifier = Modifier.height(28.dp))
 
@@ -295,7 +317,7 @@ fun SidebarContent(
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, letterSpacing = 0.sp),
                 )
                 Text(
-                    "Workspace · ${com.clawdroid.app.core.config.AppConfigManager.agentName.ifBlank { "WhiteRose" }}",
+                    "Workspace · ${AppConfigManager.agentName.ifBlank { "WhiteRose" }}",
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, letterSpacing = 0.sp),
                 )
@@ -339,6 +361,124 @@ fun SidebarContent(
             },
         )
     }
+}
+
+@Composable
+private fun SidebarInfoCard(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    detail: String,
+) {
+    val isMagic = currentClawSkin() == ClawSkin.ClawMagic
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                if (isMagic) Color.White.copy(alpha = 0.045f)
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.80f)
+            )
+            .border(
+                1.dp,
+                if (isMagic) Color.White.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                shape,
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title.uppercase(),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = value,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    letterSpacing = 0.sp,
+                ),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = detail,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    letterSpacing = 0.sp,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SidebarTerminalButton(
+    onClick: () -> Unit,
+) {
+    val isMagic = currentClawSkin() == ClawSkin.ClawMagic
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(shape)
+            .background(
+                if (isMagic) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+            )
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Terminal,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "Open terminal",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+private fun formatTokenCount(tokens: Long): String = when {
+    tokens >= 1_000_000 -> String.format("%.1fM", tokens / 1_000_000.0)
+    tokens >= 1_000 -> String.format("%.1fk", tokens / 1_000.0)
+    else -> tokens.toString()
 }
 
 @Composable

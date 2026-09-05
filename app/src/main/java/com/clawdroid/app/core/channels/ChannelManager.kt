@@ -3,6 +3,11 @@ package com.clawdroid.app.core.channels
 import android.content.Context
 import android.util.Log
 import com.clawdroid.app.core.agent.AgentConfigLoader
+import com.clawdroid.app.core.channels.discord.DiscordChannel
+import com.clawdroid.app.core.channels.email.EmailChannel
+import com.clawdroid.app.core.channels.slack.SlackChannel
+import com.clawdroid.app.core.channels.telegram.TelegramChannel
+import com.clawdroid.app.core.channels.webhook.WebhookChannel
 import com.clawdroid.app.core.channels.whatsapp.WhatsAppChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +120,11 @@ class ChannelManager(private val context: Context) {
     private fun createChannel(type: String): Channel? = when (type) {
         "whatsapp" -> WhatsAppChannel(context)
         "sms" -> SmsChannel(context)
+        "telegram" -> TelegramChannel()
+        "slack" -> SlackChannel()
+        "discord" -> DiscordChannel()
+        "email" -> EmailChannel().also { it.setContext(context) }
+        "webhook" -> WebhookChannel()
         else -> null
     }
 }

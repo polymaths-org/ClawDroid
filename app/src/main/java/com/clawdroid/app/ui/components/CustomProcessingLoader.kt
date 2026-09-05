@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,7 +53,6 @@ fun CustomProcessingLoader(
 ) {
     val colors = MaterialTheme.colorScheme
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
-    var quoteIndex by remember { mutableIntStateOf(0) }
     val quotes = remember {
         listOf(
             ProcessingQuote("Privacy is the Price you pay to Agents", "Paris K."),
@@ -65,23 +65,22 @@ fun CustomProcessingLoader(
             ProcessingQuote("Great companies are built on great products.", "Elon Musk"),
         )
     }
+    var quoteOrder by remember { mutableStateOf(shuffledQuoteOrder(quotes.size)) }
+    var orderIndex by remember { mutableIntStateOf(0) }
+    val quoteIndex = quoteOrder.getOrElse(orderIndex) { 0 }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(quotes.size) {
         while (true) {
             delay(4200)
-            quoteIndex = (quoteIndex + 1) % quotes.size
+            val nextIndex = orderIndex + 1
+            if (nextIndex < quoteOrder.size) {
+                orderIndex = nextIndex
+            } else {
+                quoteOrder = shuffledQuoteOrder(quotes.size, avoidFirst = quoteIndex)
+                orderIndex = 0
+            }
         }
     }
-
-    val rotationAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation"
-    )
 
     val glowPulse by infiniteTransition.animateFloat(
         initialValue = 0.5f,
@@ -91,16 +90,6 @@ fun CustomProcessingLoader(
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow"
-    )
-
-    val centerDotRadius by infiniteTransition.animateFloat(
-        initialValue = 2.5f,
-        targetValue = 5.5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(940, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "center_dot"
     )
 
     val sheenOffset by infiniteTransition.animateFloat(
@@ -133,80 +122,28 @@ fun CustomProcessingLoader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Canvas(
-            modifier = Modifier.size(56.dp)
-        ) {
-            val center = Offset(size.width / 2, size.height / 2)
-            val outerRadius = size.width / 2 - 4.dp.toPx()
-            val innerRadius = outerRadius * 0.62f
-            val orbitRadius = outerRadius * 0.78f
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        colors.primary.copy(alpha = 0.22f * glowPulse),
-                        colors.secondary.copy(alpha = 0.08f * glowPulse),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = outerRadius + 10.dp.toPx()
-                ),
-                radius = outerRadius + 10.dp.toPx()
-            )
-
-            drawCircle(
-                color = colors.primary.copy(alpha = 0.10f),
-                radius = outerRadius,
-                style = Stroke(width = 2.dp.toPx())
-            )
-
-            rotate(rotationAngle, center) {
-                drawArc(
-                    brush = Brush.sweepGradient(
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.radialGradient(
                         colors = listOf(
+                            colors.primary.copy(alpha = 0.16f + 0.08f * glowPulse),
+                            colors.surfaceContainerHighest.copy(alpha = 0.46f),
                             Color.Transparent,
-                            colors.primary,
-                            colors.secondary,
-                            Color.Transparent
                         ),
-                        center = center
                     ),
-                    startAngle = -30f,
-                    sweepAngle = 240f,
-                    useCenter = false,
-                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                 )
-            }
-
-            rotate(-rotationAngle * 0.72f, center) {
-                drawArc(
-                    color = colors.secondary.copy(alpha = 0.66f),
-                    startAngle = 120f,
-                    sweepAngle = 92f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - innerRadius, center.y - innerRadius),
-                    size = Size(innerRadius * 2, innerRadius * 2),
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                )
-            }
-
-            drawCircle(
-                color = colors.primary.copy(alpha = 0.95f),
-                radius = centerDotRadius.dp.toPx(),
-                center = center
+                .border(1.dp, colors.primary.copy(alpha = 0.24f + 0.20f * glowPulse), RoundedCornerShape(16.dp))
+                .padding(6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            FifMascot(
+                modifier = Modifier.fillMaxSize(),
+                contentDescription = "Thinking mascot",
+                animation = MascotAnimation.Thinking,
             )
-
-            repeat(3) { index ->
-                val angle = Math.toRadians((rotationAngle + index * 120f).toDouble())
-                drawCircle(
-                    color = colors.secondary.copy(alpha = 0.32f + index * 0.16f),
-                    radius = (2.2f + index * 0.45f).dp.toPx(),
-                    center = Offset(
-                        x = center.x + cos(angle).toFloat() * orbitRadius,
-                        y = center.y + sin(angle).toFloat() * orbitRadius,
-                    )
-                )
-            }
         }
 
         AnimatedContent(
@@ -285,4 +222,14 @@ fun CustomProcessingLoader(
             }
         }
     }
+}
+
+private fun shuffledQuoteOrder(size: Int, avoidFirst: Int? = null): List<Int> {
+    if (size <= 0) return emptyList()
+    if (size == 1) return listOf(0)
+    var order = (0 until size).shuffled()
+    if (avoidFirst != null && order.firstOrNull() == avoidFirst) {
+        order = order.drop(1) + order.first()
+    }
+    return order
 }

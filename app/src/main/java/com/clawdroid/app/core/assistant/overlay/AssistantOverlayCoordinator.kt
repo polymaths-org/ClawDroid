@@ -3,9 +3,16 @@ package com.clawdroid.app.core.assistant.overlay
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
@@ -24,15 +31,27 @@ object AssistantOverlayCoordinator {
     val error = MutableStateFlow("")
     val actionLog = MutableStateFlow<List<String>>(emptyList())
     val currentInvocation = MutableStateFlow<AssistantInvocation?>(null)
+    val voiceInputActive = MutableStateFlow(false)
+    val voiceGreeting = MutableStateFlow<String?>(null)
+    val voiceListenTimeoutSeconds = MutableStateFlow<Int?>(null)
     private var sessionUiController: ((Boolean) -> Unit)? = null
+    private val greetedVoiceInvocationIds = linkedSetOf<String>()
 
     fun setSessionUiController(controller: ((Boolean) -> Unit)?) {
         Log.i(TAG, "setSessionUiController registered=${controller != null}")
         sessionUiController = controller
     }
 
-    fun showOverlay(context: Context, invocation: AssistantInvocation) {
+    fun showOverlay(
+        context: Context,
+        invocation: AssistantInvocation,
+        greeting: String? = null,
+        listenTimeoutSeconds: Int? = null,
+    ) {
         Log.i(TAG, "showOverlay id=${invocation.id} mode=${invocation.mode} package=${invocation.contextSnapshot?.sourcePackage} screenshot=${invocation.contextSnapshot?.screenshotPath}")
+        voiceInputActive.value = false
+        voiceGreeting.value = greeting?.takeIf { it.isNotBlank() }
+        voiceListenTimeoutSeconds.value = listenTimeoutSeconds?.coerceIn(3, 30)
         currentInvocation.value = invocation
         textDelta.value = ""
         status.value = "Ready"
@@ -41,10 +60,23 @@ object AssistantOverlayCoordinator {
         error.value = ""
         actionLog.value = emptyList()
         visible.value = true
+        sessionUiController?.invoke(true)
+    }
+
+    fun updateCurrentInvocation(invocation: AssistantInvocation) {
+        val current = currentInvocation.value
+        if (current?.id != invocation.id) {
+            Log.w(TAG, "skip invocation update current=${current?.id} incoming=${invocation.id}")
+            return
+        }
+        currentInvocation.value = invocation
     }
 
     fun showRunning(context: Context, invocation: AssistantInvocation) {
         Log.i(TAG, "showRunning id=${invocation.id} mode=${invocation.mode} textLen=${invocation.userText?.length ?: 0}")
+        voiceInputActive.value = false
+        voiceGreeting.value = null
+        voiceListenTimeoutSeconds.value = null
         currentInvocation.value = invocation
         textDelta.value = ""
         status.value = "Thinking..."
@@ -53,6 +85,7 @@ object AssistantOverlayCoordinator {
         error.value = ""
         actionLog.value = listOf("Started task")
         visible.value = true
+        sessionUiController?.invoke(true)
     }
 
     fun updateText(text: String) {
@@ -111,7 +144,32 @@ object AssistantOverlayCoordinator {
 
     fun hideOverlay() {
         Log.i(TAG, "hideOverlay currentId=${currentInvocation.value?.id}")
+        voiceInputActive.value = false
+        voiceGreeting.value = null
+        voiceListenTimeoutSeconds.value = null
         visible.value = false
+        sessionUiController?.invoke(false)
+    }
+
+    fun shouldPlayVoiceGreeting(invocationId: String?): Boolean {
+        if (invocationId.isNullOrBlank()) return true
+        synchronized(greetedVoiceInvocationIds) {
+            if (greetedVoiceInvocationIds.size > 64) {
+                val iterator = greetedVoiceInvocationIds.iterator()
+                while (greetedVoiceInvocationIds.size > 48 && iterator.hasNext()) {
+                    iterator.next()
+                    iterator.remove()
+                }
+            }
+            return greetedVoiceInvocationIds.add(invocationId)
+        }
+    }
+
+    fun setVoiceInputActive(active: Boolean) {
+        if (voiceInputActive.value != active) {
+            Log.i(TAG, "setVoiceInputActive active=$active")
+        }
+        voiceInputActive.value = active
     }
 
     suspend fun <T> withOverlayHiddenForExternalUi(
@@ -123,6 +181,7 @@ object AssistantOverlayCoordinator {
         if (wasVisible) {
             Log.i(TAG, "hiding overlay for reason=$reason settleMs=${settleMs}ms")
             visible.value = false
+            sessionUiController?.invoke(false)
             delay(settleMs)
         } else {
             Log.d(TAG, "overlay already hidden, skipping hide for reason=$reason")
@@ -133,6 +192,7 @@ object AssistantOverlayCoordinator {
             if (wasVisible && currentInvocation.value != null) {
                 Log.i(TAG, "restoring overlay after reason=$reason")
                 visible.value = true
+                sessionUiController?.invoke(true)
             }
         }
     }
@@ -142,16 +202,22 @@ object AssistantOverlayCoordinator {
         onWindowDrag: (Float, Float) -> Unit = { _, _ -> },
     ) {
         val isVisible by visible.collectAsState()
-        if (isVisible) {
-            val context = LocalContext.current
-            val invocation by currentInvocation.collectAsState()
-            val delta by textDelta.collectAsState()
-            val stat by status.collectAsState()
-            val line by shortLine.collectAsState()
-            val ans by answer.collectAsState()
-            val err by error.collectAsState()
-            val actions by actionLog.collectAsState()
+        val context = LocalContext.current
+        val invocation by currentInvocation.collectAsState()
+        val delta by textDelta.collectAsState()
+        val stat by status.collectAsState()
+        val line by shortLine.collectAsState()
+        val ans by answer.collectAsState()
+        val err by error.collectAsState()
+        val actions by actionLog.collectAsState()
+        val greeting by voiceGreeting.collectAsState()
+        val listenTimeoutSeconds by voiceListenTimeoutSeconds.collectAsState()
 
+        AnimatedVisibility(
+            visible = isVisible,
+            enter = fadeIn(tween(180)) + expandVertically(expandFrom = Alignment.Bottom),
+            exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+        ) {
             AssistantOverlayView(
                 invocation = invocation,
                 status = stat,
@@ -160,6 +226,8 @@ object AssistantOverlayCoordinator {
                 answer = ans,
                 error = err,
                 actionLog = actions,
+                voiceGreeting = greeting,
+                voiceListenTimeoutSeconds = listenTimeoutSeconds,
                 onWindowDrag = onWindowDrag,
                 onSubmit = { text ->
                     val activeInvocation = invocation ?: return@AssistantOverlayView

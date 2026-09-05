@@ -12,26 +12,85 @@ object ToolSchemaRegistry {
             putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
-        array.put(tool("get_screen", "Read the current Android screen UI tree.") {
+        array.put(tool("open_app", "Alias for launch_app. Open an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example org.telegram.messenger, WhatsApp, Chrome, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
+            required("package_name")
+        })
+        array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot when configured for visual context.") {
+            required()
+        })
+        array.put(tool("screenshot", "Capture a screenshot as base64 JPEG when visual details are required and screen capture permission is active.") {
             required()
         })
         array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
             putString("label", "Text or content description to tap.")
             required("label")
         })
+        array.put(tool("tap_resource_id", "Tap a UI element by Android resource id.") {
+            putString("id", "View resource id, for example com.app:id/button.")
+            required("id")
+        })
         array.put(tool("tap", "Tap at absolute screen coordinates.") {
             putNumber("x", "X coordinate in pixels.")
             putNumber("y", "Y coordinate in pixels.")
             required("x", "y")
         })
+        array.put(tool("long_press", "Long-press at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("swipe", "Swipe between two screen coordinates.") {
+            putNumber("x1", "Start X coordinate.")
+            putNumber("y1", "Start Y coordinate.")
+            putNumber("x2", "End X coordinate.")
+            putNumber("y2", "End Y coordinate.")
+            putInteger("duration_ms", "Swipe duration in milliseconds. Default 400.")
+            required("x1", "y1", "x2", "y2")
+        })
+        array.put(tool("scroll", "Scroll the first scrollable UI element.") {
+            putString("direction", "Scroll direction: up, down, left, or right.")
+            required("direction")
+        })
+        array.put(tool("type_text", "Type text into the focused editable field.") {
+            putString("text", "Text to type.")
+            required("text")
+        })
+        array.put(tool("clear_text", "Clear text in the focused editable field.") {
+            required()
+        })
         array.put(tool("press_back", "Press the Android Back button.") {
             required()
         })
-        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch. Use this for typing plus taps, like the successful app flow did.") {
-            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, type_text, wait, press_back.")
+        array.put(tool("press_home", "Press the Android Home button.") {
+            required()
+        })
+        array.put(tool("press_recents", "Open the Android Recents screen.") {
+            required()
+        })
+        array.put(tool("open_notifications", "Open the notification shade.") {
+            required()
+        })
+        array.put(tool("wait", "Wait briefly for UI to settle. Prefer batching actions instead of separate wait turns.") {
+            putInteger("ms", "Milliseconds to wait, max 5000.")
+            required()
+        })
+        array.put(tool("get_installed_apps", "List installed launchable apps.") {
+            required()
+        })
+        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps. Use this first when the user asks to send a specific message in the current chat.") {
+            putString("text", "Exact message text to send.")
+            putInteger("count", "How many times to send it. Default 1, max 20.")
+            required("text")
+        })
+        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch. Prefer this for related taps, waits, scrolling, and typing.") {
+            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, tap_resource_id, type_text, clear_text, wait, press_back, scroll, swipe, or long_press.")
             putBoolean("verify", "Return get_screen after all actions complete. Default true.")
             required("actions")
         })
+
+        appendGoogleConnectorTools(array)
 
         return array
     }
@@ -78,6 +137,24 @@ object ToolSchemaRegistry {
         array.put(tool("web_search", "Search the web for current information when the user asks to search something up.") {
             putString("query", "Search query.")
             required("query")
+        })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible, for example 2026-06-19T18:30:00+05:30. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
         })
 
         return array
@@ -147,6 +224,24 @@ object ToolSchemaRegistry {
             putString("title", "Notification title.")
             putString("body", "Notification body.")
             required("title", "body")
+        })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible, for example 2026-06-19T18:30:00+05:30. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
         })
 
         val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&
@@ -264,6 +359,52 @@ object ToolSchemaRegistry {
             })
         }
 
+        // INTERPOLE desktop bridge tools. Only offered when enabled and paired,
+        // so the schema costs zero tokens when the desktop is not in use.
+        val isInterpoleActive = com.clawdroid.app.core.config.AppConfigManager.interpoleEnabled &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleHost.isNotBlank() &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleDeviceId.isNotBlank() &&
+                com.clawdroid.app.core.config.AppConfigManager.interpoleDeviceToken.isNotBlank()
+        if (isInterpoleActive) {
+            array.put(tool("interpole_status", "Check the paired INTERPOLE desktop and its current permissions (trust mode, whether execute is allowed, trusted folders). Call this first when a task depends on the desktop, and cache the answer for the turn.") {
+                required()
+            })
+            array.put(tool("interpole_list_dir", "List a directory on the paired INTERPOLE desktop. The path must be inside the desktop trusted folders.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                required("path")
+            })
+            array.put(tool("interpole_read_file", "Read a file on the paired INTERPOLE desktop. Pass start_line and end_line to read only the range you need and keep context small. total_lines is returned so you know the full size.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                putInteger("start_line", "Optional first 1-based line to read.")
+                putInteger("end_line", "Optional last 1-based line to read.")
+                putInteger("max_bytes", "Optional byte cap for the returned content.")
+                required("path")
+            })
+            array.put(tool("interpole_write_file", "Create or overwrite a file on the paired INTERPOLE desktop. In zero-trust mode this returns approval_required; retry the same call with approval_id after the user approves.") {
+                putString("path", "Absolute path on the desktop, inside a trusted folder.")
+                putString("content", "Full file content.")
+                putString("approval_id", "Optional desktop approval id to retry a previously approval-gated write.")
+                required("path", "content")
+            })
+            array.put(tool("interpole_execute", "Run a shell command on the paired INTERPOLE desktop. Output is summarized (head + tail with line/byte counts) to save context. Prefer non-interactive flags. Requires desktop execute enabled, and approval in zero-trust mode (retry with approval_id).") {
+                putString("command", "Command to run via the desktop shell.")
+                putString("cwd", "Working directory on the desktop, inside a trusted folder.")
+                putInteger("timeout_seconds", "Maximum time to wait. Default 60, max 3600.")
+                putInteger("max_output_lines", "Optional cap on returned output lines. Default 40.")
+                putString("approval_id", "Optional desktop approval id to retry a previously approval-gated command.")
+                required("command", "cwd")
+            })
+            array.put(tool("interpole_notify", "Send a desktop notification to the user through the paired INTERPOLE desktop, for example when a long desktop task finishes.") {
+                putString("title", "Notification title.")
+                putString("body", "Notification body.")
+                required("body")
+            })
+            array.put(tool("interpole_batch", "Run several INTERPOLE desktop actions in ONE signed round-trip to save time and context. Use this whenever you need 2 or more related desktop operations. Each item is an object with an action field (list_dir, read_file, write_file, execute, notify, ping, or status) and a params field. Returns a results array; each item is policy-checked independently.") {
+                putArray("actions", "Ordered list of {action, params} objects. action is one of list_dir, read_file, write_file, execute, notify, ping, status.")
+                required("actions")
+            })
+        }
+
         array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot if tree is empty.") {
             required()
         })
@@ -321,6 +462,11 @@ object ToolSchemaRegistry {
             putString("app_name", "Optional visible app name if package_name is unknown.")
             required("package_name")
         })
+        array.put(tool("open_app", "Alias for launch_app. Open an installed app by package name or visible app name.") {
+            putString("package_name", "Android package name or visible app name, for example com.android.chrome, Chrome, WhatsApp, or Settings.")
+            putString("app_name", "Optional visible app name if package_name is unknown.")
+            required("package_name")
+        })
         array.put(tool("get_installed_apps", "List installed non-system apps.") {
             required()
         })
@@ -345,6 +491,67 @@ object ToolSchemaRegistry {
         return array
     }
 
+
+    private fun appendGoogleConnectorTools(array: JSONArray) {
+        val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&
+            com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled
+
+        if (!isGoogleActive) return
+
+        if (com.clawdroid.app.core.config.AppConfigManager.googleGmailEnabled) {
+            array.put(tool("gmail_list_messages", "List or search the user's Gmail messages.") {
+                putString("query", "Search query in Gmail search syntax. Optional.")
+                putInteger("max_results", "Maximum number of results to fetch. Default 10.")
+            })
+            array.put(tool("gmail_get_message", "Retrieve details and body of a specific Gmail message.") {
+                putString("id", "The unique Gmail message id.")
+                required("id")
+            })
+            array.put(tool("gmail_send_message", "Send an email through the connected Google account.") {
+                putString("to", "Recipient email address.")
+                putString("subject", "Email subject.")
+                putString("body", "Email body content.")
+                required("to", "subject", "body")
+            })
+            array.put(tool("gmail_create_draft", "Create a Gmail draft through the connected Google account.") {
+                putString("to", "Recipient email address.")
+                putString("subject", "Email subject.")
+                putString("body", "Email body content.")
+                required("to", "subject", "body")
+            })
+        }
+
+        if (com.clawdroid.app.core.config.AppConfigManager.googleCalendarEnabled) {
+            array.put(tool("calendar_list_events", "List upcoming Google Calendar events.") {
+                putString("time_min", "Lower bound for event start time in ISO-8601 format. Optional.")
+                putString("time_max", "Upper bound for event end time in ISO-8601 format. Optional.")
+                putInteger("max_results", "Maximum number of events to return. Default 15.")
+            })
+            array.put(tool("calendar_create_event", "Create a Google Calendar event.") {
+                putString("summary", "Event title.")
+                putString("description", "Event description. Optional.")
+                putString("start_time", "Start time in ISO-8601 format, for example 2026-06-19T15:00:00+05:30.")
+                putString("end_time", "End time in ISO-8601 format, for example 2026-06-19T16:00:00+05:30.")
+                required("summary", "start_time", "end_time")
+            })
+        }
+
+        array.put(tool("google_drive_create_file", "Create or upload a text-backed file in Google Drive.") {
+            putString("name", "Name of the file.")
+            putString("mimeType", "MIME type, for example text/plain or application/json.")
+            putString("content", "Raw text content of the file.")
+            required("name", "mimeType", "content")
+        })
+        array.put(tool("google_drive_search_files", "Search for files in Google Drive.") {
+            putString("query", "Search term or file name query.")
+            required("query")
+        })
+        array.put(tool("google_docs_write_doc", "Create a new Google Doc and write content to it.") {
+            putString("title", "Document title.")
+            putString("body", "Document body content.")
+            required("title", "body")
+        })
+    }
 
     private fun tool(
         name: String,
