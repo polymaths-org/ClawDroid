@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.engine
 
 import android.content.Context
+import com.clawdroid.app.core.bootstrap.BootstrapManager
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.LlmApiClient
@@ -41,6 +42,7 @@ class AgentEngine(
 
     fun run(prompt: String, maxTurns: Int = 12): Flow<AgentRunEvent> = flow {
         stopRequested.set(false)
+        BootstrapManager.ensureBootstrapped(context) { }
         var messages = MessageBuilder.forUserPrompt(prompt)
         val finalText = StringBuilder()
 
