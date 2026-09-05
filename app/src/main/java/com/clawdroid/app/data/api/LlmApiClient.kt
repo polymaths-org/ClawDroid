@@ -82,7 +82,12 @@ class LlmApiClient(
             )
         }
 
-        Log.d("LlmApiClient", "Request payload: $payload")
+        val mediaMessageCount = messages.count { it.mediaPath != null && it.mediaMimeType != null }
+        Log.d(
+            "LlmApiClient",
+            "Request payload prepared: chars=${payload.toString().length}, messages=${messages.size}, " +
+                "mediaMessages=$mediaMessageCount, tools=${tools?.length() ?: 0}, forcedTool=$forcedToolName"
+        )
 
         val connection = (URL("$baseUrl/chat/completions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"

@@ -5,12 +5,14 @@ import android.util.Log
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.data.db.ClawDroidDatabase
+import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
 import com.clawdroid.app.ui.chat.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import org.json.JSONObject
 
 class ConversationRunState(
@@ -54,6 +56,7 @@ object AgentRunManager {
         prompt: String,
         mediaPath: String? = null,
         mediaMimeType: String? = null,
+        toolsOverride: JSONArray? = null,
     ) {
         synchronized(activeRuns) {
             if (activeRuns.value.containsKey(conversationId)) {
@@ -90,7 +93,8 @@ object AgentRunManager {
                     targetConversationId = conversationId,
                     maxTurns = AppConfigManager.maxAgentTurns,
                     mediaPath = mediaPath,
-                    mediaMimeType = mediaMimeType
+                    mediaMimeType = mediaMimeType,
+                    toolsOverride = toolsOverride,
                 )
                     .collect { event ->
                         handleEvent(conversationId, event)
@@ -143,6 +147,25 @@ object AgentRunManager {
         
         try {
             val db = ClawDroidDatabase.get(context)
+            val conversations = db.conversations()
+            val existingConversation = conversations.getById(conversationId)
+            if (existingConversation == null) {
+                Log.w(TAG, "Creating missing conversation before saving unsaved state conversationId=$conversationId")
+                val now = System.currentTimeMillis()
+                val activeProjectId = AppConfigManager.activeProjectId
+                    ?.takeIf { db.projects().getById(it) != null }
+                conversations.upsert(
+                    ConversationEntity(
+                        id = conversationId,
+                        projectId = activeProjectId,
+                        title = "Recovered Agent Chat",
+                        createdAt = now,
+                        updatedAt = now,
+                        status = "active",
+                        costUsd = 0.0,
+                    )
+                )
+            }
             val existing = db.messages().getById(msgId)
             if (existing == null) {
                 db.messages().insert(

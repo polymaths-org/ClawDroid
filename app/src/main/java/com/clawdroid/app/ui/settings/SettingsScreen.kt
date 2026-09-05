@@ -204,6 +204,11 @@ fun SettingsScreen(
     var heartbeatEnabled by remember { mutableStateOf(AppConfigManager.heartbeatEnabled) }
     var heartbeatIntervalMin by remember { mutableStateOf(AppConfigManager.heartbeatIntervalMin) }
     var notificationAccessGranted by remember { mutableStateOf(false) }
+
+    var assistantModeEnabled by remember { mutableStateOf(AppConfigManager.assistantModeEnabled) }
+    var doodleOverlayEnabled by remember { mutableStateOf(AppConfigManager.doodleOverlayEnabled) }
+    var screenContextEnabled by remember { mutableStateOf(AppConfigManager.screenContextEnabled) }
+    var saveScreenshotsToHistory by remember { mutableStateOf(AppConfigManager.saveScreenshotsToHistory) }
     var accessibilityActive by remember { mutableStateOf(ScreenReaderService.instance != null) }
     var screenCaptureActive by remember { mutableStateOf(ScreenCaptureManager.isActive()) }
     var showScreenTestDialog by remember { mutableStateOf(false) }
@@ -245,6 +250,10 @@ fun SettingsScreen(
         AppConfigManager.smsEnabled = smsEnabled
         AppConfigManager.heartbeatEnabled = heartbeatEnabled
         AppConfigManager.heartbeatIntervalMin = heartbeatIntervalMin
+        AppConfigManager.assistantModeEnabled = assistantModeEnabled
+        AppConfigManager.doodleOverlayEnabled = doodleOverlayEnabled
+        AppConfigManager.screenContextEnabled = screenContextEnabled
+        AppConfigManager.saveScreenshotsToHistory = saveScreenshotsToHistory
         AppConfigManager.syncToSandbox(context)
     }
 
@@ -1099,6 +1108,153 @@ fun SettingsScreen(
                     containerColor = DeepBlack,
                     tonalElevation = 6.dp,
                 )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── System Assistant ─────────────────────────────
+            GlowText(
+                text = "System Assistant",
+                style = MaterialTheme.typography.titleLarge,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val isDefault = remember { mutableStateOf(com.clawdroid.app.core.assistant.permissions.AssistantPermissionCoordinator.isDefaultAssistant(context)) }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Default Digital Assistant",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = SoftWhite,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                if (isDefault.value) "ClawDroid is default assistant" else "Select ClawDroid as system default assistant",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDefault.value) Color(0xFF66BB6A) else MutedGray,
+                            )
+                        }
+                        if (isDefault.value) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF66BB6A),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    GlassButton(
+                        onClick = {
+                            val intent = com.clawdroid.app.core.assistant.permissions.AssistantPermissionCoordinator.getRecoveryIntent(
+                                context,
+                                com.clawdroid.app.core.assistant.permissions.PermissionRecoveryAction.REQUEST_ROLE
+                            )
+                            if (intent != null) {
+                                context.startActivity(intent)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (isDefault.value) "Manage Assistant Settings" else "Set as Default Assistant",
+                            color = SoftWhite,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Assistant Mode", color = SoftWhite, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                            Text("Enable overlay gesture and context retrieval", style = MaterialTheme.typography.bodySmall, color = MutedGray)
+                        }
+                        Switch(
+                            checked = assistantModeEnabled,
+                            onCheckedChange = { assistantModeEnabled = it; saved = false },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = EmberOrange,
+                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = DeepBlack,
+                            ),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Doodle Overlay / Lasso", color = SoftWhite, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                            Text("Draw or circle regions to trigger search/automation", style = MaterialTheme.typography.bodySmall, color = MutedGray)
+                        }
+                        Switch(
+                            checked = doodleOverlayEnabled,
+                            onCheckedChange = { doodleOverlayEnabled = it; saved = false },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = EmberOrange,
+                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = DeepBlack,
+                            ),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Screen Context Reading", color = SoftWhite, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                            Text("Extract visible layout texts and content descriptions", style = MaterialTheme.typography.bodySmall, color = MutedGray)
+                        }
+                        Switch(
+                            checked = screenContextEnabled,
+                            onCheckedChange = { screenContextEnabled = it; saved = false },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = EmberOrange,
+                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = DeepBlack,
+                            ),
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Save screenshots to history", color = SoftWhite, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                            Text("Persist session layout images to local storage history", style = MaterialTheme.typography.bodySmall, color = MutedGray)
+                        }
+                        Switch(
+                            checked = saveScreenshotsToHistory,
+                            onCheckedChange = { saveScreenshotsToHistory = it; saved = false },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = EmberOrange,
+                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = DeepBlack,
+                            ),
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

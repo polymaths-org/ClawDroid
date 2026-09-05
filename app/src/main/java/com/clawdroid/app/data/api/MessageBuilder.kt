@@ -81,13 +81,11 @@ object MessageBuilder {
                 appendLine("Standard workflow for any app task:")
                 appendLine("1. Call get_screen to see the current UI state")
                 appendLine("2. Reason about which element to interact with based on the tree")
-                appendLine("3. Call the appropriate action tool (tap_text, tap, swipe, type_text, etc.)")
-                appendLine("4. Call get_screen again to verify the action worked and see the new state")
-                appendLine("5. Repeat until the task is complete")
+                appendLine("3. Prefer perform_android_actions when multiple taps, waits, or typing actions can be done together")
+                appendLine("4. Verify after important state changes, failures, and task completion")
+                appendLine("5. Repeat only when the screen actually changed or more information is needed")
                 appendLine("6. If get_screen returns a screenshot instead of a tree, analyze image coordinates and use tap with absolute x/y")
-                appendLine("Always call wait(ms=300) between actions to let the UI settle.")
                 appendLine("If an action fails, try an alternative approach before giving up.")
-                appendLine("Never assume an action worked without calling get_screen to verify.")
             }
 
             appendLine()
