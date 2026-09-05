@@ -39,6 +39,13 @@ object BootstrapManager {
 
         val bash = File(env.prefix, "bin/bash")
         if (bash.exists()) {
+            if (!bash.canExecute()) {
+                Log.w(TAG, "bash exists but not executable — reapplying permissions")
+                applyPermissions(env.prefix)
+                if (!bash.canExecute()) {
+                    error("bash at ${bash.absolutePath} still not executable after permission fix")
+                }
+            }
             return@withContext BootstrapResult(
                 prefixDir = env.prefix.absolutePath,
                 homeDir = env.home.absolutePath,
@@ -301,12 +308,16 @@ object BootstrapManager {
         prefix.walkTopDown().forEach { file ->
             runCatching {
                 if (file.isDirectory) {
-                    Os.chmod(file.absolutePath, 0b111_000_000)
+                    file.setExecutable(true, true)
+                    file.setReadable(true, true)
+                    file.setWritable(true, true)
                 } else {
-                    Os.chmod(file.absolutePath, 0b111_000_000)
+                    file.setExecutable(true, true)
+                    file.setReadable(true, true)
+                    file.setWritable(true, true)
                 }
             }.onFailure {
-                Log.w(TAG, "Unable to chmod ${file.absolutePath}", it)
+                Log.w(TAG, "Unable to set permissions on ${file.absolutePath}", it)
             }
         }
     }

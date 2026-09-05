@@ -140,6 +140,64 @@ private val LiquidGlassDarkColors = darkColorScheme(
     error = Color(0xFFFF453A),
 )
 
+private val CyberpunkColors = darkColorScheme(
+    primary = Color(0xFF18E6FF),
+    onPrimary = Color(0xFF001F27),
+    primaryContainer = Color(0xFF083B4D),
+    onPrimaryContainer = Color(0xFFD6FAFF),
+    secondary = Color(0xFFFF4FDB),
+    onSecondary = Color(0xFF3D0031),
+    secondaryContainer = Color(0xFF5D174F),
+    onSecondaryContainer = Color(0xFFFFD7F5),
+    tertiary = Color(0xFFFFD166),
+    onTertiary = Color(0xFF2F2300),
+    tertiaryContainer = Color(0xFF4C3A08),
+    onTertiaryContainer = Color(0xFFFFE8A6),
+    background = Color(0xFF04010A),
+    onBackground = Color(0xFFF9F4FF),
+    surface = Color(0xFF090512),
+    onSurface = Color(0xFFF9F4FF),
+    surfaceVariant = Color(0xFF211228),
+    onSurfaceVariant = Color(0xFFDCCEE5),
+    surfaceContainerLowest = Color(0xFF020005),
+    surfaceContainerLow = Color(0xFF0B0613),
+    surfaceContainer = Color(0xFF120A1D),
+    surfaceContainerHigh = Color(0xFF1C1028),
+    surfaceContainerHighest = Color(0xFF271536),
+    outline = Color(0xFFB389C0),
+    outlineVariant = Color(0xFF553164),
+    error = Color(0xFFFF5C7A),
+)
+
+private val JarvisColors = darkColorScheme(
+    primary = Color(0xFF23E7FF),
+    onPrimary = Color(0xFF00262D),
+    primaryContainer = Color(0xFF063F4A),
+    onPrimaryContainer = Color(0xFFCCFAFF),
+    secondary = Color(0xFF8BD7E6),
+    onSecondary = Color(0xFF08262C),
+    secondaryContainer = Color(0xFF173D46),
+    onSecondaryContainer = Color(0xFFD8F7FF),
+    tertiary = Color(0xFFFFC857),
+    onTertiary = Color(0xFF302300),
+    tertiaryContainer = Color(0xFF493700),
+    onTertiaryContainer = Color(0xFFFFE6A3),
+    background = Color(0xFF01080B),
+    onBackground = Color(0xFFE8FBFF),
+    surface = Color(0xFF041015),
+    onSurface = Color(0xFFE8FBFF),
+    surfaceVariant = Color(0xFF12272E),
+    onSurfaceVariant = Color(0xFFC7E7EF),
+    surfaceContainerLowest = Color(0xFF000405),
+    surfaceContainerLow = Color(0xFF061419),
+    surfaceContainer = Color(0xFF0A1C22),
+    surfaceContainerHigh = Color(0xFF102830),
+    surfaceContainerHighest = Color(0xFF17343D),
+    outline = Color(0xFF7BB8C3),
+    outlineVariant = Color(0xFF25525C),
+    error = Color(0xFFFFB4AB),
+)
+
 @Composable
 fun ClawDroidTheme(
     content: @Composable () -> Unit,
@@ -150,6 +208,8 @@ fun ClawDroidTheme(
         "minimalist" -> MinimalistColors
         "liquid_glass_light" -> LiquidGlassLightColors
         "liquid_glass_dark" -> LiquidGlassDarkColors
+        "cyberpunk" -> CyberpunkColors
+        "jarvis" -> JarvisColors
         else -> ObsidianAstraColors
     }
 

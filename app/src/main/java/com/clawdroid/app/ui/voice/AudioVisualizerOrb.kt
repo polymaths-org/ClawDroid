@@ -8,21 +8,14 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
-import com.clawdroid.app.ui.theme.ActivePurple
-import com.clawdroid.app.ui.theme.ElectricBlue
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.NeonBlue
-import com.clawdroid.app.ui.theme.NeonCyan
-import com.clawdroid.app.ui.theme.UserVoiceBlue
-import com.clawdroid.app.ui.theme.UserVoiceCyan
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -40,9 +33,13 @@ fun AudioVisualizerOrb(
     amplitude: Float,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val primary = colors.primary
+    val secondary = colors.secondary
+    val tertiary = colors.tertiary
+
     val transition = rememberInfiniteTransition(label = "orb_3d")
 
-    // ── Core Animations ──
     val pulse by transition.animateFloat(
         initialValue = 0.82f,
         targetValue = 1.08f,
@@ -83,7 +80,6 @@ fun AudioVisualizerOrb(
         label = "orb_ripple",
     )
 
-    // Slow breathing halo
     val breathe by transition.animateFloat(
         initialValue = 0.85f,
         targetValue = 1.15f,
@@ -94,7 +90,6 @@ fun AudioVisualizerOrb(
         label = "orb_breathe",
     )
 
-    // Tertiary orbit for depth layers
     val rotTertiary by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -105,12 +100,11 @@ fun AudioVisualizerOrb(
         label = "orb_rot_3",
     )
 
-    // ── Color assignments based on state ──
     val (colorA, colorB) = when (state) {
-        OrbState.Idle -> NeonBlue.copy(alpha = 0.4f) to NeonCyan.copy(alpha = 0.2f)
-        OrbState.Listening -> UserVoiceCyan to UserVoiceBlue
-        OrbState.Thinking -> ElectricBlue to ActivePurple
-        OrbState.Speaking -> ActivePurple to Color(0xFFE0AAFF)
+        OrbState.Idle -> primary.copy(alpha = 0.4f) to secondary.copy(alpha = 0.2f)
+        OrbState.Listening -> primary to tertiary
+        OrbState.Thinking -> tertiary to secondary
+        OrbState.Speaking -> secondary to tertiary.copy(alpha = 0.7f)
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {
@@ -119,8 +113,6 @@ fun AudioVisualizerOrb(
         val audioScale = 1.0f + amplitude * 0.35f
         val baseRadius = minOf(cx, cy) * 0.42f * pulse * audioScale
 
-        // ── 1. Deep Space Breathing Halo ──
-        val haloRadius = baseRadius * 2.8f * breathe
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -129,13 +121,12 @@ fun AudioVisualizerOrb(
                     Color.Transparent
                 ),
                 center = Offset(cx, cy),
-                radius = haloRadius,
+                radius = baseRadius * 2.8f * breathe,
             ),
-            radius = haloRadius,
+            radius = baseRadius * 2.8f * breathe,
             center = Offset(cx, cy),
         )
 
-        // ── 2. Ambient Glow Field ──
         val glowRadius = baseRadius * (2.0f + amplitude * 0.5f)
         drawCircle(
             brush = Brush.radialGradient(
@@ -151,7 +142,6 @@ fun AudioVisualizerOrb(
             center = Offset(cx, cy),
         )
 
-        // ── 3. Expanding Ripple Waves (2 staggered) ──
         if (state != OrbState.Idle) {
             for (i in 0..1) {
                 val phase = (ripple + i * 0.5f) % 1f
@@ -169,7 +159,6 @@ fun AudioVisualizerOrb(
             }
         }
 
-        // ── 4. Outer Sweep Ring (Clockwise) ──
         rotate(rotCW, pivot = Offset(cx, cy)) {
             drawCircle(
                 brush = Brush.sweepGradient(
@@ -186,7 +175,6 @@ fun AudioVisualizerOrb(
             )
         }
 
-        // ── 5. Inner Sweep Ring (Counter-Clockwise) ──
         rotate(rotCCW, pivot = Offset(cx, cy)) {
             drawCircle(
                 brush = Brush.sweepGradient(
@@ -204,8 +192,6 @@ fun AudioVisualizerOrb(
             )
         }
 
-        // ── 6. Core Sphere with Gradient Depth ──
-        // Bottom shadow for 3D depth
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -220,7 +206,6 @@ fun AudioVisualizerOrb(
             alpha = 0.5f,
         )
 
-        // Main sphere body
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -238,7 +223,6 @@ fun AudioVisualizerOrb(
             alpha = 0.90f,
         )
 
-        // ── 7. 3D Specular Highlight (Top-Left Spot) ──
         val specRadius = baseRadius * 0.35f
         val specCx = cx - baseRadius * 0.28f
         val specCy = cy - baseRadius * 0.30f
@@ -256,7 +240,6 @@ fun AudioVisualizerOrb(
             center = Offset(specCx, specCy),
         )
 
-        // Secondary specular (smaller, sharper)
         val spec2R = baseRadius * 0.12f
         drawCircle(
             brush = Brush.radialGradient(
@@ -271,7 +254,6 @@ fun AudioVisualizerOrb(
             center = Offset(specCx + spec2R * 0.5f, specCy + spec2R * 0.5f),
         )
 
-        // ── 8. Dual-Orbit Particle Rings ──
         val baseParticleAmp = when (state) {
             OrbState.Idle -> 2f
             OrbState.Listening -> 8f + sin(ripple * PI.toFloat() * 4) * 4f
@@ -280,7 +262,6 @@ fun AudioVisualizerOrb(
         }
         val particleAmp = baseParticleAmp + amplitude * 30f
 
-        // Inner Ring (CW, tight orbit)
         val innerCount = 28
         for (i in 0 until innerCount) {
             val angle = (i / innerCount.toFloat()) * 360f + rotCW * 0.6f
@@ -297,7 +278,6 @@ fun AudioVisualizerOrb(
             )
         }
 
-        // Mid Ring (CCW, medium orbit)
         val midCount = 22
         for (i in 0 until midCount) {
             val angle = (i / midCount.toFloat()) * 360f + rotCCW * 0.4f + 30f
@@ -314,7 +294,6 @@ fun AudioVisualizerOrb(
             )
         }
 
-        // Outer Ring (Tertiary orbit, wide)
         val outerCount = 32
         for (i in 0 until outerCount) {
             val angle = (i / outerCount.toFloat()) * 360f + rotTertiary * 0.35f + 60f
@@ -331,7 +310,6 @@ fun AudioVisualizerOrb(
             )
         }
 
-        // ── 9. Rim Light (Bottom-Right Edge Glow) ──
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -345,7 +323,6 @@ fun AudioVisualizerOrb(
             center = Offset(cx + baseRadius * 0.35f, cy + baseRadius * 0.35f),
         )
 
-        // ── 10. Volumetric Inner Core Highlight (active states only) ──
         if (state != OrbState.Idle) {
             drawCircle(
                 brush = Brush.radialGradient(

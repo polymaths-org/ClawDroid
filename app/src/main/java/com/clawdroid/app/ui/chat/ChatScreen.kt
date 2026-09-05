@@ -35,9 +35,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,13 +51,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -77,8 +85,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
@@ -96,7 +102,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -130,7 +135,6 @@ import com.clawdroid.app.core.assistant.AssistantMode
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
 import com.clawdroid.app.core.assistant.overlay.OverlayWindowService
 import com.clawdroid.app.core.config.AppConfigManager
-import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
@@ -141,25 +145,20 @@ import com.clawdroid.app.data.api.INTERNAL_USER_PROMPT_PREFIX
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
-import com.clawdroid.app.data.db.ToolCallEntity
-import com.clawdroid.app.ui.components.BlueGradientHorizontal
+import com.clawdroid.app.ui.components.ClawInputPanel
+import com.clawdroid.app.ui.components.ClawPanel
+import com.clawdroid.app.ui.components.ClawSkin
+import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.CustomProcessingLoader
 import com.clawdroid.app.ui.components.PiperDownloadDialog
 import com.clawdroid.app.ui.components.StaggeredWordsText
+import com.clawdroid.app.ui.components.currentClawSkin
+import com.clawdroid.app.ui.components.isHud
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
-import com.clawdroid.app.ui.theme.CardDark
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.EmberOrange
-import com.clawdroid.app.ui.theme.FireRed
-import com.clawdroid.app.ui.theme.GlassBorderDim
-import com.clawdroid.app.ui.theme.GlassFill
-import com.clawdroid.app.ui.theme.GlassFillMedium
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.SoftWhite
+import com.clawdroid.app.ui.voice.AudioVisualizerOrb
 import com.clawdroid.app.ui.voice.OrbState
 import com.clawdroid.app.ui.voice.VoiceOverlay
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -839,13 +838,15 @@ fun ChatScreen(
             }
     }
 
+    val skin = currentClawSkin()
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
                 modifier = Modifier.width(280.dp),
-                drawerContainerColor = DeepBlack.copy(alpha = 0.95f),
-                drawerContentColor = SoftWhite,
+                drawerContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                drawerContentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 SidebarContent(
                     activeConversationId = currentConversationId,
@@ -913,58 +914,83 @@ fun ChatScreen(
             }
         },
     ) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Menu,
-                                contentDescription = "Open navigation",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = ::startVoiceSession,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Call,
-                                contentDescription = "Voice Call",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                )
-            },
-            modifier = modifier,
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(top = paddingValues.calculateTopPadding()),
-            ) {
+        ClawSkinBackground {
+            Scaffold(
+                containerColor = Color.Transparent,
+                topBar = {
+                    val topShape = RoundedCornerShape(if (skin.isHud()) 8.dp else 0.dp)
+                    TopAppBar(
+                        modifier = if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
+                            Modifier
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .clip(topShape)
+                        } else {
+                            Modifier
+                        },
+                        title = {
+                            Column {
+                                Text(
+                                    text = if (isCallModeActive || voiceSpeaking) AppConfigManager.agentName else "ClawDroid",
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.sp,
+                                    ),
+                                )
+                                if (skin == ClawSkin.Jarvis) {
+                                    Text(
+                                        text = "AI ASSISTANT SYSTEM",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.sp,
+                                        ),
+                                    )
+                                }
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Menu,
+                                    contentDescription = "Open navigation",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = ::startVoiceSession,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .size(44.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), CircleShape)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Call,
+                                    contentDescription = "Voice Call",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = when {
+                                skin.isHud() -> MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.74f)
+                                skin == ClawSkin.LiquidGlass -> MaterialTheme.colorScheme.surface.copy(alpha = 0.52f)
+                                else -> MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                            },
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    )
+                },
+                modifier = modifier,
+            ) { paddingValues ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = paddingValues.calculateTopPadding()),
+                ) {
                 if (displayItems.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -1167,15 +1193,25 @@ fun ChatScreen(
         }
     }
 }
+}
 
 @Composable
 private fun EmptyGreeting(modifier: Modifier = Modifier) {
     val name = AppConfigManager.ownerName.trim().ifBlank { "there" }
+    val skin = currentClawSkin()
     Column(
         modifier = modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
+            AudioVisualizerOrb(
+                state = OrbState.Idle,
+                amplitude = 0f,
+                modifier = Modifier.size(if (skin == ClawSkin.LiquidGlass) 112.dp else 128.dp),
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+        }
         StaggeredWordsText(
             text = "Hello $name,",
             color = MaterialTheme.colorScheme.onSurface,
@@ -1204,73 +1240,70 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
 
 @Composable
 private fun UserMessageBubble(item: UserChatItem) {
-    val shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val skin = currentClawSkin()
     val context = LocalContext.current
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Column(
+        ClawPanel(
             modifier = Modifier
-                .fillMaxWidth(0.82f)
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.70f), shape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), shape)
-                .padding(14.dp, 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxWidth(0.84f),
+            cornerRadius = if (skin.isHud()) 14.dp else 22.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+            emphasis = 0.45f,
         ) {
-            if (item.mediaPath != null && item.mediaMimeType != null) {
-                val mediaFile = java.io.File(item.mediaPath)
-                if (mediaFile.exists() && mediaFile.isFile) {
-                    val isImage = item.mediaMimeType.startsWith("image/")
-                    val uri = Uri.fromFile(mediaFile)
-                    val bitmap = rememberBitmapFromUri(context, uri)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (item.mediaPath != null && item.mediaMimeType != null) {
+                    val mediaFile = java.io.File(item.mediaPath)
+                    if (mediaFile.exists() && mediaFile.isFile) {
+                        val isImage = item.mediaMimeType.startsWith("image/")
+                        val uri = Uri.fromFile(mediaFile)
+                        val bitmap = rememberBitmapFromUri(context, uri)
 
-                    if (isImage && bitmap != null) {
-                        androidx.compose.foundation.Image(
-                            bitmap = bitmap,
-                            contentDescription = "User attachment",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = when {
-                                    item.mediaMimeType.startsWith("video/") -> "🎥"
-                                    item.mediaMimeType.startsWith("audio/") -> "🎵"
-                                    item.mediaMimeType.startsWith("text/") -> "📄"
-                                    else -> "📁"
-                                },
-                                fontSize = 20.sp
+                        if (isImage && bitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = bitmap,
+                                contentDescription = "User attachment",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                                    .clip(RoundedCornerShape(12.dp))
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = mediaFile.name,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = mediaIconForMime(item.mediaMimeType),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = mediaFile.name,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
-            }
-            if (item.text.isNotBlank()) {
-                Text(
-                    text = item.text,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                if (item.text.isNotBlank()) {
+                    Text(
+                        text = item.text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp),
+                    )
+                }
             }
         }
     }
@@ -1284,6 +1317,7 @@ private fun AgentMessageCard(
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
 ) {
+    val skin = currentClawSkin()
     val alpha = remember(item.id) { Animatable(0f) }
     val offsetY = remember(item.id) { Animatable(12f) }
     LaunchedEffect(item.id) {
@@ -1301,14 +1335,29 @@ private fun AgentMessageCard(
         if (item.text.isBlank() && item.streaming) {
             CustomProcessingLoader()
         } else if (item.text.isNotBlank()) {
-            MarkdownText(
-                markdown = item.text,
-                modifier = Modifier.graphicsLayer {
-                    this.alpha = alpha.value
-                    translationY = offsetY.value
-                },
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            val contentModifier = Modifier.graphicsLayer {
+                this.alpha = alpha.value
+                translationY = offsetY.value
+            }
+            if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
+                ClawPanel(
+                    modifier = contentModifier.fillMaxWidth(),
+                    cornerRadius = if (skin.isHud()) 12.dp else 20.dp,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    emphasis = 0.15f,
+                ) {
+                    MarkdownText(
+                        markdown = item.text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            } else {
+                MarkdownText(
+                    markdown = item.text,
+                    modifier = contentModifier,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
 
         if (showActionRow && !item.streaming && item.text.isNotBlank()) {
@@ -1352,6 +1401,7 @@ private fun InlineActivityTrail(
     steps: List<ActivityStepItem>,
     running: Boolean,
 ) {
+    val skin = currentClawSkin()
     var expanded by remember(running, steps.size) { mutableStateOf(running) }
     val commandCount = steps.count { it.type == ActivityStepType.Command }
     val latest = steps.lastOrNull()
@@ -1363,17 +1413,15 @@ private fun InlineActivityTrail(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(
+        ClawPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded },
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+            cornerRadius = if (skin.isHud()) 10.dp else 14.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+            emphasis = if (running) 0.35f else 0.10f,
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -1397,14 +1445,12 @@ private fun InlineActivityTrail(
         }
 
         AnimatedVisibility(visible = expanded && steps.isNotEmpty()) {
-            Surface(
+            ClawPanel(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.85f)),
+                cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     steps.takeLast(4).forEach { step -> InlineActivityStep(step) }
                 }
             }
@@ -1414,115 +1460,126 @@ private fun InlineActivityTrail(
 
 @Composable
 private fun InlineActivityStep(step: ActivityStepItem) {
+    val skin = currentClawSkin()
     var expanded by remember(step.running) { mutableStateOf(step.running) }
-    Column(
+    ClawPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { expanded = !expanded }
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .clickable { expanded = !expanded },
+        cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 11.dp),
+        emphasis = if (step.running) 0.30f else 0f,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = step.type.icon, style = MaterialTheme.typography.labelLarge)
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = formatDiffDisplayText("${step.summary}${if (step.running) "…" else ""}"),
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            )
-            if (step.isError) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "❌",
-                    style = MaterialTheme.typography.labelLarge
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = iconForActivityStep(step.type),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
                 )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = formatDiffDisplayText("${step.summary}${if (step.running) "..." else ""}"),
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
+                )
+                if (step.isError) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Failed",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val parsed = formatStepContent(step)
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val parsed = formatStepContent(step)
 
-                if (parsed.copyText != null || parsed.displayText.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            if (parsed.title.isNotEmpty()) {
+                    if (parsed.copyText != null || parsed.displayText.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                if (parsed.title.isNotEmpty()) {
+                                    Text(
+                                        text = parsed.title,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                }
                                 Text(
-                                    text = parsed.title,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    text = formatDiffDisplayText(parsed.displayText),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.sp,
+                                        letterSpacing = 0.sp,
+                                    ),
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                             }
-                            Text(
-                                text = formatDiffDisplayText(parsed.displayText),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp
-                                ),
-                                maxLines = 2,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                        if (parsed.copyText != null) {
-                            val clipboardManager = LocalClipboardManager.current
-                            val context = LocalContext.current
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(parsed.copyText))
-                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ContentCopy,
-                                    contentDescription = "Copy text",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                            if (parsed.copyText != null) {
+                                val clipboardManager = LocalClipboardManager.current
+                                val context = LocalContext.current
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(parsed.copyText))
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = "Copy text",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (parsed.outputText.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .verticalScroll(rememberScrollState())
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerLowest,
-                                shape = RoundedCornerShape(6.dp)
+                    if (parsed.outputText.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .verticalScroll(rememberScrollState())
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.88f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = formatDiffOutputText(parsed.outputText),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    letterSpacing = 0.sp,
+                                )
                             )
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = formatDiffOutputText(parsed.outputText),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
-                            )
-                        )
+                        }
                     }
                 }
             }
@@ -1543,6 +1600,7 @@ private fun PremiumInputBar(
     onMediaSelected: (Uri?, String?, String?) -> Unit,
 ) {
     var commandMenuVisible by remember { mutableStateOf(false) }
+    val skin = currentClawSkin()
     val context = LocalContext.current
     val attachmentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -1571,25 +1629,9 @@ private fun PremiumInputBar(
             )
         }
 
-        Surface(
+        ClawInputPanel(
             modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
-                        ),
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                ),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp,
-            shadowElevation = 8.dp,
+                .fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 if (selectedMediaUri != null) {
@@ -1680,25 +1722,24 @@ private fun PremiumInputBar(
                     } else {
                         Surface(
                             onClick = onSubmit,
-                            modifier = Modifier.size(42.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.Send,
-                                contentDescription = "Send",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            modifier = Modifier.size(if (skin.isHud()) 44.dp else 42.dp),
+                            shape = if (skin.isHud()) RoundedCornerShape(10.dp) else CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                                    contentDescription = "Send",
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
-
 }
 
 @Composable
@@ -1775,6 +1816,8 @@ private fun MessageActionRow(
 ) {
     var isLiked by remember { mutableStateOf(false) }
     var isDisliked by remember { mutableStateOf(false) }
+    val activeTint = MaterialTheme.colorScheme.primary
+    val inactiveTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
 
     Row(
         modifier = Modifier
@@ -1793,7 +1836,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ThumbUp,
                 contentDescription = "Thumbs Up",
-                tint = if (isLiked) EmberOrange else MutedGray.copy(alpha = 0.8f),
+                tint = if (isLiked) activeTint else inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1808,7 +1851,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ThumbDown,
                 contentDescription = "Thumbs Down",
-                tint = if (isDisliked) EmberOrange else MutedGray.copy(alpha = 0.8f),
+                tint = if (isDisliked) activeTint else inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1820,7 +1863,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.Refresh,
                 contentDescription = "Regenerate",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1832,7 +1875,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.ContentCopy,
                 contentDescription = "Copy text",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1844,7 +1887,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.VolumeUp,
                 contentDescription = "Read aloud",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1856,7 +1899,7 @@ private fun MessageActionRow(
             Icon(
                 imageVector = Icons.Rounded.Share,
                 contentDescription = "Share",
-                tint = MutedGray.copy(alpha = 0.8f),
+                tint = inactiveTint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1871,35 +1914,34 @@ private fun FilePreviewStrip(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         previews.forEach { preview ->
             val name = preview.path.substringAfterLast('/')
-            val icon = when (preview.previewType) {
-                FilePreviewType.Html -> "🌐"
-                FilePreviewType.Svg -> "🎨"
-                FilePreviewType.Image -> "🖼"
-                FilePreviewType.Text -> "📄"
-            }
             val shape = RoundedCornerShape(12.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
-                    .background(GlassFill, shape)
-                    .border(1.dp, GlassBorderDim, shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), shape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), shape)
                     .clickable { onPreview(preview) }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(icon, fontSize = 18.sp)
+                    Icon(
+                        imageVector = iconForPreviewType(preview.previewType),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = name,
-                        color = SoftWhite,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "Preview →",
-                        color = EmberOrange,
+                        text = "Preview",
+                        color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
@@ -1921,13 +1963,12 @@ private fun FilePreviewDialog(
             dismissOnClickOutside = false,
         ),
     ) {
-        Box(
+        ClawPanel(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(20.dp))
-                .background(DeepBlack, RoundedCornerShape(20.dp))
-                .border(1.dp, GlassBorderDim, RoundedCornerShape(20.dp)),
+                .fillMaxHeight(0.85f),
+            cornerRadius = 20.dp,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
@@ -1939,7 +1980,7 @@ private fun FilePreviewDialog(
                 ) {
                     Text(
                         text = preview.path.substringAfterLast('/'),
-                        color = SoftWhite,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleSmall,
                     )
@@ -1947,7 +1988,7 @@ private fun FilePreviewDialog(
                         Icon(
                             Icons.Rounded.Close,
                             contentDescription = "Close preview",
-                            tint = MutedGray,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -1997,7 +2038,7 @@ private fun FilePreviewDialog(
                         FilePreviewType.Text -> {
                             Text(
                                 text = preview.content,
-                                color = MutedGray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier
@@ -2088,6 +2129,30 @@ private fun String.toActivityStepType(): ActivityStepType = when (this) {
     "send_notification" -> ActivityStepType.Service
     "start_process", "check_process", "send_input", "kill_process", "list_processes", "execute_command" -> ActivityStepType.Command
     else -> ActivityStepType.Service
+}
+
+private fun iconForActivityStep(type: ActivityStepType): ImageVector = when (type) {
+    ActivityStepType.Command -> Icons.Rounded.Terminal
+    ActivityStepType.File -> Icons.Rounded.Folder
+    ActivityStepType.Web -> Icons.Rounded.Language
+    ActivityStepType.Edit -> Icons.Rounded.EditNote
+    ActivityStepType.Package -> Icons.Rounded.Inventory2
+    ActivityStepType.Service -> Icons.Rounded.Cloud
+}
+
+private fun mediaIconForMime(mimeType: String): ImageVector = when {
+    mimeType.startsWith("image/") -> Icons.Rounded.Image
+    mimeType.startsWith("video/") -> Icons.Rounded.Movie
+    mimeType.startsWith("audio/") -> Icons.Rounded.Audiotrack
+    mimeType.startsWith("text/") -> Icons.Rounded.Description
+    else -> Icons.Rounded.Folder
+}
+
+private fun iconForPreviewType(type: FilePreviewType): ImageVector = when (type) {
+    FilePreviewType.Html -> Icons.Rounded.Language
+    FilePreviewType.Svg -> Icons.Rounded.EditNote
+    FilePreviewType.Image -> Icons.Rounded.Image
+    FilePreviewType.Text -> Icons.Rounded.Description
 }
 
 private fun String.readableToolName(): String = split('_')
@@ -2681,8 +2746,8 @@ private fun AttachmentPreviewRow(
             modifier = Modifier
                 .size(72.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), RoundedCornerShape(12.dp))
         ) {
             val isImage = mimeType?.startsWith("image/") == true
             val bitmap = rememberBitmapFromUri(context, uri)
@@ -2704,20 +2769,17 @@ private fun AttachmentPreviewRow(
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier.padding(4.dp)
                     ) {
-                        Text(
-                            text = when {
-                                mimeType?.startsWith("video/") == true -> "🎥"
-                                mimeType?.startsWith("audio/") == true -> "🎵"
-                                mimeType?.startsWith("text/") == true -> "📄"
-                                else -> "📁"
-                            },
-                            fontSize = 24.sp
+                        Icon(
+                            imageVector = mediaIconForMime(mimeType ?: ""),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = name,
                             style = MaterialTheme.typography.labelSmall,
-                            color = SoftWhite,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )

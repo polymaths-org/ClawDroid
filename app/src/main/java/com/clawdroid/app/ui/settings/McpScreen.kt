@@ -46,7 +46,10 @@ import org.json.JSONObject
 @Composable
 fun McpScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String = "MCP Settings",
+    showConnectors: Boolean = true,
+    showServers: Boolean = true,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -212,7 +215,7 @@ fun McpScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "MCP Settings",
+                        text = title,
                         style = MaterialTheme.typography.titleLarge.copy(
                             color = SoftWhite,
                             fontWeight = FontWeight.Bold,
@@ -249,17 +252,18 @@ fun McpScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // ── Connectors Title ──
-                item {
-                    Text(
-                        text = "Connectors",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            color = MutedGray,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                    )
-                }
+                if (showConnectors) {
+                    // ── Connectors Title ──
+                    item {
+                        Text(
+                            text = "Connectors",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                color = MutedGray,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
 
                 // Google Connector Card
                 item {
@@ -371,35 +375,50 @@ fun McpScreen(
                     )
                 }
 
-                // ── Subprocess Servers Title ──
-                item {
-                    Text(
-                        text = "Local Sandboxed Servers",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            color = MutedGray,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                    )
                 }
 
-                // MCP server lists
-                items(serversList.size) { index ->
-                    val server = serversList[index]
-                    McpServerCard(
-                        server = server,
-                        onToggle = { isEnabled ->
-                            val updatedConfig = updateServerConfig(mcpConfigStr, server.name, isEnabled)
-                            AppConfigManager.mcpServersConfig = updatedConfig
-                            mcpConfigStr = updatedConfig
-                        },
-                        onEdit = {
-                            activeConfigDialogServer = server
-                        },
-                        onViewLogs = {
-                            activeLogsServer = server.name
-                        }
-                    )
+                if (showServers) {
+                    // ── Subprocess Servers Title ──
+                    item {
+                        Text(
+                            text = "Local Sandboxed Servers",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                color = MutedGray,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    // MCP server lists
+                    items(serversList.size) { index ->
+                        val server = serversList[index]
+                        McpServerCard(
+                            server = server,
+                            onToggle = { isEnabled ->
+                                val updatedConfig = updateServerConfig(mcpConfigStr, server.name, isEnabled)
+                                AppConfigManager.mcpServersConfig = updatedConfig
+                                mcpConfigStr = updatedConfig
+                            },
+                            onEdit = {
+                                activeConfigDialogServer = server
+                            },
+                            onViewLogs = {
+                                activeLogsServer = server.name
+                            }
+                        )
+                    }
+
+                    // Add Custom Server button
+                    item {
+                        AddCustomServerCard(
+                            onAdd = { newServer ->
+                                val updatedConfig = addServerToConfig(mcpConfigStr, newServer)
+                                AppConfigManager.mcpServersConfig = updatedConfig
+                                mcpConfigStr = updatedConfig
+                            }
+                        )
+                    }
                 }
             }
 
@@ -1014,6 +1033,176 @@ data class McpServerItem(
     val args: List<String>,
     val env: Map<String, String>
 )
+
+@Composable
+private fun AddCustomServerCard(
+    onAdd: (McpServerItem) -> Unit,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    val shape = RoundedCornerShape(16.dp)
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+            .clickable { showDialog = true },
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = null,
+                tint = EmberOrange,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Add Custom MCP Server",
+                color = EmberOrange,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+            )
+        }
+    }
+
+    if (showDialog) {
+        var name by remember { mutableStateOf("") }
+        var cmd by remember { mutableStateOf("") }
+        var argsStr by remember { mutableStateOf("") }
+        var envKey by remember { mutableStateOf("") }
+        var envValue by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            containerColor = CardDark,
+            title = {
+                Text("Add Custom MCP Server", color = SoftWhite, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Server Name") },
+                        placeholder = { Text("e.g. my-custom-server", color = MutedGray.copy(alpha = 0.5f)) },
+                        colors = mcpDialogColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = cmd,
+                        onValueChange = { cmd = it },
+                        label = { Text("Command") },
+                        placeholder = { Text("e.g. npx, python, node", color = MutedGray.copy(alpha = 0.5f)) },
+                        colors = mcpDialogColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = argsStr,
+                        onValueChange = { argsStr = it },
+                        label = { Text("Arguments (space-separated)") },
+                        placeholder = { Text("e.g. -y @modelcontextprotocol/server-filesystem /path", color = MutedGray.copy(alpha = 0.5f)) },
+                        colors = mcpDialogColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    HorizontalDivider(color = GlassBorderDim)
+                    Text(
+                        "Environment Variables (optional)",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = envKey,
+                            onValueChange = { envKey = it },
+                            label = { Text("Key") },
+                            placeholder = { Text("e.g. API_KEY", color = MutedGray.copy(alpha = 0.5f)) },
+                            colors = mcpDialogColors(),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = envValue,
+                            onValueChange = { envValue = it },
+                            label = { Text("Value") },
+                            colors = mcpDialogColors(),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (name.isNotBlank() && cmd.isNotBlank()) {
+                            val args = argsStr.split(" ").filter { it.isNotBlank() }
+                            val env = mutableMapOf<String, String>()
+                            if (envKey.isNotBlank()) env[envKey.trim()] = envValue.trim()
+                            onAdd(
+                                McpServerItem(
+                                    name = name.trim().lowercase().replace(" ", "-"),
+                                    enabled = true,
+                                    command = cmd.trim(),
+                                    args = args,
+                                    env = env,
+                                )
+                            )
+                            showDialog = false
+                        }
+                    },
+                    enabled = name.isNotBlank() && cmd.isNotBlank(),
+                ) {
+                    Text("Add Server", color = EmberOrange, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Cancel", color = MutedGray)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun mcpDialogColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = EmberOrange,
+    unfocusedBorderColor = GlassBorderDim,
+    focusedLabelColor = EmberOrange,
+    unfocusedLabelColor = MutedGray,
+    focusedTextColor = SoftWhite,
+    unfocusedTextColor = SoftWhite,
+    cursorColor = EmberOrange,
+)
+
+private fun addServerToConfig(configJson: String, newServer: McpServerItem): String {
+    val root = runCatching { JSONObject(configJson) }.getOrDefault(JSONObject())
+    val mcp = root.optJSONObject("mcpServers") ?: JSONObject().also { root.put("mcpServers", it) }
+    val serverObj = JSONObject()
+    serverObj.put("enabled", newServer.enabled)
+    serverObj.put("command", newServer.command)
+    val argsArr = JSONArray()
+    newServer.args.forEach { argsArr.put(it) }
+    serverObj.put("args", argsArr)
+    if (newServer.env.isNotEmpty()) {
+        val envObj = JSONObject()
+        newServer.env.forEach { (k, v) -> envObj.put(k, v) }
+        serverObj.put("env", envObj)
+    }
+    mcp.put(newServer.name, serverObj)
+    return root.toString(2)
+}
 
 @Composable
 private fun GithubConnectorCard(
