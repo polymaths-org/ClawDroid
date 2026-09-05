@@ -23,29 +23,28 @@ object AppConfigManager {
 
     private val p: SharedPreferences get() = prefs!!
 
+    const val DEV_MODE = true
+    private const val DEV_API_KEY = "sk-pkuyklgbgcdqyezsehpvachsgyadwgghnplflashqjlysmwu"
+
     val baseUrl: String
         get() = p.getString(KEY_BASE_URL, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.LLM_BASE_URL.trimEnd('/')
-            .takeIf { it.isNotBlank() }
-            ?: "https://openrouter.ai/api/v1"
+            ?: if (DEV_MODE) "https://api.siliconflow.com/v1" else BuildConfig.LLM_BASE_URL.trimEnd('/').takeIf { it.isNotBlank() } ?: "https://openrouter.ai/api/v1"
 
     val apiKey: String
         get() = p.getString(KEY_API_KEY, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.LLM_API_KEY
+            ?: if (DEV_MODE) DEV_API_KEY else BuildConfig.LLM_API_KEY.takeIf { it.isNotBlank() } ?: ""
 
     val model: String
         get() = p.getString(KEY_MODEL, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.LLM_MODEL
-            .takeIf { it.isNotBlank() }
-            ?: "openai/gpt-4o"
+            ?: if (DEV_MODE) "moonshotai/Kimi-K2.6" else BuildConfig.LLM_MODEL.takeIf { it.isNotBlank() } ?: "openai/gpt-4o"
 
     val provider: String
         get() = p.getString(KEY_PROVIDER, null)
             ?.takeIf { it.isNotBlank() }
-            ?: "openrouter"
+            ?: if (DEV_MODE) "siliconflow" else "openrouter"
 
     val isConfigured: Boolean
         get() = apiKey.isNotBlank()
