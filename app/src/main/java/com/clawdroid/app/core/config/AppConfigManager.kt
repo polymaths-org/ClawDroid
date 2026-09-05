@@ -217,6 +217,22 @@ object AppConfigManager {
         get() = p.getBoolean("permissions_asked", false)
         set(value) = p.edit().putBoolean("permissions_asked", value).apply()
 
+    var assistantModeEnabled: Boolean
+        get() = p.getBoolean("assistant_mode_enabled", false)
+        set(value) = p.edit().putBoolean("assistant_mode_enabled", value).apply()
+
+    var doodleOverlayEnabled: Boolean
+        get() = p.getBoolean("doodle_overlay_enabled", false)
+        set(value) = p.edit().putBoolean("doodle_overlay_enabled", value).apply()
+
+    var screenContextEnabled: Boolean
+        get() = p.getBoolean("screen_context_enabled", false)
+        set(value) = p.edit().putBoolean("screen_context_enabled", value).apply()
+
+    var saveScreenshotsToHistory: Boolean
+        get() = p.getBoolean("save_screenshots_to_history", false)
+        set(value) = p.edit().putBoolean("save_screenshots_to_history", value).apply()
+
     // Google OAuth & MCP configurations
     const val KEY_GOOGLE_CLIENT_ID = "google_client_id"
     const val KEY_GOOGLE_CLIENT_SECRET = "google_client_secret"
