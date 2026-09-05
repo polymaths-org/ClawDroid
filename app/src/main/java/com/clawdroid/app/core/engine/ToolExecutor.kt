@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.engine
 
 import android.content.Context
+import com.clawdroid.app.core.tools.BrowseWebTool
 import com.clawdroid.app.core.tools.CheckProcessTool
 import com.clawdroid.app.core.tools.CommandTool
 import com.clawdroid.app.core.tools.EditFileTool
@@ -10,6 +11,7 @@ import com.clawdroid.app.core.tools.ListProcessesTool
 import com.clawdroid.app.core.tools.ReadFileTool
 import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
+import com.clawdroid.app.core.tools.WebSearchTool
 import com.clawdroid.app.core.tools.WriteFileTool
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
@@ -58,6 +60,8 @@ object ToolExecutor {
                 replace = args.getString("replace"),
             )
             "list_directory" -> ListDirectoryTool.execute(context, args.getString("path"))
+            "browse_web" -> BrowseWebTool.execute(args.getString("url"))
+            "web_search" -> WebSearchTool.execute(args.getString("query"))
             else -> error("Unsupported tool: ${call.name}")
         }.toString()
     }.fold(
