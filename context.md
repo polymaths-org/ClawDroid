@@ -1,112 +1,110 @@
 # ClawDroid — Project Context
 
-## What It Is
+ClawDroid is a native Android AI agent app built in Kotlin, Jetpack Compose, and Material 3. It gives the user a personal autonomous assistant that runs commands, browses the web, automates tasks, and integrates with services natively on their phone.
 
-A native Android AI agent with an embedded Linux terminal (Termux bootstrap), browser (WebView), and tool execution — all inside a sandboxed environment. The user sees everything the agent does via collapsible activity steps (Codex-style). Built in Kotlin + Jetpack Compose + Material 3.
+---
 
-## Build
+## 🚀 How to Build & Run
 
+### Prerequisites
+* **JDK**: Version 21 (e.g., OpenJDK 21)
+* **Android SDK**: installed and pointing to `~/.android-sdk` or configured in `local.properties` (platform android-36, build-tools 37.0.0)
+* **Connected Device**: Running Android 8.0+ (API 26+) with ADB enabled
+
+### Environment Configuration
+Ensure your environment variables are set before building:
 ```bash
 export ANDROID_HOME=~/.android-sdk
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-- JDK 21, SDK at `~/.android-sdk` (platform android-36, build-tools 37.0.0)
-- Gradle 8.14.3, AGP 8.13.2, Kotlin 2.2.21
-- minSdk = 26, targetSdk = 28 (W^X compat for binary execution), compileSdk = 36
+### Build Commands
+* **Compile Kotlin sources**:
+  ```bash
+  ./gradlew compileDebugKotlin
+  ```
+* **Build Debug APK**:
+  ```bash
+  ./gradlew assembleDebug
+  ```
+  The resulting APK is generated at: [app-debug.apk](file:///home/wraient/Projects/ClawDroid/app/build/outputs/apk/debug/app-debug.apk)
+* **Install to connected device/emulator**:
+  ```bash
+  ./gradlew installDebug
+  ```
 
-## Architecture (45 Kotlin files, 20 packages)
+---
 
-### Voice (`core/voice/` + `ui/voice/`)
-- **TtsEngine** (interface) — Pluggable TTS backends (state, isSpeaking, speak, stop, destroy)
-- **AndroidTtsEngine** — Android TTS with neural/male voice preference (pitch 0.75, rate 0.82)
-- **PiperEngine** — Downloads piper binary (Linux aarch64) + Ryan male voice model (~50MB ONNX) to sandbox. Runs on-device neural TTS via CLI, plays WAV via MediaPlayer. Falls back to AndroidTtsEngine if unavailable.
-- **VoiceManager** — Orchestrates TtsEngine selection: tries Piper first, falls back to AndroidTTS. Text processing (markdown stripping, natural breaks). `isSpeaking` + `agentVoiceAmplitude` StateFlows.
-- **SpeechRecognizerClient** — Android built-in SpeechRecognizer (offline, instant, no API key), `partialResult` + `userVoiceAmplitude` StateFlows from `onRmsChanged`
-- **ThinkingPhrases** — 15 filler phrases, no consecutive repeats
-- **AudioVisualizerOrb** — Canvas orb with 4 states (Idle/Listening/Thinking/Speaking), radial/sweep gradients, dual particle rings, amplitude-reactive
-- **VoiceOverlay** — Full-screen call-mode overlay with orb, live transcript, mute/end controls
+## 🏗️ Architecture & Component Overview
 
-### Agent Engine (`core/engine/`)
-- **AgentEngine** — Core loop: build messages → check steering → call LLM → execute tools → loop
-- **ToolExecutor** — 14 tools (execute_command, start_process, read_file, write_file, edit_file, browse_web, etc.)
-- **CompactionManager** — Context compaction at 80% token limit using cheaper model
-- **CostTracker** — Per-project and global cost limits
-- **LoopDetector** — Detects 3+ similar tool calls, injects steer message, hard cap at 10
-- **SteeringQueue** — Queues user messages mid-run, injects after current tool call
+ClawDroid consists of 45+ Kotlin files across 20+ packages. Here is the structure of the primary systems:
 
-### Terminal (`core/terminal/`)
-- **ProcessManager** — Non-blocking command execution via `script -q -c` (PTY), multiple concurrent processes
-- **ManagedProcess** — Per-process state machine (RUNNING/WAITING_FOR_INPUT/COMPLETED/FAILED/TIMED_OUT)
-- **OutputBuffer** — Ring buffer (500 lines), smart LLM truncation (first 5 + last 30)
-- **InputTranslator** — Special key encoding (`[ENTER]`, `[CTRL+C]`, `[UP]`, etc.)
-- **AnsiStripper** — Strips ANSI codes for LLM, preserves for UI
+### 1. Agent Engine (`core/engine/`)
+* **AgentEngine**: Runs the primary LLM orchestration loop. It gathers context, handles user steering, queries the OpenAI-compatible endpoint, receives tool calls, triggers parallel execution, and feeds results back to the LLM.
+* **ToolExecutor**: Routes LLM tool requests to native tool definitions (e.g. commands, filesystem, Google integration).
+* **CompactionManager**: Triggers context compaction at 80% token utilization, using a cheaper model turn to summarize the conversation so far, maintaining task status.
+* **LoopDetector**: Tracks and stops repeating or circular tool calls (max 3 identical retries, hard cap of 10).
+* **SteeringQueue**: Safely queues user messages sent mid-execution, appending them to the chat model's input context on the very next turn.
 
-### API (`data/api/`)
-- **LlmApiClient** — OpenAI-compatible streaming SSE client, configurable base URL/API key/model
-- **OpenRouterClient** — OpenRouter-specific headers/metrics
-- **DefensiveJsonParser** — Handles malformed JSON from LLM (trailing commas, unescaped quotes, etc.)
-- **RetryClient** — Exponential backoff (429/500/network errors)
-- **MessageBuilder** — Correct message ordering (tool results before steering)
-- **ToolSchemaRegistry** — 14 tool schemas, conditional loading
+### 2. Google OAuth & Native APIs (`core/service/` & `core/tools/`)
+* **GoogleAuthManager**: Handles native OAuth2 flows, exchanges authorization codes for tokens, caches tokens in memory, and handles secure refreshes using Keystore-encrypted refresh tokens.
+* **GoogleTools**: Native high-performance REST wrappers for Google Services (Gmail/Calendar) mapped to LLM tools:
+  * `gmail_list_messages` & `gmail_get_message`
+  * `gmail_send_message` & `gmail_create_draft`
+  * `calendar_list_events` & `calendar_create_event`
+* **Access Configuration & Security**:
+  * SharedPreferences support enabling/disabling the entire Google connector (`googleConnectorEnabled`), Gmail tools (`googleGmailEnabled`), and Calendar tools (`googleCalendarEnabled`).
+  * `ToolSchemaRegistry` checks these states and dynamically filters Gmail/Calendar schemas from the agent's active tool list. If a service is disabled or offline, its tools are completely hidden from the agent.
+  * `ToolExecutor` runs runtime validation checks on incoming tool calls, throwing errors if a client attempts to invoke disabled/disconnected tools.
+* **SMTP Header Formatting**: Standard SMTP email payloads are assembled with CRLF (`\r\n`) line endings. To prevent header folding (which causes `Invalid To header` rejections), raw email strings are concatenated directly, bypassing indentation stripping utilities like Kotlin's `trimIndent()`.
 
-### Tools (`core/tools/`)
-- **CommandTool** — execute_command with timeout → auto-promote to background
-- **ProcessTools** — start_process, check_process, send_input, kill_process, list_processes
-- **FileTools** — read_file, write_file, edit_file, list_directory
-- **WebTools** — browse_web, web_search
-- **NotificationTool** — send_notification
+### 3. Model Context Protocol (MCP) Support (`core/engine/`)
+* **McpClient**: Implements stdio JSON-RPC 2.0 communication to orchestrate external MCP servers running Node.js or Python packages inside the sandboxed Termux environment.
+* **McpServerLauncher**: Handles the lifecycle (auto-start, configure, and shutdown) of background MCP subprocesses (e.g., Filesystem, GitHub, Fetch).
 
-### UI (`ui/`)
-- **ChatScreen** — LazyColumn chat + collapsible activity steps + InlineActivityTrail
-- **SidebarContent** — Drawer with Projects/Chats/Settings/Quick Actions
-- **SettingsScreen** — Base URL, masked API key (show/hide), model field, save
+### 4. Sandbox Terminal (`core/terminal/`)
+* **ProcessManager**: Non-blocking command execution runner using a pseudoterminal (`script -q -c`) to manage multiple concurrent Linux terminal sessions.
+* **ManagedProcess**: Thread-safe state machine representing process states (`RUNNING`, `WAITING_FOR_INPUT`, `COMPLETED`, etc.).
+* **OutputBuffer**: Ring buffer preserving terminal stdout/stderr logs (up to 500 lines) with smart truncation for LLM consumption.
+* **InputTranslator**: Translates LLM virtual key codes (e.g., `[ENTER]`, `[CTRL+C]`, arrow keys) into raw terminal characters.
 
-### Other
-- **BootstrapManager** — Downloads Termux bootstrap (~80MB), extracts Linux environment
-- **AppConfigManager** — SharedPreferences for API credentials (fallback to BuildConfig, then hardcoded defaults)
-- **AutomationScheduler** — Cron-like scheduler via WorkManager
-- **ClawDroidDatabase** — Room DB (conversations, projects, automations)
+### 5. Voice Chat (`core/voice/` & `ui/voice/`)
+* **SpeechRecognizerClient**: Configures Android's offline `SpeechRecognizer` for low-latency, zero-cost, privacy-safe voice-to-text.
+* **TtsEngine / PiperEngine**: Custom neural TTS client that runs Piper (ONNX) locally in the Linux environment with fallback to standard `AndroidTtsEngine`.
+* **VoiceManager**: Handles speech state, markdown removal, filler phrase insertion, and controls the audio visualizer.
+* **AudioVisualizerOrb**: Implements an interactive Compose visualizer canvas (particle rings, gradients) reacting to microphone and speech amplitudes.
 
-## Key Decisions
+### 6. User Interface (`ui/`)
+* **ChatScreen**: Standard conversation view with collapsible/expandable nested activity steps displaying terminal commands, web visits, and tool results.
+* **McpScreen**: A premium, card-based dashboard for MCP settings, displaying connection statuses, server switches, JSON configuration editors, and an inline bottom sheet for live logs.
+* **SidebarContent**: Telegram-style drawer showing Projects (grouped chats sharing a sandboxed sandbox folder), Chats, Settings, and Actions.
 
-| Decision | Choice |
-|----------|--------|
-| AI Provider | OpenAI-compatible endpoint (OpenAI, Groq, Together, Ollama) |
-| STT | Android built-in SpeechRecognizer (no API key, offline) |
-| TTS | Android TextToSpeech (open source AOSP) with male voice preference |
-| Sandbox | Termux bootstrap + `sharedUserId=com.termux` |
-| PTY | `script -q -c` (zero native code) |
-| Storage | SharedPreferences for config, Room DB for data |
-| API key | Reused for both LLM and Whisper (when Whisper was used) |
-| Architecture | MVVM, single-activity, Navigation Compose, Hilt-less (manual DI) |
+---
 
-## What's Working
+## 🗄️ Database Schema & Room Entities
 
-- Voice chat: SpeechRecognizer STT → AgentEngine → TTS response with thinking phrases
-- Collapsible activity steps (3 levels: group → individual step → full output)
-- Sidebar navigation with Projects/Chats
-- Settings screen for API key configuration
-- Agent engine loop with tool execution
-- Terminal process management (PTY, input, output buffering)
+Database files are managed via Room in `ClawDroidDatabase.kt`. Key tables include:
+1. `conversations`: ID, project connection, titles, status, and cost.
+2. `messages`: ID, parent conversation (Foreign Key with `ON DELETE CASCADE`), role, content, timestamp, token count, and attachment metadata.
+3. `tool_calls`: ID, parent message, tool name, arguments, outputs, execution status, and execution duration.
+4. `projects`: Sandbox settings, root paths, and metadata.
 
-## What's Not Implemented (Post-MVP)
+---
 
-- Voice input / camera (post-MVP)
-- Connected Services / OAuth
-- Native Anthropic / Google API clients (use OpenAI-compatible)
-- Local LLM inference
-- Multi-user / cloud sync
-- End-to-end encryption
-- Widgets
-- EncryptedSharedPreferences (currently plain SharedPreferences)
+## ⚠️ Key Bug Fixes to Remember
 
-## Remaining Warning
+### 1. SMTP Header folding Rejection
+* **Issue**: Sending multi-line emails resulted in `POST Error 400: Invalid To header`.
+* **Cause**: Kotlin's `trimIndent()` evaluated the multi-line email body. If body lines had zero indentation, `trimIndent()` skipped stripping leading spaces from the header lines (`Subject:`, `Content-Type:`), which were then treated by SMTP parsers as continuation/folding lines of the `To:` header.
+* **Fix**: Built emails via direct string concatenation and normalized all newlines (`\n` and `\r\n`) to clean `\r\n` line breaks.
 
-`VoiceManager.kt:123` — `onError(String)` override is deprecated but harmless (minSdk=26, can use `onError(String?, Int)` overload).
+### 2. SQLite Foreign Key Constraint Crash
+* **Issue**: Tapping send crashed the application with `SQLiteConstraintException: FOREIGN KEY constraint failed`.
+* **Cause**: On launch, the app restored `currentConversationId` from SharedPreferences. If the conversation had been deleted or pruned from SQLite, the ID became orphaned. Because the ID was non-null, the startup check skipped recreating a default chat session. Sending a message inserted a child row referencing a non-existent conversation parent.
+* **Fix**: Added validation to verify that `currentConversationId` exists in the database on startup; if not, the app resets it to the latest valid conversation or creates a new one.
 
-## Contact / Handoff
+---
 
-Built for the build. Questions about the architecture should reference `AGENTS.md` for the full product spec and `implementation_plan.md` for the original build plan.
+## 🤝 Project Contact & Specs
+* Core Specifications: Refer to [AGENTS.md](file:///home/wraient/Projects/ClawDroid/AGENTS.md)
+* Implementation Log: Refer to [walkthrough.md](file:///home/wraient/.gemini/Antigravity/brain/169fc980-2f9d-4600-882e-3bdb26ef99b5/walkthrough.md)
