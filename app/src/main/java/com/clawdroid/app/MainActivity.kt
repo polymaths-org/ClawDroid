@@ -22,6 +22,7 @@ import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.ui.chat.ChatScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
+import com.clawdroid.app.ui.settings.McpScreen
 import com.clawdroid.app.ui.setup.SetupScreen
 import com.clawdroid.app.ui.splash.SplashScreen
 import com.clawdroid.app.ui.theme.ClawDroidTheme
@@ -68,7 +69,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Screen { Splash, Setup, Chat, Settings }
+enum class Screen { Splash, Setup, Chat, Settings, Mcp }
 
 @Composable
 private fun ClawDroidApp(
@@ -114,9 +115,14 @@ private fun ClawDroidApp(
                 SettingsScreen(onBack = { currentScreen = Screen.Chat })
             }
 
+            Screen.Mcp -> {
+                McpScreen(onBack = { currentScreen = Screen.Chat })
+            }
+
             Screen.Chat -> {
                 ChatScreen(
                     onNavigateToSettings = { currentScreen = Screen.Settings },
+                    onNavigateToMcp = { currentScreen = Screen.Mcp },
                     startVoiceTrigger = startVoiceTrigger,
                     onVoiceTriggerHandled = onVoiceTriggerHandled
                 )

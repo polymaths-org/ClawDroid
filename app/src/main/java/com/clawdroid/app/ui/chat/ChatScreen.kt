@@ -158,6 +158,7 @@ import java.util.UUID
 @Composable
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
+    onNavigateToMcp: () -> Unit,
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -379,6 +380,7 @@ fun ChatScreen(
         }
 
         if (runtimeState == AgentRuntimeState.Running) {
+            val convId = currentConversationId ?: return
             engine?.steer(text)
             val steerMsgId = UUID.randomUUID().toString()
             items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime)
@@ -386,7 +388,7 @@ fun ChatScreen(
                 db.messages().insert(
                     MessageEntity(
                         id = steerMsgId,
-                        conversationId = currentConversationId ?: "",
+                        conversationId = convId,
                         role = "user",
                         content = text,
                         createdAt = System.currentTimeMillis(),
@@ -433,8 +435,10 @@ fun ChatScreen(
     // Pick latest conversation on start
     val allConversations by db.conversations().observeConversations().collectAsState(initial = null)
     LaunchedEffect(allConversations) {
-        if (currentConversationId == null && allConversations != null) {
-            val latest = allConversations?.firstOrNull()
+        val list = allConversations ?: return@LaunchedEffect
+        val exists = list.any { it.id == currentConversationId }
+        if (!exists) {
+            val latest = list.firstOrNull()
             if (latest != null) {
                 currentConversationId = latest.id
                 AppConfigManager.activeConversationId = latest.id
@@ -810,7 +814,7 @@ fun ChatScreen(
                     },
                     onNavigateToMcp = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToMcp()
                     },
                     onNavigateToAgentConfig = {
                         scope.launch { drawerState.close() }
