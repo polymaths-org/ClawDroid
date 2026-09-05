@@ -161,6 +161,12 @@ import java.util.UUID
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
+    onNavigateToSkills: () -> Unit = onNavigateToSettings,
+    onNavigateToAudio: () -> Unit = onNavigateToSettings,
+    onNavigateToAutomations: () -> Unit = onNavigateToSettings,
+    onNavigateToChannels: () -> Unit = onNavigateToSettings,
+    onNavigateToAgentConfig: () -> Unit = onNavigateToSettings,
+    onNavigateToTerminal: () -> Unit = onNavigateToSettings,
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -822,19 +828,19 @@ fun ChatScreen(
                     },
                     onNavigateToAudio = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToAudio()
                     },
                     onNavigateToAutomations = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToAutomations()
                     },
                     onNavigateToChannels = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToChannels()
                     },
                     onNavigateToSkills = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToSkills()
                     },
                     onNavigateToMcp = {
                         scope.launch { drawerState.close() }
@@ -842,11 +848,11 @@ fun ChatScreen(
                     },
                     onNavigateToAgentConfig = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToAgentConfig()
                     },
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
-                        Toast.makeText(context, "Terminal Screen coming soon!", Toast.LENGTH_SHORT).show()
+                        onNavigateToTerminal()
                     }
                 )
             }

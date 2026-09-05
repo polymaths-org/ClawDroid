@@ -6,6 +6,8 @@ import com.clawdroid.app.BuildConfig
 import com.clawdroid.app.core.agent.AgentConfig
 import com.clawdroid.app.core.agent.AgentConfigLoader
 import com.clawdroid.app.core.agent.ChannelConfig
+import com.clawdroid.app.data.api.AiProviders
+import com.clawdroid.app.data.api.ProviderDialect
 
 object AppConfigManager {
     private const val PREFS = "clawdroid_config"
@@ -13,6 +15,7 @@ object AppConfigManager {
     private const val KEY_API_KEY = "api_key"
     private const val KEY_MODEL = "model"
     private const val KEY_PROVIDER = "provider"
+    private const val KEY_PROVIDER_DIALECT = "provider_dialect"
     private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
     private var prefs: SharedPreferences? = null
@@ -46,6 +49,14 @@ object AppConfigManager {
             ?.takeIf { it.isNotBlank() }
             ?: if (DEV_MODE) "siliconflow" else "openrouter"
 
+    val providerDialect: ProviderDialect
+        get() = runCatching {
+            ProviderDialect.valueOf(
+                p.getString(KEY_PROVIDER_DIALECT, null)
+                    ?: AiProviders.byId(provider).dialect.name,
+            )
+        }.getOrDefault(ProviderDialect.OPENAI_COMPATIBLE)
+
     val isConfigured: Boolean
         get() = apiKey.isNotBlank()
 
@@ -61,11 +72,17 @@ object AppConfigManager {
     }
 
     fun save(provider: String, baseUrl: String, apiKey: String, model: String) {
+        val dialect = AiProviders.byId(provider).dialect
+        save(provider, baseUrl, apiKey, model, dialect)
+    }
+
+    fun save(provider: String, baseUrl: String, apiKey: String, model: String, dialect: ProviderDialect) {
         p.edit()
             .putString(KEY_PROVIDER, provider)
             .putString(KEY_BASE_URL, baseUrl)
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_MODEL, model)
+            .putString(KEY_PROVIDER_DIALECT, dialect.name)
             .putBoolean(KEY_ONBOARDING_COMPLETE, true)
             .apply()
     }
@@ -216,6 +233,62 @@ object AppConfigManager {
     var permissionsAsked: Boolean
         get() = p.getBoolean("permissions_asked", false)
         set(value) = p.edit().putBoolean("permissions_asked", value).apply()
+
+    var hasSeenHatching: Boolean
+        get() = p.getBoolean("has_seen_hatching", false)
+        set(value) = p.edit().putBoolean("has_seen_hatching", value).apply()
+
+    var approvalMode: String
+        get() = p.getString("approval_mode", "default") ?: "default"
+        set(value) = p.edit().putString("approval_mode", value).apply()
+
+    var agentsMd: String
+        get() = p.getString("agents_md", "") ?: ""
+        set(value) = p.edit().putString("agents_md", value).apply()
+
+    var soulMd: String
+        get() = p.getString("soul_md", "") ?: ""
+        set(value) = p.edit().putString("soul_md", value).apply()
+
+    var toolsMd: String
+        get() = p.getString("tools_md", "") ?: ""
+        set(value) = p.edit().putString("tools_md", value).apply()
+
+    var skillMd: String
+        get() = p.getString("skill_md", "") ?: ""
+        set(value) = p.edit().putString("skill_md", value).apply()
+
+    var claudeMd: String
+        get() = p.getString("claude_md", "") ?: ""
+        set(value) = p.edit().putString("claude_md", value).apply()
+
+    var dynamicThinkingEnabled: Boolean
+        get() = p.getBoolean("dynamic_thinking_enabled", true)
+        set(value) = p.edit().putBoolean("dynamic_thinking_enabled", value).apply()
+
+    var emojiToneEnabled: Boolean
+        get() = p.getBoolean("emoji_tone_enabled", false)
+        set(value) = p.edit().putBoolean("emoji_tone_enabled", value).apply()
+
+    var mcpEnabled: Boolean
+        get() = p.getBoolean("mcp_enabled", false)
+        set(value) = p.edit().putBoolean("mcp_enabled", value).apply()
+
+    var mcpSandboxOnly: Boolean
+        get() = p.getBoolean("mcp_sandbox_only", true)
+        set(value) = p.edit().putBoolean("mcp_sandbox_only", value).apply()
+
+    var mcpServerList: String
+        get() = p.getString("mcp_server_list", "") ?: ""
+        set(value) = p.edit().putString("mcp_server_list", value).apply()
+
+    var mcpServers: String
+        get() = p.getString("mcp_servers", "") ?: ""
+        set(value) = p.edit().putString("mcp_servers", value).apply()
+
+    var skillStoreEnabled: Boolean
+        get() = p.getBoolean("skill_store_enabled", true)
+        set(value) = p.edit().putBoolean("skill_store_enabled", value).apply()
 
     var assistantModeEnabled: Boolean
         get() = p.getBoolean("assistant_mode_enabled", false)

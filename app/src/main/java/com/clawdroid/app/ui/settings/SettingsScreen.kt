@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +54,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -91,11 +94,15 @@ import com.clawdroid.app.core.control.ScreenCaptureManager
 import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.PiperEngine
+import com.clawdroid.app.data.api.AiProviders
+import com.clawdroid.app.data.api.ModelDiscoveryClient
+import com.clawdroid.app.data.api.ProviderModel
 import com.clawdroid.app.ui.components.GlassButton
 import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
 import com.clawdroid.app.ui.components.GlowText
 import com.clawdroid.app.ui.components.PiperDownloadDialog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 import com.clawdroid.app.ui.theme.DeepBlack
@@ -105,15 +112,6 @@ import com.clawdroid.app.ui.theme.GlassFill
 import com.clawdroid.app.ui.theme.GlassFillStrong
 import com.clawdroid.app.ui.theme.MutedGray
 import com.clawdroid.app.ui.theme.SoftWhite
-
-// ── Model presets ────────────────────────────────────────────────────────
-
-private data class ModelPreset(val id: String, val label: String, val description: String)
-
-private val modelPresets = listOf(
-    ModelPreset("gpt-4o", "GPT-4o", "Best for complex reasoning & coding"),
-    ModelPreset("gpt-4o-mini", "GPT-4o Mini", "Fast & lightweight for daily tasks"),
-)
 
 // ── TTS engine options ──────────────────────────────────────────────────
 
@@ -151,6 +149,7 @@ private val realtimeVoices = listOf(
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onNavigateToWorkspaceFiles: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BackHandler {
@@ -159,10 +158,10 @@ fun SettingsScreen(
     var baseUrl by remember { mutableStateOf(AppConfigManager.baseUrl) }
     var apiKey by remember { mutableStateOf(AppConfigManager.apiKey) }
     var model by remember { mutableStateOf(AppConfigManager.model) }
+    var providerId by remember { mutableStateOf(AppConfigManager.provider) }
+    var selectedProvider by remember(providerId) { mutableStateOf(AiProviders.byId(providerId)) }
     var showKey by remember { mutableStateOf(false) }
-    var useCustomModel by remember {
-        mutableStateOf(modelPresets.none { it.id == AppConfigManager.model })
-    }
+    var useCustomModel by remember { mutableStateOf(false) }
 
     var ttsEngine by remember { mutableStateOf(AppConfigManager.ttsEngine) }
     var ttsVoice by remember { mutableStateOf(AppConfigManager.ttsVoice) }
@@ -181,6 +180,46 @@ fun SettingsScreen(
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val modelDiscoveryClient = remember { ModelDiscoveryClient(context.applicationContext) }
+    var discoveredModels by remember {
+        mutableStateOf(modelDiscoveryClient.cachedModels(providerId, baseUrl, apiKey))
+    }
+    var modelSearch by remember { mutableStateOf("") }
+    var modelFetchStatus by remember { mutableStateOf("") }
+    var modelFetchLoading by remember { mutableStateOf(false) }
+    var showProviderSheet by remember { mutableStateOf(false) }
+    var showModelSheet by remember { mutableStateOf(false) }
+
+    fun refreshCachedModels() {
+        discoveredModels = modelDiscoveryClient.cachedModels(providerId, baseUrl, apiKey)
+    }
+
+    fun fetchModels() {
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            modelFetchStatus = "Enter Base URL and API key to fetch models."
+            return
+        }
+        modelFetchLoading = true
+        modelFetchStatus = "Fetching models…"
+        scope.launch {
+            val result = modelDiscoveryClient.discover(selectedProvider, baseUrl, apiKey)
+            result.fold(
+                onSuccess = { models ->
+                    discoveredModels = models
+                    modelFetchStatus = if (models.isEmpty()) {
+                        "No models returned. You can still enter a manual model."
+                    } else {
+                        "Fetched ${models.size} models."
+                    }
+                },
+                onFailure = { error ->
+                    refreshCachedModels()
+                    modelFetchStatus = "Fetch failed: ${error.message ?: error::class.java.simpleName}. Cached/manual models are still available."
+                },
+            )
+            modelFetchLoading = false
+        }
+    }
 
     // Piper engine for optional download
     val piperEngine = remember { PiperEngine(context.applicationContext) }
@@ -233,7 +272,13 @@ fun SettingsScreen(
     }
 
     val saveAndSync = {
-        AppConfigManager.save(baseUrl.trim(), apiKey.trim(), model.trim())
+        AppConfigManager.save(
+            provider = providerId,
+            baseUrl = baseUrl.trim(),
+            apiKey = apiKey.trim(),
+            model = model.trim(),
+            dialect = selectedProvider.dialect,
+        )
         AppConfigManager.ttsEngine = ttsEngine
         AppConfigManager.ttsVoice = ttsVoice.trim()
         AppConfigManager.ttsSpeed = ttsSpeed
@@ -272,6 +317,16 @@ fun SettingsScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(providerId, baseUrl, apiKey) {
+        refreshCachedModels()
+        if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
+            delay(800)
+            if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
+                fetchModels()
+            }
         }
     }
 
@@ -360,11 +415,19 @@ fun SettingsScreen(
 
             GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Provider", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                    SelectableCard(
+                        label = selectedProvider.label,
+                        description = selectedProvider.description,
+                        isSelected = true,
+                        onClick = { showProviderSheet = true },
+                    )
+
                     Text("Base URL", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
                     GlassTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it; saved = false },
-                        placeholder = "https://openrouter.ai/api/v1",
+                        placeholder = selectedProvider.defaultBaseUrl.ifBlank { "https://openrouter.ai/api/v1" },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     )
 
@@ -388,54 +451,63 @@ fun SettingsScreen(
                     )
 
                     Text("Model", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                    SelectableCard(
+                        label = model.ifBlank { "Select model" },
+                        description = if (discoveredModels.isNotEmpty()) {
+                            "${discoveredModels.size} discovered models available"
+                        } else {
+                            "Fetch models or enter a manual model ID"
+                        },
+                        isSelected = model.isNotBlank() && !useCustomModel,
+                        onClick = { showModelSheet = true },
+                    )
 
-                    // Model preset cards (onboarding-style)
-                    modelPresets.forEach { preset ->
-                        val isSelected = !useCustomModel && model == preset.id
-                        SelectableCard(
-                            label = preset.label,
-                            description = preset.description,
-                            isSelected = isSelected,
-                            onClick = {
-                                model = preset.id
-                                useCustomModel = false
-                                saved = false
-                            },
-                        )
-                    }
-
-                    // Custom model toggle
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (useCustomModel) GlassFillStrong else GlassFill)
-                            .border(1.dp, if (useCustomModel) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
-                            .clickable { useCustomModel = true }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "✏️ Custom Model",
-                            color = SoftWhite,
-                            fontWeight = FontWeight.SemiBold,
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        GlassButton(
+                            onClick = { fetchModels() },
+                            enabled = !modelFetchLoading && baseUrl.isNotBlank() && apiKey.isNotBlank(),
                             modifier = Modifier.weight(1f),
-                        )
-                        if (useCustomModel) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = EmberOrange,
-                                modifier = Modifier.size(18.dp),
+                        ) {
+                            Text(
+                                if (modelFetchLoading) "Fetching…" else "Fetch Models",
+                                color = SoftWhite,
+                                fontWeight = FontWeight.SemiBold,
                             )
+                        }
+                        GlassButton(
+                            onClick = { useCustomModel = true },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Manual", color = SoftWhite, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
-                    AnimatedVisibility(visible = useCustomModel) {
+                    if (modelFetchStatus.isNotBlank()) {
+                        Text(
+                            text = modelFetchStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (modelFetchStatus.startsWith("Fetch failed")) MaterialTheme.colorScheme.error else MutedGray,
+                        )
+                    }
+
+                    if (!selectedProvider.supportsRuntime) {
+                        Text(
+                            text = "${selectedProvider.label} model discovery is available, but native chat runtime is pending. Choose an OpenAI-compatible provider for active chats.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFFB74D),
+                        )
+                    }
+
+                    AnimatedVisibility(visible = useCustomModel || model.isBlank()) {
                         GlassTextField(
-                            value = if (useCustomModel) model else "",
-                            onValueChange = { model = it; saved = false },
-                            placeholder = "e.g. anthropic/claude-3.5-sonnet",
+                            value = model,
+                            onValueChange = { model = it; useCustomModel = true; saved = false },
+                            placeholder = when (selectedProvider.id) {
+                                "gemini" -> "gemini-2.5-pro"
+                                "anthropic" -> "claude-sonnet-4-5"
+                                "deepseek" -> "deepseek-chat"
+                                else -> "e.g. openai/gpt-4o"
+                            },
                         )
                     }
                 }
@@ -1268,6 +1340,27 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Workspace Files",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = SoftWhite,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Edit SOUL.md, AGENTS.md, TOOLS.md, and other agent context files.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MutedGray,
+                    )
+                    GlassButton(onClick = onNavigateToWorkspaceFiles, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open Workspace Files", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     // WhatsApp
                     Row(
@@ -1669,6 +1762,148 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(40.dp))
+        }
+    }
+
+    if (showProviderSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showProviderSheet = false },
+            containerColor = DeepBlack,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Choose Provider", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                AiProviders.presets.forEach { preset ->
+                    SelectableCard(
+                        label = preset.label,
+                        description = preset.description,
+                        isSelected = providerId == preset.id,
+                        onClick = {
+                            providerId = preset.id
+                            selectedProvider = preset
+                            if (preset.defaultBaseUrl.isNotBlank()) {
+                                baseUrl = preset.defaultBaseUrl
+                            }
+                            model = ""
+                            useCustomModel = false
+                            modelFetchStatus = ""
+                            discoveredModels = modelDiscoveryClient.cachedModels(preset.id, preset.defaultBaseUrl.ifBlank { baseUrl }, apiKey)
+                            saved = false
+                            showProviderSheet = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showModelSheet) {
+        val filteredModels = discoveredModels.filter { providerModel ->
+            val query = modelSearch.trim()
+            query.isBlank() ||
+                providerModel.id.contains(query, ignoreCase = true) ||
+                providerModel.label.contains(query, ignoreCase = true) ||
+                providerModel.owner?.contains(query, ignoreCase = true) == true
+        }
+        ModalBottomSheet(
+            onDismissRequest = { showModelSheet = false },
+            containerColor = DeepBlack,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Choose Model", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                GlassTextField(
+                    value = modelSearch,
+                    onValueChange = { modelSearch = it },
+                    placeholder = "Search models",
+                )
+                if (filteredModels.isEmpty()) {
+                    Text(
+                        text = if (discoveredModels.isEmpty()) "No fetched models yet. Fetch models or use manual entry." else "No models match your search.",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(360.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(filteredModels) { providerModel ->
+                            ModelRow(
+                                providerModel = providerModel,
+                                isSelected = providerModel.id == model,
+                                onClick = {
+                                    model = providerModel.id
+                                    useCustomModel = false
+                                    saved = false
+                                    showModelSheet = false
+                                },
+                            )
+                        }
+                    }
+                }
+                GlassButton(
+                    onClick = {
+                        useCustomModel = true
+                        showModelSheet = false
+                    },
+                ) {
+                    Text("Enter Model Manually", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelRow(
+    providerModel: ProviderModel,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) GlassFillStrong else GlassFill)
+            .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = providerModel.id,
+                color = SoftWhite,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = listOfNotNull(providerModel.owner, providerModel.description).joinToString(" • ")
+                    .ifBlank { providerModel.label },
+                color = MutedGray,
+                fontSize = 11.sp,
+            )
+        }
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = EmberOrange,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

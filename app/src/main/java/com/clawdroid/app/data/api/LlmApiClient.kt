@@ -53,6 +53,7 @@ class LlmApiClient(
     private val baseUrl: String = AppConfigManager.baseUrl,
     private val apiKey: String = AppConfigManager.apiKey,
     private val model: String = AppConfigManager.model,
+    private val dialect: ProviderDialect = AppConfigManager.providerDialect,
 ) {
     fun streamChat(
         messages: List<ChatMessage>,
@@ -63,6 +64,10 @@ class LlmApiClient(
         check(baseUrl.isNotBlank()) { "Missing LLM base URL" }
         check(apiKey.isNotBlank()) { "Missing LLM API key" }
         check(model.isNotBlank()) { "Missing LLM model" }
+        if (dialect != ProviderDialect.OPENAI_COMPATIBLE) {
+            emit(StreamEvent.Error("${dialect.name} chat runtime is not implemented yet. Choose an OpenAI-compatible provider for active chats."))
+            return@flow
+        }
 
         val payload = JSONObject()
             .put("model", model)

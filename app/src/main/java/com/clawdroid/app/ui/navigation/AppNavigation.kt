@@ -19,7 +19,8 @@ import com.clawdroid.app.ui.settings.ConfigEditorScreen
 import com.clawdroid.app.ui.settings.ConfigFileType
 import com.clawdroid.app.ui.settings.McpConfigScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
-import com.clawdroid.app.ui.settings.SkillsConfigScreen
+import com.clawdroid.app.ui.settings.SkillsScreen
+import com.clawdroid.app.ui.settings.WorkspaceFilesScreen
 import com.clawdroid.app.ui.setup.SetupScreen
 import com.clawdroid.app.ui.setup.PostSetupScreen
 import com.clawdroid.app.ui.splash.SplashScreen
@@ -27,7 +28,11 @@ import com.clawdroid.app.ui.splash.HatchingScreen
 import com.clawdroid.app.ui.terminal.TerminalScreen
 
 @Composable
-fun AppNavHost(navController: NavHostController) {
+fun AppNavHost(
+    navController: NavHostController,
+    startVoiceTrigger: Boolean = false,
+    onVoiceTriggerHandled: () -> Unit = {},
+) {
     NavHost(
         navController = navController,
         startDestination = NavRoutes.Splash.route,
@@ -106,6 +111,8 @@ fun AppNavHost(navController: NavHostController) {
                 onNavigateToMcp = { navController.navigate(NavRoutes.SettingsMCP.route) },
                 onNavigateToAgentConfig = { navController.navigate(NavRoutes.SettingsAgent.route) },
                 onNavigateToTerminal = { navController.navigate(NavRoutes.Terminal.route) },
+                startVoiceTrigger = startVoiceTrigger,
+                onVoiceTriggerHandled = onVoiceTriggerHandled,
             )
         }
 
@@ -116,8 +123,8 @@ fun AppNavHost(navController: NavHostController) {
         composable(NavRoutes.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onNavigateToConfigEditor = { fileType ->
-                    navController.navigate(NavRoutes.ConfigEditor.create(fileType.name))
+                onNavigateToWorkspaceFiles = {
+                    navController.navigate(NavRoutes.SettingsWorkspace.route)
                 },
             )
         }
@@ -139,7 +146,11 @@ fun AppNavHost(navController: NavHostController) {
         }
 
         composable(NavRoutes.SettingsSkills.route) {
-            SkillsConfigScreen(onBack = { navController.popBackStack() })
+            SkillsScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(NavRoutes.SettingsWorkspace.route) {
+            WorkspaceFilesScreen(onBack = { navController.popBackStack() })
         }
 
         composable(NavRoutes.SettingsMCP.route) {
