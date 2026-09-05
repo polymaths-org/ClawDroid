@@ -93,6 +93,7 @@ object LlmSmokeClient {
                 is StreamEvent.TextDelta -> text.append(event.text)
                 is StreamEvent.Error -> error(event.message)
                 is StreamEvent.ToolCallComplete -> Unit
+                is StreamEvent.Usage -> Unit
                 StreamEvent.Done -> Unit
             }
         }

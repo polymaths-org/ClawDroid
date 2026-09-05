@@ -25,10 +25,14 @@ data class ToolExecutionResult(
 )
 
 object ToolExecutor {
-    suspend fun execute(context: Context, call: CompletedToolCall): ToolExecutionResult = runCatching {
+    suspend fun execute(
+        context: Context,
+        call: CompletedToolCall,
+        onProgress: (suspend (String) -> Unit)? = null,
+    ): ToolExecutionResult = runCatching {
         val args = DefensiveJsonParser.parseObjectOrError(call.arguments).getOrThrow()
         when (call.name) {
-            "execute_command" -> executeCommand(context, args)
+            "execute_command" -> executeCommand(context, args, onProgress)
             "start_process" -> StartProcessTool.execute(
                 context = context,
                 command = args.getString("command"),
@@ -83,12 +87,17 @@ object ToolExecutor {
         },
     )
 
-    private suspend fun executeCommand(context: Context, args: JSONObject): JSONObject {
+    private suspend fun executeCommand(
+        context: Context,
+        args: JSONObject,
+        onProgress: (suspend (String) -> Unit)?,
+    ): JSONObject {
         val result = CommandTool.execute(
             context = context,
             command = args.getString("command"),
             cwd = args.optString("cwd").takeIf { it.isNotBlank() },
             timeoutSeconds = args.optLong("timeout_seconds", 30),
+            onProgress = onProgress,
         )
 
         return JSONObject()
