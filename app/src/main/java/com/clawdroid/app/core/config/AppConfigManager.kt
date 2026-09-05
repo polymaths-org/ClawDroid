@@ -9,6 +9,16 @@ import com.clawdroid.app.core.agent.ChannelConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class SavedProviderProfile(
+    val name: String,
+    val provider: String,
+    val baseUrl: String,
+    val apiKey: String,
+    val model: String,
+)
 
 object AppConfigManager {
     private const val PREFS = "clawdroid_config"
@@ -82,6 +92,86 @@ object AppConfigManager {
             .putString(KEY_MODEL, model)
             .putBoolean(KEY_ONBOARDING_COMPLETE, true)
             .apply()
+        saveProviderProfile(
+            SavedProviderProfile(
+                name = provider.ifBlank { model }.trim(),
+                provider = provider.trim(),
+                baseUrl = baseUrl.trim(),
+                apiKey = apiKey.trim(),
+                model = model.trim(),
+            ),
+        )
+    }
+
+    fun saveProviderProfile(profile: SavedProviderProfile) {
+        val clean = profile.copy(
+            name = profile.name.trim().ifBlank { profile.provider.ifBlank { profile.model } },
+            provider = profile.provider.trim(),
+            baseUrl = profile.baseUrl.trim(),
+            apiKey = profile.apiKey.trim(),
+            model = profile.model.trim(),
+        )
+        if (clean.name.isBlank() || clean.baseUrl.isBlank() || clean.model.isBlank()) return
+        val existing = savedProviderProfiles()
+            .filterNot {
+                it.name.equals(clean.name, ignoreCase = true) ||
+                    it.provider.equals(clean.provider, ignoreCase = true) && it.baseUrl == clean.baseUrl
+            }
+        val arr = JSONArray()
+        (existing + clean).forEach { item ->
+            arr.put(
+                JSONObject()
+                    .put("name", item.name)
+                    .put("provider", item.provider)
+                    .put("base_url", item.baseUrl)
+                    .put("api_key", item.apiKey)
+                    .put("model", item.model),
+            )
+        }
+        p.edit().putString("saved_provider_profiles", arr.toString()).apply()
+    }
+
+    fun savedProviderProfiles(): List<SavedProviderProfile> {
+        val raw = p.getString("saved_provider_profiles", "[]") ?: "[]"
+        val parsed = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        val list = (0 until parsed.length()).mapNotNull { index ->
+            val obj = parsed.optJSONObject(index) ?: return@mapNotNull null
+            SavedProviderProfile(
+                name = obj.optString("name"),
+                provider = obj.optString("provider"),
+                baseUrl = obj.optString("base_url"),
+                apiKey = obj.optString("api_key"),
+                model = obj.optString("model"),
+            ).takeIf { it.name.isNotBlank() && it.baseUrl.isNotBlank() && it.model.isNotBlank() }
+        }.toMutableList()
+        if (list.none { it.provider == provider && it.baseUrl == baseUrl && it.model == model }) {
+            list.add(
+                0,
+                SavedProviderProfile(
+                    name = provider.ifBlank { "current" },
+                    provider = provider,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = model,
+                ),
+            )
+        }
+        return list
+    }
+
+    fun switchProviderProfile(nameOrProvider: String): Boolean {
+        val key = nameOrProvider.trim()
+        val profile = savedProviderProfiles().firstOrNull {
+            it.name.equals(key, ignoreCase = true) || it.provider.equals(key, ignoreCase = true)
+        } ?: return false
+        p.edit()
+            .putString(KEY_PROVIDER, profile.provider)
+            .putString(KEY_BASE_URL, profile.baseUrl)
+            .putString(KEY_API_KEY, profile.apiKey)
+            .putString(KEY_MODEL, profile.model)
+            .putBoolean(KEY_ONBOARDING_COMPLETE, true)
+            .apply()
+        return true
     }
 
     // TTS Settings Configuration
@@ -213,6 +303,50 @@ object AppConfigManager {
         get() = p.getBoolean("emoji_tone_enabled", true)
         set(value) = p.edit().putBoolean("emoji_tone_enabled", value).apply()
 
+    var overlayInputMode: String
+        get() = p.getString("overlay_input_mode", "keyboard") ?: "keyboard"
+        set(value) = p.edit().putString("overlay_input_mode", value).apply()
+
+    var assistantOverlayInputMode: String
+        get() = p.getString("assistant_overlay_input_mode", "voice") ?: "voice"
+        set(value) = p.edit().putString("assistant_overlay_input_mode", value).apply()
+
+    var overlayFontSize: Int
+        get() = p.getInt("overlay_font_size", 14)
+        set(value) = p.edit().putInt("overlay_font_size", value.coerceIn(12, 22)).apply()
+
+    var overlayMaxLines: Int
+        get() = p.getInt("overlay_max_lines", 10)
+        set(value) = p.edit().putInt("overlay_max_lines", value.coerceIn(3, 30)).apply()
+
+    var overlayExpandable: Boolean
+        get() = p.getBoolean("overlay_expandable", true)
+        set(value) = p.edit().putBoolean("overlay_expandable", value).apply()
+
+    var overlayVoiceLanguage: String
+        get() = p.getString("overlay_voice_language", "en-US") ?: "en-US"
+        set(value) = p.edit().putString("overlay_voice_language", value).apply()
+
+    var overlayPosition: String
+        get() = p.getString("overlay_position", "bottom_right") ?: "bottom_right"
+        set(value) = p.edit().putString("overlay_position", value).apply()
+
+    var overlayAutoDismissSeconds: Int
+        get() = p.getInt("overlay_auto_dismiss_seconds", 10)
+        set(value) = p.edit().putInt("overlay_auto_dismiss_seconds", value.coerceIn(0, 120)).apply()
+
+    var overlayShowOnLockscreen: Boolean
+        get() = p.getBoolean("overlay_show_on_lockscreen", true)
+        set(value) = p.edit().putBoolean("overlay_show_on_lockscreen", value).apply()
+
+    var overlayTtsStreamingEnabled: Boolean
+        get() = p.getBoolean("overlay_tts_streaming_enabled", true)
+        set(value) = p.edit().putBoolean("overlay_tts_streaming_enabled", value).apply()
+
+    var overlayTtsAutoplay: Boolean
+        get() = p.getBoolean("overlay_tts_autoplay", true)
+        set(value) = p.edit().putBoolean("overlay_tts_autoplay", value).apply()
+
     var mcpEnabled: Boolean
         get() = p.getBoolean("mcp_enabled", true)
         set(value) = p.edit().putBoolean("mcp_enabled", value).apply()
@@ -278,6 +412,38 @@ object AppConfigManager {
     var interpoleAllowExecute: Boolean
         get() = p.getBoolean("interpole_allow_execute", false)
         set(value) = p.edit().putBoolean("interpole_allow_execute", value).apply()
+
+    var interpoleDesktopHarnessEnabled: Boolean
+        get() = p.getBoolean("interpole_desktop_harness_enabled", true)
+        set(value) = p.edit().putBoolean("interpole_desktop_harness_enabled", value).apply()
+
+    var interpoleDesktopWebPanelEnabled: Boolean
+        get() = p.getBoolean("interpole_desktop_web_panel_enabled", true)
+        set(value) = p.edit().putBoolean("interpole_desktop_web_panel_enabled", value).apply()
+
+    var interpoleCliInterfaceEnabled: Boolean
+        get() = p.getBoolean("interpole_cli_interface_enabled", true)
+        set(value) = p.edit().putBoolean("interpole_cli_interface_enabled", value).apply()
+
+    var memorySyncEnabled: Boolean
+        get() = p.getBoolean("memory_sync_enabled", true)
+        set(value) = p.edit().putBoolean("memory_sync_enabled", value).apply()
+
+    var memoryAutoSyncEnabled: Boolean
+        get() = p.getBoolean("memory_auto_sync_enabled", false)
+        set(value) = p.edit().putBoolean("memory_auto_sync_enabled", value).apply()
+
+    var memorySyncIntervalMinutes: Int
+        get() = p.getInt("memory_sync_interval_minutes", 60)
+        set(value) = p.edit().putInt("memory_sync_interval_minutes", value.coerceIn(15, 24 * 60)).apply()
+
+    var memoryLastSyncedAt: Long
+        get() = p.getLong("memory_last_synced_at", 0L)
+        set(value) = p.edit().putLong("memory_last_synced_at", value).apply()
+
+    var multiAgentOrchestrationConfig: String
+        get() = p.getString("multi_agent_orchestration_config", "") ?: ""
+        set(value) = p.edit().putString("multi_agent_orchestration_config", value).apply()
 
     var interpolePairedDeviceName: String
         get() = p.getString("interpole_paired_device_name", "") ?: ""

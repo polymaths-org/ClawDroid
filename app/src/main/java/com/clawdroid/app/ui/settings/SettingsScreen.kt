@@ -64,6 +64,7 @@ fun SettingsScreen(
     onNavigateToProvider: () -> Unit = {},
     onNavigateToAudio: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
+    onNavigateToOverlay: () -> Unit = {},
     onNavigateToAutomations: () -> Unit = {},
     onNavigateToConnections: () -> Unit = {},
     onNavigateToChannels: () -> Unit = {},
@@ -135,6 +136,7 @@ fun SettingsScreen(
                     SettingsRow(Icons.Outlined.Security, "Permissions", "Access control", accent, onSurface, onVariant, onNavigateToPermissions)
                     SettingsRow(Icons.Outlined.SettingsInputComponent, "Provider", "Model settings", accent, onSurface, onVariant, onNavigateToProvider)
                     SettingsRow(Icons.Outlined.Headphones, "Audio", "Voice & sound", accent, onSurface, onVariant, onNavigateToAudio)
+                    SettingsRow(Icons.Outlined.SettingsInputComponent, "Overlay", "Floating assistant, response display, streaming TTS", accent, onSurface, onVariant, onNavigateToOverlay)
                     SettingsRow(Icons.Outlined.Notifications, "Notifications", "Task alerts & ASK mode", accent, onSurface, onVariant, onNavigateToNotifications)
                     SettingsRow(Icons.Outlined.ColorLens, "Themes", "Appearance", accent, onSurface, onVariant, onNavigateToThemes)
                 }

@@ -77,6 +77,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -105,11 +106,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.ContextCompat
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.assistant.overlay.OverlayConfig
+import com.clawdroid.app.core.assistant.overlay.OverlayInputMode
+import com.clawdroid.app.core.assistant.overlay.OverlayPosition
+import com.clawdroid.app.core.assistant.overlay.OverlaySettingsRepository
 import com.clawdroid.app.core.control.ScreenCaptureManager
 import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.voice.WakeVoiceService
 import com.clawdroid.app.core.voice.WhisperModelManager
+import com.clawdroid.app.core.voice.TtsEngineManager
 import com.clawdroid.app.ui.components.AnimatedPresetCard
 import com.clawdroid.app.ui.components.ChannelConnectionStatus
 import com.clawdroid.app.ui.components.ChannelStatusCard
@@ -172,9 +178,15 @@ fun AudioConfigScreen(onBack: () -> Unit) {
     var dynamicThinking by remember { mutableStateOf(AppConfigManager.dynamicThinkingEnabled) }
     var emojiTone by remember { mutableStateOf(AppConfigManager.emojiToneEnabled) }
     var piperEnabled by remember { mutableStateOf(AppConfigManager.mcpEnabled) }
+    val ttsEngineManager = remember(context) { TtsEngineManager(context.applicationContext) }
+    val detectedTtsEngines by ttsEngineManager.engines.collectAsState()
+    val phoneTtsEngines = detectedTtsEngines.filter { it.isDeviceEngine }
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {}
+    DisposableEffect(ttsEngineManager) {
+        onDispose { ttsEngineManager.destroy() }
+    }
 
     ConfigScaffold("Audio & Voice", onBack) {
         InfoCard(
@@ -186,7 +198,28 @@ fun AudioConfigScreen(onBack: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionTitle("TTS Engine")
 
-                ConfigChoice("Android TTS", "Native Android system voice. Fast, offline, and reliable.", ttsEngine == "device") { ttsEngine = "device" }
+                SectionTitle("Phone TTS Engines")
+                if (phoneTtsEngines.isEmpty()) {
+                    DetailRow("Scanning", "Looking for installed Android TTS engines on this phone.")
+                } else {
+                    phoneTtsEngines.forEach { engine ->
+                        ConfigChoice(
+                            engine.name,
+                            engine.description,
+                            ttsEngine == engine.id,
+                        ) {
+                            ttsEngine = engine.id
+                        }
+                    }
+                }
+                GlassButton(
+                    onClick = { ttsEngineManager.refresh() },
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                ) {
+                    Text("Scan Phone TTS Engines", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                }
+
+                SectionTitle("Cloud TTS Engines")
                 ConfigChoice("OpenAI TTS", "Cloud voices: alloy, echo, fable, onyx, nova, shimmer. 6 distinct personalities.", ttsEngine == "openai") { ttsEngine = "openai" }
                 ConfigChoice("ElevenLabs", "Premium neural voices: Rachel, Domi, Josh, Bella. Ultra-realistic.", ttsEngine == "elevenlabs") { ttsEngine = "elevenlabs" }
                 ConfigChoice("Deepgram", "Fast cloud TTS: Asteria, Luna, Orion, Zeus. Low latency.", ttsEngine == "deepgram") { ttsEngine = "deepgram" }
@@ -538,6 +571,129 @@ fun NotificationConfigScreen(onBack: () -> Unit) {
             Toast.makeText(context, "Notification settings saved.", Toast.LENGTH_SHORT).show()
         }
     }
+}
+
+@Composable
+fun OverlayConfigScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val repository = remember { OverlaySettingsRepository(context) }
+    val saved = remember { repository.getConfig() }
+
+    var inputMode by remember { mutableStateOf(saved.inputMode) }
+    var assistantInputMode by remember { mutableStateOf(saved.assistantInputMode) }
+    var fontSize by remember { mutableStateOf(saved.fontSize.toFloat()) }
+    var maxLines by remember { mutableStateOf(saved.maxLines.toFloat()) }
+    var expandable by remember { mutableStateOf(saved.expandable) }
+    var launchGreeting by remember { mutableStateOf(saved.launchGreeting) }
+    var voiceLanguage by remember { mutableStateOf(saved.voiceLanguage) }
+    var position by remember { mutableStateOf(saved.overlayPosition) }
+    var autoDismiss by remember { mutableStateOf(saved.autoDismissSeconds.toFloat()) }
+    var showOnLockscreen by remember { mutableStateOf(saved.showOnLockscreen) }
+    var ttsStreaming by remember { mutableStateOf(saved.ttsStreaming) }
+    var ttsAutoplay by remember { mutableStateOf(saved.ttsAutoplay) }
+    var speechSpeed by remember { mutableStateOf(AppConfigManager.ttsSpeed) }
+
+    ConfigScaffold("Overlay", onBack) {
+        InfoCard(
+            title = "Assistant Overlay",
+            body = "Choose how the floating assistant opens, displays responses, and speaks while text is generated.",
+        )
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("External Task Overlay")
+                OverlayInputMode.entries.forEach { mode ->
+                    ConfigChoice(mode.label, modeDescription(mode), inputMode == mode) { inputMode = mode }
+                }
+                DetailRow("Default", "Keyboard keeps the user in control when ClawDroid works over other apps.")
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("System Assistant")
+                OverlayInputMode.entries.forEach { mode ->
+                    ConfigChoice(mode.label, modeDescription(mode), assistantInputMode == mode) { assistantInputMode = mode }
+                }
+                DetailRow("Default", "Voice is the default for the Android assistant gesture.")
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Response Display")
+                Text("Font Size: ${fontSize.toInt()}sp", color = EmberOrange, fontWeight = FontWeight.SemiBold)
+                Slider(value = fontSize, onValueChange = { fontSize = it }, valueRange = 12f..22f, steps = 9, colors = configSliderColors())
+                Text("Max Lines: ${maxLines.toInt()}", color = EmberOrange, fontWeight = FontWeight.SemiBold)
+                Slider(value = maxLines, onValueChange = { maxLines = it }, valueRange = 3f..30f, steps = 26, colors = configSliderColors())
+                ConfigSwitch("Expandable", "Tap the response card to expand into a larger scrollable panel.", expandable) { expandable = it }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Voice Settings")
+                ConfigSwitch("Launch Greeting", "Speak a greeting before listening. Default is off for faster voice launch.", launchGreeting) { launchGreeting = it }
+                GlassTextField(value = voiceLanguage, onValueChange = { voiceLanguage = it }, placeholder = "Voice language, e.g. en-US")
+                Text("Speech Speed: ${String.format("%.1fx", speechSpeed)}", color = EmberOrange, fontWeight = FontWeight.SemiBold)
+                Slider(value = speechSpeed, onValueChange = { speechSpeed = it }, valueRange = 0.5f..2.0f, steps = 15, colors = configSliderColors())
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("TTS Streaming")
+                ConfigSwitch("Enable Streaming TTS", "Speak sentence chunks while the assistant response is still generating.", ttsStreaming) { ttsStreaming = it }
+                ConfigSwitch("Auto-play", "Start speaking as soon as the first complete sentence is available.", ttsAutoplay) { ttsAutoplay = it }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Behavior")
+                OverlayPosition.entries.forEach { option ->
+                    ConfigChoice(option.label, positionDescription(option), position == option) { position = option }
+                }
+                Text("Auto-dismiss: ${autoDismiss.toInt()} seconds", color = EmberOrange, fontWeight = FontWeight.SemiBold)
+                Slider(value = autoDismiss, onValueChange = { autoDismiss = it }, valueRange = 0f..60f, steps = 11, colors = configSliderColors())
+                ConfigSwitch("Show on lock screen", "Allow urgent assistant prompts to appear over the lock screen when Android permits it.", showOnLockscreen) { showOnLockscreen = it }
+            }
+        }
+
+        SaveConfigButton {
+            repository.saveConfig(
+                OverlayConfig(
+                    inputMode = inputMode,
+                    assistantInputMode = assistantInputMode,
+                    fontSize = fontSize.toInt(),
+                    maxLines = maxLines.toInt(),
+                    expandable = expandable,
+                    launchGreeting = launchGreeting,
+                    voiceLanguage = voiceLanguage.trim().ifBlank { "en-US" },
+                    overlayPosition = position,
+                    autoDismissSeconds = autoDismiss.toInt(),
+                    showOnLockscreen = showOnLockscreen,
+                    ttsStreaming = ttsStreaming,
+                    ttsAutoplay = ttsAutoplay,
+                )
+            )
+            AppConfigManager.ttsSpeed = speechSpeed
+        }
+    }
+}
+
+private fun modeDescription(mode: OverlayInputMode): String = when (mode) {
+    OverlayInputMode.VOICE -> "Speech-to-speech assistant by default."
+    OverlayInputMode.KEYBOARD -> "Type to chat in the floating assistant."
+    OverlayInputMode.HYBRID -> "Voice and keyboard controls are both available."
+}
+
+private fun positionDescription(position: OverlayPosition): String = when (position) {
+    OverlayPosition.BOTTOM_RIGHT -> "Anchor near the lower right edge."
+    OverlayPosition.BOTTOM_LEFT -> "Anchor near the lower left edge."
+    OverlayPosition.TOP_RIGHT -> "Anchor near the upper right edge."
+    OverlayPosition.TOP_LEFT -> "Anchor near the upper left edge."
+    OverlayPosition.FLOATING -> "Remember the last dragged position."
 }
 
 @Composable
@@ -1044,10 +1200,17 @@ fun InterpoleConfigScreen(onBack: () -> Unit) {
     var trustMode by remember { mutableStateOf(AppConfigManager.interpoleTrustMode) }
     var trustedFolders by remember { mutableStateOf(AppConfigManager.interpoleTrustedFolders) }
     var allowExecute by remember { mutableStateOf(AppConfigManager.interpoleAllowExecute) }
+    var desktopHarness by remember { mutableStateOf(AppConfigManager.interpoleDesktopHarnessEnabled) }
+    var desktopWebPanel by remember { mutableStateOf(AppConfigManager.interpoleDesktopWebPanelEnabled) }
+    var cliInterface by remember { mutableStateOf(AppConfigManager.interpoleCliInterfaceEnabled) }
+    var memorySync by remember { mutableStateOf(AppConfigManager.memorySyncEnabled) }
+    var memoryAutoSync by remember { mutableStateOf(AppConfigManager.memoryAutoSyncEnabled) }
+    var memorySyncInterval by remember { mutableStateOf(AppConfigManager.memorySyncIntervalMinutes.toString()) }
     var pairedDeviceName by remember { mutableStateOf(AppConfigManager.interpolePairedDeviceName) }
     var showConnect by remember { mutableStateOf(false) }
 
     val safePort = port.toIntOrNull()?.coerceIn(1, 65535) ?: 8765
+    val safeMemorySyncInterval = memorySyncInterval.toIntOrNull()?.coerceIn(15, 24 * 60) ?: 60
     val endpoint = host.trim().takeIf { it.isNotBlank() }?.let { "$it:$safePort" } ?: "Not configured"
     val isPaired = pairedDeviceName.isNotBlank() && host.trim().isNotBlank()
 
@@ -1122,6 +1285,18 @@ fun InterpoleConfigScreen(onBack: () -> Unit) {
                     ConfigChoice("Trusted", "Allow configured desktop access with minimal approval friction.", trustMode == "trusted") { trustMode = "trusted" }
                     ConfigChoice("Ask every time", "Require confirmation before each desktop action.", trustMode == "ask_every_time") { trustMode = "ask_every_time" }
                     ConfigSwitch("Allow desktop command execution", "Permit signed execute calls on the paired machine.", allowExecute) { allowExecute = it }
+                    ConfigSwitch("Desktop harness", "Allow the paired desktop to act as an execution harness for agent workflows.", desktopHarness) { desktopHarness = it }
+                    ConfigSwitch("Desktop web panel", "Expose the desktop-side web panel when the bridge supports it.", desktopWebPanel) { desktopWebPanel = it }
+                    ConfigSwitch("ClawDroid CLI", "Allow the desktop bridge to expose CLI control for ClawDroid tasks.", cliInterface) { cliInterface = it }
+                    ConfigSwitch("Memory sync", "Sync durable agent memory with the paired desktop.", memorySync) { memorySync = it }
+                    ConfigSwitch("Auto-sync memory", "Automatically sync memory on the configured interval.", memoryAutoSync) { memoryAutoSync = it }
+                    InterpoleTextField(
+                        label = "Memory sync interval minutes",
+                        value = memorySyncInterval,
+                        placeholder = "60",
+                        keyboardType = KeyboardType.Number,
+                        onChange = { memorySyncInterval = it.filter(Char::isDigit).take(4) },
+                    )
                     InterpoleTextField(
                         label = "Trusted folders",
                         value = trustedFolders,
@@ -1144,6 +1319,12 @@ fun InterpoleConfigScreen(onBack: () -> Unit) {
                 AppConfigManager.interpoleTrustMode = trustMode
                 AppConfigManager.interpoleTrustedFolders = trustedFolders.trim()
                 AppConfigManager.interpoleAllowExecute = allowExecute
+                AppConfigManager.interpoleDesktopHarnessEnabled = desktopHarness
+                AppConfigManager.interpoleDesktopWebPanelEnabled = desktopWebPanel
+                AppConfigManager.interpoleCliInterfaceEnabled = cliInterface
+                AppConfigManager.memorySyncEnabled = memorySync
+                AppConfigManager.memoryAutoSyncEnabled = memoryAutoSync
+                AppConfigManager.memorySyncIntervalMinutes = safeMemorySyncInterval
                 AppConfigManager.interpolePairedDeviceName = pairedDeviceName.trim()
             }
         }

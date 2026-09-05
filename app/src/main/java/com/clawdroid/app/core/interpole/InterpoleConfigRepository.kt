@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.clawdroid.app.core.config.AppConfigManager
 
 enum class DesktopEnvironment(val label: String, val wmType: String) {
     HYPRLAND("Hyprland (Wayland)", "wayland"),
@@ -36,6 +37,12 @@ data class InterpoleConfig(
     val tailscaleIp: String = "",
     val allowExecute: Boolean = true,
     val commandTimeout: Int = 60,
+    val desktopHarnessEnabled: Boolean = true,
+    val desktopWebPanelEnabled: Boolean = true,
+    val cliInterfaceEnabled: Boolean = true,
+    val memorySyncEnabled: Boolean = true,
+    val memoryAutoSyncEnabled: Boolean = false,
+    val memorySyncIntervalMinutes: Int = 60,
 ) {
     val rpcBaseUrl: String get() = baseUrl.trimEnd('/')
 }
@@ -61,21 +68,41 @@ class InterpoleConfigRepository(context: Context) {
     fun getConfig(): InterpoleConfig {
         val envName = prefs.getString(KEY_DESKTOP_ENV, DesktopEnvironment.HYPRLAND.name)
             ?: DesktopEnvironment.HYPRLAND.name
+        val appHost = AppConfigManager.interpoleHost.trim()
+        val appBaseUrl = if (appHost.isNotBlank()) {
+            "http://$appHost:${AppConfigManager.interpolePort}"
+        } else {
+            ""
+        }
         return InterpoleConfig(
-            enabled = prefs.getBoolean(KEY_ENABLED, false),
-            baseUrl = prefs.getString(KEY_BASE_URL, "http://100.x.x.x:8765") ?: "http://100.x.x.x:8765",
-            deviceId = prefs.getString(KEY_DEVICE_ID, "") ?: "",
+            enabled = AppConfigManager.interpoleEnabled || prefs.getBoolean(KEY_ENABLED, false),
+            baseUrl = appBaseUrl.ifBlank {
+                prefs.getString(KEY_BASE_URL, "http://100.x.x.x:8765") ?: "http://100.x.x.x:8765"
+            },
+            deviceId = AppConfigManager.interpoleDeviceId.ifBlank {
+                prefs.getString(KEY_DEVICE_ID, "") ?: ""
+            },
             desktopEnv = runCatching { DesktopEnvironment.valueOf(envName) }.getOrDefault(DesktopEnvironment.HYPRLAND),
             fileTransferPort = prefs.getInt(KEY_FILE_TRANSFER_PORT, 8787),
             downloadPath = prefs.getString(KEY_DOWNLOAD_PATH, "/home/paris") ?: "/home/paris",
             autoStartFileServer = prefs.getBoolean(KEY_AUTO_START_FILE_SERVER, true),
-            tailscaleIp = prefs.getString(KEY_TAILSCALE_IP, "") ?: "",
-            allowExecute = prefs.getBoolean(KEY_ALLOW_EXECUTE, true),
+            tailscaleIp = AppConfigManager.interpoleHost
+                .takeIf { AppConfigManager.interpoleConnectionType == "tailscale" && it.isNotBlank() }
+                ?: (prefs.getString(KEY_TAILSCALE_IP, "") ?: ""),
+            allowExecute = AppConfigManager.interpoleAllowExecute || prefs.getBoolean(KEY_ALLOW_EXECUTE, true),
             commandTimeout = prefs.getInt(KEY_COMMAND_TIMEOUT, 60),
+            desktopHarnessEnabled = AppConfigManager.interpoleDesktopHarnessEnabled,
+            desktopWebPanelEnabled = AppConfigManager.interpoleDesktopWebPanelEnabled,
+            cliInterfaceEnabled = AppConfigManager.interpoleCliInterfaceEnabled,
+            memorySyncEnabled = AppConfigManager.memorySyncEnabled,
+            memoryAutoSyncEnabled = AppConfigManager.memoryAutoSyncEnabled,
+            memorySyncIntervalMinutes = AppConfigManager.memorySyncIntervalMinutes,
         )
     }
 
-    fun getDeviceToken(): String = securePrefs.getString(KEY_DEVICE_TOKEN, "") ?: ""
+    fun getDeviceToken(): String = AppConfigManager.interpoleDeviceToken.ifBlank {
+        securePrefs.getString(KEY_DEVICE_TOKEN, "") ?: ""
+    }
 
     fun saveConfig(config: InterpoleConfig) {
         prefs.edit()
@@ -90,6 +117,18 @@ class InterpoleConfigRepository(context: Context) {
             .putBoolean(KEY_ALLOW_EXECUTE, config.allowExecute)
             .putInt(KEY_COMMAND_TIMEOUT, config.commandTimeout.coerceIn(1, 3600))
             .apply()
+        val url = runCatching { java.net.URL(config.rpcBaseUrl) }.getOrNull()
+        AppConfigManager.interpoleEnabled = config.enabled
+        AppConfigManager.interpoleHost = url?.host ?: config.baseUrl.removePrefix("http://").removePrefix("https://").substringBefore(':')
+        AppConfigManager.interpolePort = url?.port?.takeIf { it > 0 } ?: 8765
+        AppConfigManager.interpoleConnectionType = if (config.tailscaleIp.isNotBlank()) "tailscale" else AppConfigManager.interpoleConnectionType
+        AppConfigManager.interpoleAllowExecute = config.allowExecute
+        AppConfigManager.interpoleDesktopHarnessEnabled = config.desktopHarnessEnabled
+        AppConfigManager.interpoleDesktopWebPanelEnabled = config.desktopWebPanelEnabled
+        AppConfigManager.interpoleCliInterfaceEnabled = config.cliInterfaceEnabled
+        AppConfigManager.memorySyncEnabled = config.memorySyncEnabled
+        AppConfigManager.memoryAutoSyncEnabled = config.memoryAutoSyncEnabled
+        AppConfigManager.memorySyncIntervalMinutes = config.memorySyncIntervalMinutes
     }
 
     fun saveCredentials(deviceId: String, deviceToken: String) {
@@ -98,6 +137,9 @@ class InterpoleConfigRepository(context: Context) {
             .putBoolean(KEY_ENABLED, deviceId.isNotBlank() && deviceToken.isNotBlank())
             .apply()
         securePrefs.edit().putString(KEY_DEVICE_TOKEN, deviceToken).apply()
+        AppConfigManager.interpoleDeviceId = deviceId
+        AppConfigManager.interpoleDeviceToken = deviceToken
+        AppConfigManager.interpoleEnabled = deviceId.isNotBlank() && deviceToken.isNotBlank()
     }
 
     fun clearCredentials() {
@@ -106,6 +148,9 @@ class InterpoleConfigRepository(context: Context) {
             .putBoolean(KEY_ENABLED, false)
             .apply()
         securePrefs.edit().remove(KEY_DEVICE_TOKEN).apply()
+        AppConfigManager.interpoleDeviceId = ""
+        AppConfigManager.interpoleDeviceToken = ""
+        AppConfigManager.interpoleEnabled = false
     }
 
     companion object {

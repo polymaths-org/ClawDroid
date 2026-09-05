@@ -24,6 +24,7 @@ class SelfManageAlarmReceiver : BroadcastReceiver() {
                 when (kind) {
                     "alarm" -> handleAlarm(context, repo, id, fallbackTitle)
                     "reminder" -> handleReminder(context, repo, id, fallbackTitle)
+                    "todo" -> handleTodo(context, repo, id, fallbackTitle)
                 }
             } finally {
                 pendingResult.finish()
@@ -80,5 +81,34 @@ class SelfManageAlarmReceiver : BroadcastReceiver() {
         } else {
             repo.completeReminder(id)
         }
+    }
+
+    private suspend fun handleTodo(
+        context: Context,
+        repo: SelfManageRepository,
+        id: String,
+        fallbackTitle: String,
+    ) {
+        val todo = repo.getAllTodos().first().firstOrNull { it.id == id }
+        if (todo == null || todo.completed) return
+        val title = todo.title.ifBlank { fallbackTitle.ifBlank { "Todo due" } }
+        val body = todo.description.ifBlank { "Todo is due now" }
+        NotificationHelper.sendReminderNotification(
+            context = context,
+            reminderId = id,
+            title = title,
+            body = body,
+            voiceMode = false,
+        )
+        AgentAskManager(context).ask(
+            AgentQuestion(
+                id = "todo_due_${todo.id}_${todo.dueAt ?: 0}",
+                question = "Todo due: $title. Should I mark it done, reschedule it, or help with it now?",
+                context = "todo_due",
+                suggestedActions = listOf("mark_done", "reschedule", "help_now"),
+                priority = todo.priority,
+                expiresAt = System.currentTimeMillis() + 2 * 60 * 60 * 1000L,
+            ),
+        )
     }
 }

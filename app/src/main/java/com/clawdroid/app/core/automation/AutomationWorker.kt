@@ -7,6 +7,7 @@ import com.clawdroid.app.data.db.ClawDroidDatabase
 
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.BackgroundAgentRunner
+import com.clawdroid.app.core.interpole.InterpoleMemorySync
 import com.clawdroid.app.core.selfmanage.TriggerEngine
 import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.core.service.EnhancedForegroundService
@@ -102,6 +103,12 @@ class AutomationWorker(
                         )
                     }
                 }
+            }
+        }
+
+        if (AppConfigManager.memorySyncEnabled && AppConfigManager.memoryAutoSyncEnabled) {
+            runCatching {
+                InterpoleMemorySync(applicationContext).sync(direction = "bidirectional", force = false)
             }
         }
 

@@ -333,6 +333,15 @@ interface SelfManageDao {
     @Query("SELECT * FROM self_manage_alarms WHERE enabled = 1 ORDER BY hour ASC, minute ASC LIMIT 1")
     suspend fun getNextEnabledAlarm(): SelfManageAlarmEntity?
 
+    @Query("SELECT * FROM self_manage_alarms WHERE enabled = 1")
+    suspend fun getAllEnabledAlarms(): List<SelfManageAlarmEntity>
+
+    @Query("SELECT * FROM self_manage_reminders WHERE completed = 0 AND dueAt > :now")
+    suspend fun getFutureReminders(now: Long): List<SelfManageReminderEntity>
+
+    @Query("SELECT * FROM self_manage_todos WHERE completed = 0 AND dueAt IS NOT NULL AND dueAt > :now")
+    suspend fun getFutureTodos(now: Long): List<SelfManageTodoEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAlarm(alarm: SelfManageAlarmEntity)
 

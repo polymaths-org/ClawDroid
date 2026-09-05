@@ -4,15 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
@@ -130,9 +130,21 @@ object AssistantOverlayCoordinator {
 
     fun showAnswer(finalText: String) {
         Log.i(TAG, "showAnswer len=${finalText.length}")
-        answer.value = finalText
+        val completionText = finalText
+            .trim()
+            .ifBlank { "Task completed." }
+        answer.value = completionText
         status.value = "Done"
-        shortLine.value = finalText.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(140)
+        shortLine.value = completionText
+            .replace('\n', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(140)
+        actionLog.value = (actionLog.value + "Task completed")
+            .fold(emptyList<String>()) { acc, item ->
+                if (acc.lastOrNull() == item) acc else acc + item
+            }
+            .takeLast(5)
     }
 
     fun showError(message: String) {
@@ -215,8 +227,14 @@ object AssistantOverlayCoordinator {
 
         AnimatedVisibility(
             visible = isVisible,
-            enter = fadeIn(tween(180)) + expandVertically(expandFrom = Alignment.Bottom),
-            exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)) + slideInVertically(
+                animationSpec = tween(220, easing = FastOutSlowInEasing),
+                initialOffsetY = { fullHeight -> (fullHeight * 0.16f).toInt().coerceAtLeast(18) },
+            ),
+            exit = fadeOut(tween(110)) + slideOutVertically(
+                animationSpec = tween(140, easing = FastOutSlowInEasing),
+                targetOffsetY = { fullHeight -> (fullHeight * 0.10f).toInt().coerceAtLeast(12) },
+            ),
         ) {
             AssistantOverlayView(
                 invocation = invocation,

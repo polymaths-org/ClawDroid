@@ -23,6 +23,14 @@ object ToolSchemaRegistry {
         array.put(tool("screenshot", "Capture a screenshot as base64 JPEG when visual details are required and screen capture permission is active.") {
             required()
         })
+        array.put(tool("web_search", "Search the web for current information when the user asks to look something up or when current facts are needed.") {
+            putString("query", "Search query.")
+            required("query")
+        })
+        array.put(tool("browse_web", "Open a URL and extract readable page content.") {
+            putString("url", "URL to browse.")
+            required("url")
+        })
         array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
             putString("label", "Text or content description to tap.")
             required("label")
@@ -88,6 +96,24 @@ object ToolSchemaRegistry {
             putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, tap_resource_id, type_text, clear_text, wait, press_back, scroll, swipe, or long_press.")
             putBoolean("verify", "Return get_screen after all actions complete. Default true.")
             required("actions")
+        })
+        array.put(tool("set_reminder", "Create a reminder, todo, alarm, or scheduled background agent task.") {
+            putString("title", "Short reminder title.")
+            putString("note", "Optional reminder details.")
+            putString("trigger_at", "Optional trigger time. Use ISO-8601 with timezone when possible. Leave blank for untimed todos.")
+            putString("kind", "reminder, todo, alarm, or scheduled_task.")
+            putString("delivery_mode", "notification, voice, both, or silent.")
+            putBoolean("run_agent", "True when the scheduled item should automatically run the agent in the background.")
+            putString("agent_prompt", "Prompt to run later if run_agent is true.")
+            required("title")
+        })
+        array.put(tool("list_reminders", "List saved reminders, todos, alarms, and scheduled tasks.") {
+            putBoolean("include_completed", "Whether completed reminders should be included. Default false.")
+            required()
+        })
+        array.put(tool("cancel_reminder", "Cancel a saved reminder, todo, alarm, or scheduled task.") {
+            putString("reminder_id", "The reminder id returned by set_reminder or list_reminders.")
+            required("reminder_id")
         })
 
         appendGoogleConnectorTools(array)
@@ -347,6 +373,28 @@ object ToolSchemaRegistry {
             putString("desktop_path", "Desktop source path under download_path.")
             putString("local_path", "Local destination path on Android/sandbox.")
             required("desktop_path", "local_path")
+        })
+        array.put(tool("interpole_configure", "Update INTERPOLE desktop settings after the user provides missing details such as Tailscale IP, MagicDNS host, LAN IP, file-transfer port, or desktop mode flags.") {
+            putString("host", "Desktop LAN IP, Tailscale IP, or MagicDNS name.")
+            putString("tailscale_host", "Alias for host when the user gives a Tailscale address.")
+            putInteger("port", "INTERPOLE RPC port. Default 8765.")
+            putString("connection_type", "local or tailscale.")
+            putString("desktop_env", "HYPRLAND, KDE, GNOME, XFCE, I3, or GENERIC.")
+            putInteger("file_transfer_port", "File transfer service port. Default 8787.")
+            putString("download_path", "Desktop download/sync base path.")
+            putBoolean("allow_execute", "Whether desktop command execution is allowed.")
+            putBoolean("desktop_harness", "Enable desktop harness mode.")
+            putBoolean("web_panel", "Enable desktop web panel mode.")
+            putBoolean("cli_interface", "Enable INTERPOLE CLI interface mode.")
+            putBoolean("memory_sync", "Enable shared memory sync protocol.")
+            putBoolean("memory_auto_sync", "Automatically sync memory on interval.")
+            putInteger("memory_sync_interval_minutes", "Auto sync interval, 15-1440 minutes.")
+            required()
+        })
+        array.put(tool("interpole_memory_sync", "Sync ClawDroid long-term memory with the paired desktop using protocol clawdroid.memory.v1. Use push before desktop work, pull after desktop work, and bidirectional for manual sync.") {
+            putString("direction", "push, pull, or bidirectional. Default bidirectional.")
+            putBoolean("force", "Ignore auto-sync interval and sync now.")
+            required()
         })
 
         val isGoogleActive = com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected &&

@@ -36,11 +36,13 @@ import com.clawdroid.app.ui.settings.InterpoleConfigScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.McpScreen
 import com.clawdroid.app.ui.settings.NotificationConfigScreen
+import com.clawdroid.app.ui.settings.OverlayConfigScreen
 import com.clawdroid.app.ui.settings.PermissionManagerScreen
 import com.clawdroid.app.ui.settings.ProviderConfigScreen
 import com.clawdroid.app.ui.settings.SkillsConfigScreen
 import com.clawdroid.app.ui.settings.ThemeConfigScreen
 import com.clawdroid.app.ui.setup.SetupScreen
+import com.clawdroid.app.ui.selfmanage.SelfManageScreen
 import com.clawdroid.app.ui.setup.PostSetupScreen
 import com.clawdroid.app.ui.splash.HatchingScreen
 import com.clawdroid.app.ui.splash.SplashScreen
@@ -87,6 +89,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        handleNotificationTrigger(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -97,6 +100,7 @@ class MainActivity : ComponentActivity() {
             startVoiceSessionTrigger.value = true
         }
         handleDeepLink(intent)
+        handleNotificationTrigger(intent)
     }
 
     override fun onStart() {
@@ -155,6 +159,10 @@ class MainActivity : ComponentActivity() {
         }
         return true
     }
+
+    private fun handleNotificationTrigger(intent: Intent?) {
+        intent?.removeExtra(NotificationHelper.EXTRA_TRIGGER_ACTION)
+    }
 }
 
 enum class Screen {
@@ -167,6 +175,7 @@ enum class Screen {
     Provider,
     Audio,
     Notifications,
+    Overlay,
     Agent,
     Automations,
     Connections,
@@ -178,6 +187,7 @@ enum class Screen {
     Permissions,
     ConfigEditor,
     Terminal,
+    SelfManage,
 }
 
 @Composable
@@ -250,6 +260,7 @@ private fun ClawDroidApp(
                     onNavigateToProvider = { currentScreen = Screen.Provider },
                     onNavigateToAudio = { currentScreen = Screen.Audio },
                     onNavigateToNotifications = { currentScreen = Screen.Notifications },
+                    onNavigateToOverlay = { currentScreen = Screen.Overlay },
                     onNavigateToAutomations = { currentScreen = Screen.Automations },
                     onNavigateToConnections = { currentScreen = Screen.Connections },
                     onNavigateToChannels = { currentScreen = Screen.Channels },
@@ -271,6 +282,8 @@ private fun ClawDroidApp(
             Screen.Notifications -> NotificationConfigScreen(onBack = { currentScreen = Screen.Settings })
 
             Screen.Provider -> ProviderConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Overlay -> OverlayConfigScreen(onBack = { currentScreen = Screen.Settings })
 
             Screen.Agent -> AgentConfigScreen(onBack = { currentScreen = Screen.Settings })
 
@@ -309,13 +322,19 @@ private fun ClawDroidApp(
                 onBack = { currentScreen = Screen.Settings },
             )
 
-            Screen.Terminal -> TerminalScreen(onBack = { currentScreen = Screen.Chat })
+            Screen.Terminal -> TerminalScreen(
+                onBack = { currentScreen = Screen.Chat },
+                onNavigateToSelfManage = { currentScreen = Screen.SelfManage },
+            )
+
+            Screen.SelfManage -> SelfManageScreen(onBack = { currentScreen = Screen.Chat })
 
             Screen.Chat -> {
                 ChatScreen(
                     onNavigateToSettings = { currentScreen = Screen.Settings },
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
                     onNavigateToTerminal = { currentScreen = Screen.Terminal },
+                    onNavigateToSelfManage = { currentScreen = Screen.SelfManage },
                     startVoiceTrigger = startVoiceTrigger,
                     onVoiceTriggerHandled = onVoiceTriggerHandled
                 )
