@@ -36,6 +36,7 @@ android {
             ?: "moonshotai/Kimi-K2.6"
         val llmApiKey = localProperties.getProperty("LLM_API_KEY") ?: ""
         val llmProvider = localProperties.getProperty("LLM_PROVIDER") ?: "siliconflow"
+        val openaiRealtimeApiKey = localProperties.getProperty("OPENAI_REALTIME_API_KEY") ?: ""
 
         val githubClientId = localProperties.getProperty("GITHUB_OAUTH_CLIENT_ID") ?: ""
         val githubClientSecret = localProperties.getProperty("GITHUB_OAUTH_CLIENT_SECRET") ?: ""
@@ -51,6 +52,7 @@ android {
         buildConfigField("String", "LLM_MODEL", llmModel.asBuildConfigString())
         buildConfigField("String", "LLM_API_KEY", llmApiKey.asBuildConfigString())
         buildConfigField("String", "LLM_PROVIDER", llmProvider.asBuildConfigString())
+        buildConfigField("String", "OPENAI_REALTIME_API_KEY", openaiRealtimeApiKey.asBuildConfigString())
 
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", githubClientId.asBuildConfigString())
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", githubClientSecret.asBuildConfigString())
@@ -106,4 +108,3 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
-
