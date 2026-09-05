@@ -34,6 +34,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -81,6 +84,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,6 +99,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -844,8 +849,46 @@ fun ChatScreen(
         }
     }
 
+    if (drawerState.isOpen) {
+        BackHandler {
+            scope.launch { drawerState.close() }
+        }
+    }
+
     LaunchedEffect(items.size) {
-        if (items.isNotEmpty()) listState.animateScrollToItem(items.lastIndex)
+        if (items.isNotEmpty()) listState.animateScrollToItem(items.size)
+    }
+
+    val density = LocalDensity.current
+    val imeInsets = WindowInsets.ime
+    val keyboardHeight by remember {
+        derivedStateOf {
+            imeInsets.getBottom(density)
+        }
+    }
+
+    val dynamicBottomPadding by remember {
+        derivedStateOf {
+            val kbHeightDp = with(density) { imeInsets.getBottom(density).toDp() }
+            val progress = (kbHeightDp.value / 250f).coerceIn(0f, 1f)
+            160.dp - (74.dp * progress)
+        }
+    }
+
+    LaunchedEffect(listState) {
+        androidx.compose.runtime.snapshotFlow { keyboardHeight }
+            .collect { height ->
+                if (items.isNotEmpty()) {
+                    val layoutInfo = listState.layoutInfo
+                    val visibleItems = layoutInfo.visibleItemsInfo
+                    if (visibleItems.isNotEmpty()) {
+                        val isAtBottom = visibleItems.any { it.index >= items.size }
+                        if (isAtBottom) {
+                            listState.scrollToItem(items.size)
+                        }
+                    }
+                }
+            }
     }
 
     ModalNavigationDrawer(
@@ -941,76 +984,84 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(DeepBlack)
-                    .padding(paddingValues),
+                    .padding(top = paddingValues.calculateTopPadding()),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
-                        .imePadding(),
-                ) {
+                if (items.isEmpty()) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .imePadding()
+                            .padding(bottom = 86.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (items.isEmpty()) {
-                            EmptyGreeting(modifier = Modifier.align(Alignment.Center))
-                        } else {
-                            val lastAgentMessageId = items.lastOrNull { it is AgentChatItem }?.id
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                state = listState,
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    start = 16.dp,
-                                    end = 16.dp,
-                                    top = 16.dp,
-                                    bottom = 16.dp,
-                                ),
-                            ) {
-                                items(items, key = { it.id }) { item ->
-                                    when (item) {
-                                        is UserChatItem -> UserMessageBubble(item)
-                                        is AgentChatItem -> AgentMessageCard(
-                                            item = item,
-                                            showActionRow = (runtimeState == AgentRuntimeState.Idle && item.id == lastAgentMessageId),
-                                            onReadAloud = { voiceManager.speak(item.text) },
-                                            onCopy = {
-                                                val annotated = AnnotatedString(item.text)
-                                                clipboardManager.setText(annotated)
-                                            },
-                                            onRegenerate = {
-                                                val idx = items.indexOfFirst { it.id == item.id }
-                                                if (idx > 0) {
-                                                    var userMsgIdx = -1
-                                                    for (i in (idx - 1) downTo 0) {
-                                                        if (items[i] is UserChatItem) {
-                                                            userMsgIdx = i
-                                                            break
-                                                        }
-                                                    }
-                                                    if (userMsgIdx >= 0) {
-                                                        val userMsg = items[userMsgIdx] as UserChatItem
-                                                        scope.launch {
-                                                            db.messages().deleteById(item.id)
-                                                            while (items.size > userMsgIdx + 1) {
-                                                                items.removeAt(items.size - 1)
-                                                            }
-                                                            submitQuery(userMsg.text)
-                                                        }
-                                                    }
+                        EmptyGreeting()
+                    }
+                } else {
+                    val lastAgentMessageId = items.lastOrNull { it is AgentChatItem }?.id
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .imePadding(),
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 16.dp,
+                            bottom = dynamicBottomPadding,
+                        ),
+                    ) {
+                        items(items, key = { it.id }) { item ->
+                            when (item) {
+                                is UserChatItem -> UserMessageBubble(item)
+                                is AgentChatItem -> AgentMessageCard(
+                                    item = item,
+                                    showActionRow = (runtimeState == AgentRuntimeState.Idle && item.id == lastAgentMessageId),
+                                    onReadAloud = { voiceManager.speak(item.text) },
+                                    onCopy = {
+                                        val annotated = AnnotatedString(item.text)
+                                        clipboardManager.setText(annotated)
+                                    },
+                                    onRegenerate = {
+                                        val idx = items.indexOfFirst { it.id == item.id }
+                                        if (idx > 0) {
+                                            var userMsgIdx = -1
+                                            for (i in (idx - 1) downTo 0) {
+                                                if (items[i] is UserChatItem) {
+                                                    userMsgIdx = i
+                                                    break
                                                 }
                                             }
-                                        )
-                                        is ActivityChatItem -> ActivityMessageCard(item)
+                                            if (userMsgIdx >= 0) {
+                                                val userMsg = items[userMsgIdx] as UserChatItem
+                                                scope.launch {
+                                                    db.messages().deleteById(item.id)
+                                                    while (items.size > userMsgIdx + 1) {
+                                                        items.removeAt(items.size - 1)
+                                                    }
+                                                    submitQuery(userMsg.text)
+                                                }
+                                            }
+                                        }
                                     }
-                                }
+                                )
+                                is ActivityChatItem -> ActivityMessageCard(item)
                             }
                         }
+                        item {
+                            Spacer(modifier = Modifier.fillMaxWidth().height(1.dp))
+                        }
                     }
+                }
 
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .imePadding()
+                ) {
                     PremiumInputBar(
                         value = input,
                         onValueChange = { input = it },
@@ -1019,7 +1070,7 @@ fun ChatScreen(
                         onStop = { stopCurrentRun() },
                     )
                 }
-
+            
                 // Piper download progress dialog
                 if (piperDownloadProgress > 0f && piperDownloadProgress < 1f) {
                     PiperDownloadDialog(progress = piperDownloadProgress)

@@ -14,3 +14,6 @@ local.properties
 *.iml
 
 stitch_clawdroid_premium_splash_screen/
+context_management_implementation_plan.md
+opencode_context_management_analysis.md
+.gitignore
