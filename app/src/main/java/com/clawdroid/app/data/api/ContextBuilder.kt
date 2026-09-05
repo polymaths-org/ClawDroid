@@ -17,7 +17,11 @@ import java.util.UUID
  * [Messages after summary point]          ← from Room DB
  * ```
  */
+import android.content.Context
+
 class ContextBuilder(
+    private val context: Context,
+    private val projectId: String?,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val toolCallDao: ToolCallDao,
@@ -167,11 +171,8 @@ class ContextBuilder(
         return id
     }
 
-    companion object {
-        fun buildSystemPrompt(): String = """
-            You are ClawDroid, a transparent Android agent with access to a Linux sandbox.
-            Use tools when useful, keep the user informed, and prefer concrete action over vague advice.
-        """.trimIndent()
+    fun buildSystemPrompt(): String {
+        return MessageBuilder.buildSystemPrompt(context, projectId)
     }
 }
 
