@@ -43,6 +43,12 @@ data class ConversationEntity(
     val updatedAt: Long,
     val status: String,
     val costUsd: Double,
+    val summaryMessageId: String? = null,
+    val lastPromptTokens: Int = 0,
+    val totalPromptTokens: Long = 0,
+    val totalCompletionTokens: Long = 0,
+    val totalCachedTokens: Long = 0,
+    val modelId: String = "",
 )
 
 @Entity(
@@ -64,6 +70,7 @@ data class MessageEntity(
     val content: String,
     val createdAt: Long,
     val tokenCount: Int,
+    val toolCallId: String? = null, // For role="tool": the tool_call_id this result responds to
 )
 
 @Entity(
@@ -147,6 +154,18 @@ interface ConversationDao {
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM conversations WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): ConversationEntity?
+
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getMostRecent(): ConversationEntity?
+
+    @Query("UPDATE conversations SET summaryMessageId = :summaryMessageId, lastPromptTokens = 0, updatedAt = :now WHERE id = :id")
+    suspend fun setSummaryMessageId(id: String, summaryMessageId: String, now: Long = System.currentTimeMillis())
+
+    @Query("UPDATE conversations SET lastPromptTokens = :lastPromptTokens, totalPromptTokens = totalPromptTokens + :promptTokens, totalCompletionTokens = totalCompletionTokens + :completionTokens, totalCachedTokens = totalCachedTokens + :cachedTokens, costUsd = costUsd + :costDelta, updatedAt = :now WHERE id = :id")
+    suspend fun recordUsage(id: String, lastPromptTokens: Int, promptTokens: Long, completionTokens: Long, cachedTokens: Long, costDelta: Double, now: Long = System.currentTimeMillis())
 }
 
 @Dao
@@ -162,12 +181,24 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteForConversation(conversationId: String)
+
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    suspend fun getAll(conversationId: String): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): MessageEntity?
+
+    @Update
+    suspend fun update(message: MessageEntity)
 }
 
 @Dao
 interface ToolCallDao {
     @Query("SELECT * FROM tool_calls WHERE messageId = :messageId ORDER BY id ASC")
     fun observeForMessage(messageId: String): Flow<List<ToolCallEntity>>
+
+    @Query("SELECT * FROM tool_calls WHERE messageId = :messageId ORDER BY id ASC")
+    suspend fun getForMessage(messageId: String): List<ToolCallEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(toolCall: ToolCallEntity)
@@ -212,7 +243,7 @@ interface SettingsDao {
         AutomationEntity::class,
         SettingsEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class ClawDroidDatabase : RoomDatabase() {
@@ -231,7 +262,7 @@ abstract class ClawDroidDatabase : RoomDatabase() {
                 context.applicationContext,
                 ClawDroidDatabase::class.java,
                 "clawdroid.db",
-            ).build().also { instance = it }
+            ).fallbackToDestructiveMigration(true).build().also { instance = it }
         }
     }
 }
