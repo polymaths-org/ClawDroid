@@ -64,7 +64,11 @@ object LocalPromptTools {
                             add(arr.optJSONObject(i)?.optString("name").orEmpty())
                         }
                     }.filter { it.isNotEmpty() }
-                    if (names.isNotEmpty()) return "Files: " + names.joinToString(", ")
+                    if (names.isNotEmpty()) {
+                        val dir = obj.optString("path").take(200)
+                        return if (dir.isNotEmpty()) "Directory $dir contains: ${names.joinToString(", ")}"
+                        else "Files: " + names.joinToString(", ")
+                    }
                 }
             }
             if (obj.has("apps")) {
@@ -95,7 +99,10 @@ object LocalPromptTools {
             if (tree != null) return summarizeScreenTree(tree).take(800)
             if (obj.has("content")) {
                 val c = obj.optString("content")
-                if (c.isNotEmpty()) return c.take(800)
+                if (c.isNotEmpty()) {
+                    val p = obj.optString("path").take(200)
+                    return if (p.isNotEmpty()) "File $p:\n${c.take(650)}" else c.take(800)
+                }
             }
         } catch (_: Exception) { }
         s = s.replace("/data/user/0/com.clawdroid.app/files/home/", "")
@@ -132,6 +139,14 @@ object LocalPromptTools {
             Regex("^(\\s*(Assistant|User|Tool result|System)\\s*:\\s*)+", RegexOption.IGNORE_CASE),
             "",
         ).trim()
+    }
+
+    val INNER_TURN_REGEX = Regex("\\n\\s*(Assistant|User|Tool result|System)\\s*:.*", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+    /** Keep only the first assistant turn; small models append fake turns. */
+    fun firstTurnOnly(text: String): String {
+        val cut = INNER_TURN_REGEX.find(text) ?: return text.trim()
+        return text.substring(0, cut.range.first).trim()
     }
 
     fun isCompactionNoise(content: String): Boolean {
@@ -203,7 +218,8 @@ Otherwise reply with plain text only. Keep replies short."""
     }
 
     const val LOCAL_SYSTEM = "You are Nova, on-device Android agent. Answer briefly from Tool results. " +
-        "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure."
+        "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure. " +
+        "When asked for a file location, reply with the File path from the Tool result, not the full content."
 
     fun buildPrompt(
         messages: List<ChatMessage>,
