@@ -292,4 +292,18 @@ class LocalPromptToolsTest {
         val emptyCal = LocalPromptTools.summarizeToolResult("{\"events\":[]}")
         assertTrue(emptyCal.contains("No upcoming events"))
     }
+
+    @Test
+    fun `summarizeToolResult explains failed taps with grounding hint`() {
+        val failed = "{\"success\":false,\"action\":\"tapped\",\"label\":\"settings\"}"
+        val out = LocalPromptTools.summarizeToolResult(failed)
+        assertTrue(out.contains("Tap failed"))
+        assertTrue(out.contains("get_screen"))
+    }
+
+    @Test
+    fun `local system requires screen grounding after launch`() {
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("MUST call get_screen"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("Never repeat the same failed tap"))
+    }
 }

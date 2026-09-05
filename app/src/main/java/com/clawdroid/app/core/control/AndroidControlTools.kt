@@ -128,7 +128,13 @@ object AndroidControlTools {
     suspend fun tapText(label: String): JSONObject = runTool {
         val service = requireService() ?: return@runTool serviceNotRunning()
         val ok = service.tapByText(label)
-        successResult("tapped", ok).put("label", label)
+        if (!ok) {
+            return@runTool errorResult(
+                "tap_target_not_found",
+                "No clickable '$label' found. Call get_screen first and use an exact visible label.",
+            ).put("label", label)
+        }
+        successResult("tapped", true).put("label", label)
     }
 
     suspend fun tapResourceId(id: String): JSONObject = runTool {

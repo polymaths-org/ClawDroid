@@ -263,6 +263,16 @@ class ScreenReaderService : AccessibilityService() {
     }
 
     private fun findNodeByText(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        val key = label.trim()
+        if (key.isNotEmpty()) {
+            val exact = findNodeByTextExact(node, key)
+            if (exact != null) return exact
+            return findNodeByTextContains(node, key)
+        }
+        return null
+    }
+
+    private fun findNodeByTextExact(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
         val text = node.text?.toString()?.trim().orEmpty()
         val desc = node.contentDescription?.toString()?.trim().orEmpty()
         if ((text.equals(label, ignoreCase = true) || desc.equals(label, ignoreCase = true)) && node.isClickable) {
@@ -270,9 +280,28 @@ class ScreenReaderService : AccessibilityService() {
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findNodeByText(child, label)
+            val found = findNodeByTextExact(child, label)
             child.recycle()
             if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findNodeByTextContains(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findNodeByTextContains(child, label)
+            child.recycle()
+            if (found != null) return found
+        }
+        val text = node.text?.toString()?.trim().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        val matches = text.contains(label, ignoreCase = true) ||
+            desc.contains(label, ignoreCase = true) ||
+            (text.length >= 3 && label.contains(text, ignoreCase = true)) ||
+            (desc.length >= 3 && label.contains(desc, ignoreCase = true))
+        if (matches && node.isClickable) {
+            return AccessibilityNodeInfo.obtain(node)
         }
         return null
     }

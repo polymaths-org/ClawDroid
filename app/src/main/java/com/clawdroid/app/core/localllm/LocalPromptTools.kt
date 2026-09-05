@@ -95,6 +95,12 @@ object LocalPromptTools {
                 }
                 return out.take(800)
             }
+            if (obj.optBoolean("success") == false && obj.has("action")) {
+                val action = obj.optString("action").take(60)
+                val label = obj.optString("label").take(80)
+                val target = if (label.isNotEmpty()) "'$label'" else action
+                return "Tap failed: no clickable $target found. Call get_screen first and use an exact visible label.".take(800)
+            }
             if (obj.has("entries")) {
                 val arr = obj.optJSONArray("entries")
                 if (arr != null) {
@@ -300,7 +306,9 @@ Otherwise reply with plain text only. Keep replies short."""
         "Answer briefly from Tool results. " +
         "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure. " +
         "To open an app, call launch_app with the app name. Never tap blind at guessed coordinates. " +
+        "After launch_app, you MUST call get_screen before any tap. " +
         "After get_screen, use tap_text with a visible label. " +
+        "If a tap fails, call get_screen again and pick a different exact label. Never repeat the same failed tap. " +
         "When asked for a file location, reply with the File path from the Tool result, not the full content."
 
     fun buildPrompt(
