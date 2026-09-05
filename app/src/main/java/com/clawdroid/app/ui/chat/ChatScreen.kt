@@ -87,6 +87,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -114,6 +115,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -238,6 +241,13 @@ fun ChatScreen(
                 }
             }
             items + activeOnly
+        }
+    }
+    val showJumpToBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index
+            lastVisible != null && lastVisible < info.totalItemsCount - 2
         }
     }
 
@@ -1161,7 +1171,7 @@ fun ChatScreen(
                             start = 16.dp,
                             end = 16.dp,
                             top = 16.dp,
-                            bottom = 120.dp,
+                            bottom = 224.dp,
                         ),
                     ) {
                         items(displayItems, key = { it.id }) { item ->
@@ -1210,6 +1220,16 @@ fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                                ),
+                            ),
+                        )
+                        .padding(top = 48.dp)
                 ) {
                     PremiumInputBar(
                         value = input,
@@ -1227,6 +1247,32 @@ fun ChatScreen(
                             selectedMediaMimeType = mime
                         }
                     )
+                }
+
+                AnimatedVisibility(
+                    visible = showJumpToBottom && displayItems.isNotEmpty(),
+                    enter = fadeIn(tween(200)) + scaleIn(tween(200)),
+                    exit = fadeOut(tween(200)) + scaleOut(tween(200)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 108.dp),
+                ) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                if (displayItems.isNotEmpty()) {
+                                    listState.animateScrollToItem(displayItems.size - 1)
+                                }
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "Go to latest message",
+                        )
+                    }
                 }
             
                 // Piper download progress dialog

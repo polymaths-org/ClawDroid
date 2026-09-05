@@ -432,34 +432,8 @@ class AgentEngine(
         MessageBuilder.setMemoryContext(memoryManager.getRelevantContext(text))
     }
 
-    private fun String.toUserFacingStreamError(mediaPath: String?): String {
-        val lower = lowercase()
-        if (mediaPath != null && (lower.contains("image_url") || lower.contains("vision") || lower.contains("image input"))) {
-            return "This model rejected the screenshot image. Pick a vision-capable model, or retry with screen-control context only."
-        }
-        if (lower.contains("401") || lower.contains("api key")) {
-            return "The model provider rejected the API key. Check Settings and try again."
-        }
-        if (lower.contains("429") || lower.contains("rate limit")) {
-            return "The model provider is rate limiting requests. Wait a moment and try again."
-        }
-        if (
-            lower.contains("context_length_exceeded") ||
-            lower.contains("maximum context") ||
-            lower.contains("context window") ||
-            lower.contains("too many tokens") ||
-            lower.contains("prompt is too long") ||
-            lower.contains("input is too long") ||
-            (lower.contains("400") && lower.contains("token")) ||
-            (lower.contains("400") && lower.contains("context"))
-        ) {
-            return "The model provider says this chat is too large for its context window. Start a new chat, or compact/clear old context, then retry. For simple Android actions like opening an app, ClawDroid will now try the local launcher first."
-        }
-        if (lower.contains("provider") && lower.contains("error")) {
-            return "The model provider returned an error. If this happened during a simple Android action, start a new chat and retry; ClawDroid will use local Android control when it can. If it repeats, check Settings > Provider."
-        }
-        return "Assistant run failed: $this"
-    }
+    private fun String.toUserFacingStreamError(mediaPath: String?): String =
+        mapStreamErrorToUserText(this, hasMedia = mediaPath != null)
 
     private fun AssistantInvocation.shouldAttachImageForFirstTurn(): Boolean {
         if (contextSnapshot?.selectedRegionPath != null) return true
