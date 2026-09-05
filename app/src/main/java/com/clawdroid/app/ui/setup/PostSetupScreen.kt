@@ -173,7 +173,7 @@ fun PostSetupScreen(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     )
-                    generatedFiles.forEach { file ->
+                    generatedFiles.distinct().forEach { file ->
                         Text(
                             text = "+ $file",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

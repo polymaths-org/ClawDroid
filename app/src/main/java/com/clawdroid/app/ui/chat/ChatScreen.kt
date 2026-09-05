@@ -158,6 +158,7 @@ import com.clawdroid.app.ui.components.PiperDownloadDialog
 import com.clawdroid.app.ui.components.StaggeredWordsText
 import com.clawdroid.app.ui.components.currentClawSkin
 import com.clawdroid.app.ui.components.isHud
+import com.clawdroid.app.ui.components.providerDisplayName
 import com.clawdroid.app.ui.markdown.MarkdownResponseContent
 import com.clawdroid.app.ui.markdown.MarkdownText
 import com.clawdroid.app.ui.sidebar.SidebarContent
@@ -1542,7 +1543,7 @@ private fun ReferenceChatTopBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = provider.replaceFirstChar { it.uppercaseChar() },
+                    text = providerDisplayName(provider),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.95f),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 13.sp,
