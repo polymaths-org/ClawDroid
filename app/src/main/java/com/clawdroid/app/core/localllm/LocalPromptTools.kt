@@ -187,6 +187,7 @@ object LocalPromptTools {
     }
 
     val INNER_TURN_REGEX = Regex("\\n\\s*(Assistant|User|Tool result|System)\\s*:.*", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    val TOOL_CALL_ECHO_REGEX = Regex("^\\s*Assistant tool call:.*$", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
 
     /** Keep only the first assistant turn; small models append fake turns. */
     fun firstTurnOnly(text: String): String {
@@ -220,6 +221,7 @@ You may think briefly inside <think>...</think> before deciding, then write the 
 After you receive a Tool result message, you MUST reply in plain text using that result.
 Summarize file lists as short names, never paste raw JSON back into chat.
 NEVER repeat the same tool call with the same arguments twice.
+NEVER emit tap with guessed x/y like 800,500. Ground every tap from get_screen labels.
 If the result already answers the user, print it and stop. No more tool blocks.
 Otherwise reply with plain text only. Keep replies short."""
 
@@ -227,18 +229,19 @@ Otherwise reply with plain text only. Keep replies short."""
 
     fun renderTools(tools: JSONArray?, allowlist: Set<String>): String {
         if (tools == null || tools.length() == 0) return ""
-        val specs = mutableListOf<String>()
+        val byName = mutableMapOf<String, String>()
         for (i in 0 until tools.length()) {
-            if (specs.size >= MAX_TOOLS) break
             val fn = runCatching { tools.getJSONObject(i).optJSONObject("function") }.getOrNull()
                 ?: continue
             val name = fn.optString("name").trim()
-            if (name.isEmpty() || name !in allowlist) continue
+            if (name.isEmpty() || name !in allowlist || name in byName) continue
             val desc = fn.optString("description").trim().take(100).replace('\n', ' ')
             val args = argSpec(fn)
-            specs.add("{\"name\":\"$name\",\"description\":\"$desc\"$args}")
+            byName[name] = "{\"name\":\"$name\",\"description\":\"$desc\"$args}"
         }
-        return specs.joinToString("\n")
+        // Emit in allowlist order so launch_app/get_screen survive the MAX_TOOLS cap.
+        return allowlist.filter { it in byName }.take(MAX_TOOLS).map { byName.getValue(it) }
+            .joinToString("\n")
     }
 
     private fun argSpec(fn: org.json.JSONObject): String {
@@ -265,6 +268,8 @@ Otherwise reply with plain text only. Keep replies short."""
     const val LOCAL_SYSTEM = "You are Nova, pocket agent for TesterDeveloper. Calm, practical, observant. " +
         "Answer briefly from Tool results. " +
         "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure. " +
+        "To open an app, call launch_app with the app name. Never tap blind at guessed coordinates. " +
+        "After get_screen, use tap_text with a visible label. " +
         "When asked for a file location, reply with the File path from the Tool result, not the full content."
 
     fun buildPrompt(
@@ -292,7 +297,7 @@ Otherwise reply with plain text only. Keep replies short."""
                 "assistant" -> {
                     if (m.toolCalls.isNotEmpty()) {
                         for (c in m.toolCalls) {
-                            sb.append("Assistant tool call: ${c.name} ${c.arguments.take(500)}\n")
+                            sb.append("Prior tool call: ${c.name} ${c.arguments.take(500)}\n")
                         }
                     } else {
                         val clean = stripRolePrefix(stripThinking(m.content.orEmpty())).take(MAX_MSG_CHARS)

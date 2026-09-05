@@ -249,4 +249,32 @@ class LocalPromptToolsTest {
         assertEquals("File content here", LocalPromptTools.firstTurnOnly(raw))
         assertEquals("plain", LocalPromptTools.firstTurnOnly("plain"))
     }
+
+    @Test
+    fun `renderTools honors allowlist order so launch_app survives cap`() {
+        val tools = JSONArray()
+        for (name in listOf("execute_command", "read_file", "write_file", "list_directory", "get_screen", "tap", "tap_text", "launch_app", "wait")) {
+            tools.put(JSONObject().put("function", JSONObject().put("name", name).put("description", "d $name")))
+        }
+        val allow = linkedSetOf("launch_app", "get_screen", "tap_text", "tap", "type_text", "press_back")
+        val out = LocalPromptTools.renderTools(tools, allow)
+        assertTrue(out.contains("launch_app"))
+        assertTrue(out.indexOf("launch_app") < out.indexOf("get_screen"))
+    }
+
+    @Test
+    fun `tool call echo lines are stripped from visible text`() {
+        val raw = "Done.\nAssistant tool call: tap {\"x\":\"800\"}"
+        val clean = LocalPromptTools.TOOL_CALL_ECHO_REGEX.replace(raw, "").trim()
+        assertTrue(!clean.contains("Assistant tool call"))
+        assertTrue(clean.contains("Done."))
+    }
+
+    @Test
+    fun `xLAM default with per-model context`() {
+        assertEquals(LocalLlmConfig.GGUF_MODEL_XLAM_3B, LocalLlmConfig.DEFAULT_MODEL)
+        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_XLAM_3B))
+        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_GEMMA_3N_E2B))
+        assertEquals("Q4_K_M", LocalLlmConfig.GGUF_PRECISION_Q4_K_M)
+    }
 }

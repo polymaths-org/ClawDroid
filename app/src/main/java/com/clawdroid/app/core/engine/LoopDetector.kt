@@ -17,7 +17,9 @@ class LoopDetector(
 
     fun record(call: CompletedToolCall): LoopCheckResult {
         val signature = call.signature()
-        val hardCap = if (AndroidControlTools.isScreenControlTool(call.name)) 50 else hardStopAfterIdenticalCalls
+        // Screen taps with guessed coords looped 50x ("open browser" -> tap 800,500).
+        // Cap identical screen calls at 5 so the run stops instead of tapping forever.
+        val hardCap = if (AndroidControlTools.isScreenControlTool(call.name)) 5 else hardStopAfterIdenticalCalls
         recentCalls.addLast(signature)
         while (recentCalls.size > hardCap) {
             recentCalls.removeFirst()

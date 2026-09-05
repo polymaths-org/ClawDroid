@@ -23,9 +23,25 @@ object LocalLlmConfig {
     const val GGUF_MODEL_4B = "unsloth/Qwen3-4B-GGUF"
     const val GGUF_MODEL_06B = "unsloth/Qwen3-0.6B-GGUF"
     const val GGUF_MODEL_17B = "unsloth/Qwen3-1.7B-GGUF"
-    /** Default is 1.7B: 0.6B is too weak for tools, 4B OOM-kills with mmap disabled. */
-    const val DEFAULT_MODEL = GGUF_MODEL_17B
+    /**
+     * Purpose-built function caller for the 12 GB iQOO 15: xLAM fine-tune of
+     * Llama-3.2-3B-Instruct for structured calls, Q4_K_M (~1.9 GB, ~4.5 GB RAM).
+     * Benchmarks put the Qwen3-1.7B family on top only with native Hermes tools;
+     * xLAM restrains itself better through our prompt-fence path.
+     */
+    const val GGUF_MODEL_XLAM_3B = "ermiaazarkhalili/Llama-3.2-3B-Instruct_Function_Calling_xLAM-GGUF"
+    /**
+     * Google mobile-first options. Gemma 3n E2B runs with ~2 GB effective RAM
+     * via per-layer embeddings (2.8 GB Q4_K_M file); Gemma 3 1B is the fastest
+     * fallback (~0.7 GB). Both need correct chat templates via applyChatTemplate.
+     */
+    const val GGUF_MODEL_GEMMA_3N_E2B = "unsloth/gemma-3n-E2B-it-GGUF"
+    const val GGUF_MODEL_GEMMA_3_1B = "unsloth/gemma-3-1b-it-GGUF"
+    /** Default is xLAM 3B: trained to call tools and to not call them. */
+    const val DEFAULT_MODEL = GGUF_MODEL_XLAM_3B
     const val GGUF_PRECISION_Q4_0 = "Q4_0"
+    /** Q4_K_M preserves ~95% quality at quarter size; prefer over Q4_0. */
+    const val GGUF_PRECISION_Q4_K_M = "Q4_K_M"
     const val RUNTIME_LLAMA_CPP = "llama_cpp"
 
     /** Perf model: pre-compiled NPU-only bundle (Instruct variant — base can't do tools). */
@@ -43,10 +59,14 @@ object LocalLlmConfig {
     const val N_CTX_4B = 1_024
     const val N_CTX_17B = 2_048
     const val N_CTX_06B = 2_048
+    const val N_CTX_XLAM_3B = 2_048
+    const val N_CTX_GEMMA = 2_048
 
     fun nCtxFor(modelId: String): Int = when (modelId) {
         GGUF_MODEL_4B -> N_CTX_4B
         GGUF_MODEL_17B -> N_CTX_17B
+        GGUF_MODEL_XLAM_3B -> N_CTX_XLAM_3B
+        GGUF_MODEL_GEMMA_3N_E2B, GGUF_MODEL_GEMMA_3_1B -> N_CTX_GEMMA
         else -> N_CTX_06B
     }
 }

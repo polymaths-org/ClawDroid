@@ -45,13 +45,17 @@ class GenieXLocalProvider(
     private val loadLock = Mutex()
     @Volatile private var llm: LlmWrapper? = null
 
-    /** PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only. */
+    /**
+     * PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only.
+     * Order matters: renderTools emits in allowlist order and caps at MAX_TOOLS,
+     * so launch_app leads — "open browser" must never degrade to blind taps.
+     */
     private fun allowlistFor(model: String): Set<String> {
         if (model == LocalLlmConfig.GGUF_MODEL_06B) return LocalPromptTools.BASIC_TOOLS
-        return setOf(
-            "get_screen", "tap", "tap_text", "swipe", "scroll", "type_text",
-            "press_back", "press_home", "launch_app", "execute_command",
-            "read_file", "write_file", "list_directory", "wait",
+        return linkedSetOf(
+            "launch_app", "get_screen", "tap_text", "tap", "type_text",
+            "press_back", "press_home", "scroll", "swipe", "wait",
+            "execute_command", "read_file", "write_file", "list_directory",
         )
     }
 
@@ -139,7 +143,10 @@ class GenieXLocalProvider(
         if (thinking.isNotEmpty()) Log.d(TAG, "thinking len=${thinking.length}")
         val visible = LocalPromptTools.firstTurnOnly(
             LocalPromptTools.stripRolePrefix(
-                LocalPromptTools.stripThinking(LocalPromptTools.stripToolBlock(raw)),
+                LocalPromptTools.TOOL_CALL_ECHO_REGEX.replace(
+                    LocalPromptTools.stripThinking(LocalPromptTools.stripToolBlock(raw)),
+                    "",
+                ),
             ),
         ).trim().take(800)
         // If the turn is only a tool call, show no chat bubble; the tool step covers it.
