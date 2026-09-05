@@ -100,17 +100,24 @@ data class ProviderInfo(
     val icon: String,
     val description: String,
     val defaultBaseUrl: String,
+    val defaultModel: String,
+    val adapter: String = "OpenAI-compatible",
     val needsApiKey: Boolean = true,
 )
 
 private val providers = listOf(
-    ProviderInfo("siliconflow", "SiliconFlow", "🌸", "Access Kimi, Qwen, DeepSeek", "https://api.siliconflow.com/v1"),
-    ProviderInfo("openrouter", "OpenRouter", "🌐", "Access 200+ models", "https://openrouter.ai/api/v1"),
-    ProviderInfo("openai", "OpenAI", "🤖", "GPT-4o, o1, o3", "https://api.openai.com/v1"),
-    ProviderInfo("groq", "Groq", "⚡", "Ultra-fast inference", "https://api.groq.com/openai/v1"),
-    ProviderInfo("together", "Together AI", "🔗", "Open-source models", "https://api.together.xyz/v1"),
-    ProviderInfo("ollama", "Ollama", "🦙", "Local models, no key", "http://localhost:11434/v1", needsApiKey = false),
-    ProviderInfo("custom", "Custom", "🔧", "Any OpenAI-compatible", ""),
+    ProviderInfo("anthropic", "Anthropic", "◐", "Claude via native Messages API", "https://api.anthropic.com/v1", "claude-sonnet-4-5", "Native"),
+    ProviderInfo("openai", "OpenAI", "◎", "GPT and reasoning models", "https://api.openai.com/v1", "gpt-4o"),
+    ProviderInfo("gemini", "Google Gemini", "◆", "Gemini through OpenAI-compatible API", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash"),
+    ProviderInfo("openrouter", "OpenRouter", "◇", "Access 200+ routed models", "https://openrouter.ai/api/v1", "openai/gpt-4o"),
+    ProviderInfo("siliconflow", "SiliconFlow", "✦", "Kimi, Qwen, DeepSeek and more", "https://api.siliconflow.com/v1", "moonshotai/Kimi-K2.6"),
+    ProviderInfo("groq", "Groq", "⚡", "Low-latency OpenAI-compatible inference", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    ProviderInfo("mistral", "Mistral AI", "△", "Mistral models and agents endpoint", "https://api.mistral.ai/v1", "mistral-large-latest"),
+    ProviderInfo("deepseek", "DeepSeek", "∴", "DeepSeek chat and reasoning models", "https://api.deepseek.com/v1", "deepseek-chat"),
+    ProviderInfo("xai", "xAI", "×", "Grok models through OpenAI-compatible API", "https://api.x.ai/v1", "grok-4"),
+    ProviderInfo("together", "Together AI", "↗", "Open-source and fine-tuned models", "https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    ProviderInfo("ollama", "Ollama", "⌂", "Local models, no key", "http://localhost:11434/v1", "llama3.2", needsApiKey = false),
+    ProviderInfo("custom", "Custom", "⌘", "Any OpenAI-compatible endpoint", "", "openai/gpt-4o"),
 )
 
 // ── SetupScreen ────────────────────────────────────────────────────────
@@ -138,19 +145,23 @@ fun SetupScreen(
     var selectedPurpose by remember { mutableStateOf("System Controls & Diagnostics") }
     var customPurpose by remember { mutableStateOf("") }
     var selectedVoice by remember { mutableStateOf("female") }
+    var selectedBehaviorMode by remember { mutableStateOf("balanced") }
 
     // Owner info states
     var ownerName by remember { mutableStateOf(AppConfigManager.ownerName) }
     var ownerInfo by remember { mutableStateOf(AppConfigManager.ownerInfo) }
+    val background = MaterialTheme.colorScheme.background
+    val primaryGlow = MaterialTheme.colorScheme.primary
+    val secondaryGlow = MaterialTheme.colorScheme.secondary
 
-    Box(modifier = Modifier.fillMaxSize().background(DeepBlack)) {
+    Box(modifier = Modifier.fillMaxSize().background(background)) {
         // Lightweight static ambient fire glow
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        FireRed.copy(alpha = 0.12f),
-                        EmberOrange.copy(alpha = 0.04f),
+                        primaryGlow.copy(alpha = 0.12f),
+                        secondaryGlow.copy(alpha = 0.05f),
                         Color.Transparent,
                     ),
                     center = Offset(size.width * 0.5f, size.height * 0.7f),
@@ -181,14 +192,7 @@ fun SetupScreen(
                     onProviderSelected = { provider ->
                         selectedProvider = provider
                         baseUrl = provider.defaultBaseUrl
-                        model = when (provider.id) {
-                            "siliconflow" -> "moonshotai/Kimi-K2.6"
-                            "openai" -> "gpt-4o"
-                            "groq" -> "llama-3.3-70b-versatile"
-                            "together" -> "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-                            "ollama" -> "llama3.2"
-                            else -> "openai/gpt-4o"
-                        }
+                        model = provider.defaultModel
                         step = 2
                     },
                 )
@@ -217,10 +221,9 @@ fun SetupScreen(
                     onBack = { step = 2 },
                     onNext = { step = 4 },
                 )
-                4 -> AgentVoiceSetupStep(
-                    agentName = agentName,
-                    selectedVoice = selectedVoice,
-                    onVoiceSelected = { selectedVoice = it },
+                4 -> AgentBehaviorSetupStep(
+                    selectedBehaviorMode = selectedBehaviorMode,
+                    onBehaviorModeSelected = { selectedBehaviorMode = it },
                     onBack = { step = 3 },
                     onNext = { step = 5 },
                 )
@@ -231,7 +234,7 @@ fun SetupScreen(
                     agentName = agentName,
                     selectedPersonality = if (selectedPersonality == "Other") customPersonality else selectedPersonality,
                     selectedPurpose = if (selectedPurpose == "Other") customPurpose else selectedPurpose,
-                    selectedVoice = selectedVoice,
+                    selectedBehaviorMode = selectedBehaviorMode,
                     onBack = { step = 4 },
                     onComplete = {
                         AppConfigManager.save(
@@ -245,7 +248,8 @@ fun SetupScreen(
                         AppConfigManager.agentName = agentName.trim()
                         AppConfigManager.agentPersonality = if (selectedPersonality == "Other") customPersonality.trim() else selectedPersonality
                         AppConfigManager.agentPurpose = if (selectedPurpose == "Other") customPurpose.trim() else selectedPurpose
-                        AppConfigManager.agentVoiceProfile = selectedVoice
+                        AppConfigManager.agentBehaviorMode = selectedBehaviorMode
+                        AppConfigManager.approvalMode = if (selectedBehaviorMode == "confirm") "cautious" else AppConfigManager.approvalMode
                         AppConfigManager.syncToSandbox(context)
                         onSetupComplete()
                     },
@@ -352,7 +356,7 @@ private fun ProviderSelectionStep(
         Text(
             text = "Select an AI provider to power your agent",
             style = MaterialTheme.typography.bodyMedium,
-            color = MutedGray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(36.dp))
@@ -398,8 +402,8 @@ private fun ProviderCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(GlassFill, shape)
-            .border(1.dp, GlassBorderDim, shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f), shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), shape)
             .clickable(onClick = onClick)
             .padding(18.dp),
     ) {
@@ -416,19 +420,25 @@ private fun ProviderCard(
                 Text(
                     text = provider.name,
                     style = MaterialTheme.typography.titleMedium,
-                    color = SoftWhite,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = provider.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MutedGray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = provider.adapter,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
             Text(
-                text = "→",
+                text = ">",
                 style = MaterialTheme.typography.titleLarge,
-                color = EmberOrange.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
             )
         }
     }
@@ -469,7 +479,7 @@ private fun ConfigurationStep(
         Text(
             text = "${provider.icon} ${provider.description}",
             style = MaterialTheme.typography.bodyMedium,
-            color = MutedGray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(36.dp))
@@ -750,6 +760,92 @@ private fun AgentCustomizationStep(
 }
 
 // ── Step 4: Agent Voice Setup ──────────────────────────────────────────
+
+@Composable
+private fun AgentBehaviorSetupStep(
+    selectedBehaviorMode: String,
+    onBehaviorModeSelected: (String) -> Unit,
+    onBack: () -> Unit,
+    onNext: () -> Unit,
+) {
+    val modes = listOf(
+        Triple("fast", "Fast", "Short answers, low latency, minimal extra reasoning."),
+        Triple("thinking", "Thinking", "More deliberate planning and explanation for complex tasks."),
+        Triple("balanced", "Balanced", "Good default for speed, quality, and autonomy."),
+        Triple("trusted", "Trusted", "More autonomous inside connected services when configured."),
+        Triple("confirm", "Confirm Everything", "Ask before installs, external actions, and risky changes."),
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(modifier = Modifier.height(60.dp))
+
+        GlowText(
+            text = "Choose Agent Mode",
+            style = MaterialTheme.typography.headlineMedium,
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Set how the agent balances speed, reasoning, trust, and confirmation.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MutedGray,
+        )
+
+        Spacer(modifier = Modifier.height(36.dp))
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                modes.forEach { (id, label, description) ->
+                    val isSelected = selectedBehaviorMode == id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (isSelected) GlassFillStrong else GlassFill)
+                            .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(14.dp))
+                            .clickable { onBehaviorModeSelected(id) }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(label, color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                            Text(description, color = MutedGray, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (isSelected) {
+                            Text("✓", color = EmberOrange, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        GlassButton(onClick = onNext) {
+            Text("Continue", fontWeight = FontWeight.SemiBold, color = SoftWhite)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "← Back",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MutedGray,
+            modifier = Modifier
+                .clickable(onClick = onBack)
+                .padding(8.dp),
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+}
 
 @Composable
 private fun AgentVoiceSetupStep(
@@ -1078,7 +1174,7 @@ private fun ConfirmationStep(
     agentName: String,
     selectedPersonality: String,
     selectedPurpose: String,
-    selectedVoice: String,
+    selectedBehaviorMode: String,
     onBack: () -> Unit,
     onComplete: () -> Unit,
 ) {
@@ -1111,7 +1207,7 @@ private fun ConfirmationStep(
                 SummaryRow("Agent Name", agentName)
                 SummaryRow("Personality", selectedPersonality)
                 SummaryRow("Purpose", selectedPurpose)
-                SummaryRow("Voice Profile", selectedVoice.uppercase())
+                SummaryRow("Agent Mode", selectedBehaviorMode.replaceFirstChar { it.uppercaseChar() })
             }
         }
 

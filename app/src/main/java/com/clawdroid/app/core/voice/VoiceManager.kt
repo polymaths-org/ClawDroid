@@ -54,30 +54,32 @@ class VoiceManager(private val context: Context) {
         val desired = AppConfigManager.ttsEngine
         scope.launch {
             if (desired == "device") {
-                val piper = PiperEngine(context, scope)
-                piper.downloadProgress.collect { _downloadProgress.value = it }
-                if (piper.isInstalled) {
-                    Log.i("VoiceManager", "Piper already installed, initializing")
-                    piper.startDownload()
-                    piper.state.first { it != TtsEngineState.Initializing }
-                    if (piper.state.value == TtsEngineState.Ready) {
-                        piperEngine = piper
-                        activeEngine = piper
-                        _state.value = State.Ready
-                        _piperAvailable.value = true
-                        Log.i("VoiceManager", "Piper TTS ready from cache")
-                    } else {
-                        initAndroidTts()
-                    }
-                } else {
-                    Log.i("VoiceManager", "Piper not installed, using Android TTS as default")
-                    initAndroidTts()
-                }
-            } else {
-                Log.i("VoiceManager", "Engine '$desired' selected, using Android TTS")
                 initAndroidTts()
+            } else {
+                initCloudTts(desired)
             }
             drainQueue()
+        }
+    }
+
+    private fun createCloudEngine(engineId: String): TtsEngine? = when (engineId) {
+        "openai" -> OpenAITtsEngine(context, scope)
+        "elevenlabs" -> ElevenLabsTtsEngine(context, scope)
+        "deepgram" -> DeepgramTtsEngine(context, scope)
+        else -> OpenAITtsEngine(context, scope)
+    }
+
+    private fun initCloudTts(engineId: String) {
+        val engine = createCloudEngine(engineId)
+        if (engine?.state?.value == TtsEngineState.Ready) {
+            activeEngine = engine
+            activeVoice = getDesiredVoice()
+            _state.value = State.Ready
+            Log.i("VoiceManager", "Cloud TTS ready: $engineId")
+        } else {
+            activeEngine = null
+            _state.value = State.Unavailable
+            Log.w("VoiceManager", "Cloud TTS unavailable: $engineId")
         }
     }
 
@@ -159,15 +161,6 @@ class VoiceManager(private val context: Context) {
             activeEngine?.destroy()
             activeEngine = null
             when (desiredEngine) {
-                "piper" -> {
-                    if (piperEngine?.state?.value == TtsEngineState.Ready) {
-                        activeEngine = piperEngine
-                        activeVoice = desiredVoice
-                        Log.i("VoiceManager", "Switched to Piper engine")
-                    } else {
-                        initAndroidTts()
-                    }
-                }
                 "device" -> initAndroidTts()
                 "openai" -> {
                     val engine = OpenAITtsEngine(context, scope)
@@ -176,8 +169,8 @@ class VoiceManager(private val context: Context) {
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to OpenAI TTS")
                     } else {
-                        Log.w("VoiceManager", "OpenAI TTS unavailable, falling back")
-                        initAndroidTts()
+                        Log.w("VoiceManager", "OpenAI TTS unavailable")
+                        _state.value = State.Unavailable
                     }
                 }
                 "elevenlabs" -> {
@@ -187,8 +180,8 @@ class VoiceManager(private val context: Context) {
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to ElevenLabs TTS")
                     } else {
-                        Log.w("VoiceManager", "ElevenLabs unavailable, falling back")
-                        initAndroidTts()
+                        Log.w("VoiceManager", "ElevenLabs unavailable")
+                        _state.value = State.Unavailable
                     }
                 }
                 "deepgram" -> {
@@ -198,13 +191,13 @@ class VoiceManager(private val context: Context) {
                         activeVoice = desiredVoice
                         Log.i("VoiceManager", "Switched to Deepgram TTS")
                     } else {
-                        Log.w("VoiceManager", "Deepgram unavailable, falling back")
-                        initAndroidTts()
+                        Log.w("VoiceManager", "Deepgram unavailable")
+                        _state.value = State.Unavailable
                     }
                 }
-                else -> initAndroidTts()
+                else -> initCloudTts("openai")
             }
-            _state.value = State.Ready
+            if (activeEngine != null) _state.value = State.Ready
         }
     }
 

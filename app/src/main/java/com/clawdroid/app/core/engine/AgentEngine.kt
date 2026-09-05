@@ -14,6 +14,7 @@ import com.clawdroid.app.data.api.MessageBuilder
 import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.api.TokenUsage
 import com.clawdroid.app.data.api.ToolSchemaRegistry
+import com.clawdroid.app.data.api.internalUserPrompt
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import kotlinx.coroutines.CancellationException
@@ -82,8 +83,8 @@ class AgentEngine(
             appendLine("- If the user asks to send a specific message in the current Telegram/WhatsApp/chat screen, call send_message_in_current_chat immediately. Do not call get_screen or screenshot first.")
             appendLine("- Use Android screen-control tools when useful. For app actions, call get_screen first, then prefer perform_android_actions to batch multiple taps/typing/waits in one tool call.")
             appendLine("- Do not verify after every tiny action. Verify after important state changes, after failures, and at task completion.")
-            appendLine("- The ClawDroid overlay is temporarily hidden automatically before get_screen, screenshot, taps, swipes, and typing so your vision/actions target the real app underneath.")
-            appendLine("- For screenshots and get_screen, the overlay is hidden for about 3 seconds before capture. Do not compensate for the overlay in coordinates.")
+            appendLine("- The ClawDroid overlay stays visible while you work so the user can see status. Treat it as your own floating UI, not as part of the target app.")
+            appendLine("- If the floating overlay appears in a screen capture, ignore it and avoid interacting with it unless the user explicitly asks.")
             if (snapshot != null) {
                 appendLine("- Source package: ${snapshot.sourcePackage ?: "unknown"}")
                 appendLine("- Source activity: ${snapshot.sourceActivity ?: "unknown"}")
@@ -128,6 +129,7 @@ class AgentEngine(
             mediaPath = mediaPath,
             mediaMimeType = mediaMimeType,
             isAssistantMode = true,
+            hidePromptInChat = true,
         )
     }
 
@@ -138,7 +140,8 @@ class AgentEngine(
         mediaPath: String? = null,
         mediaMimeType: String? = null,
         toolsOverride: JSONArray? = null,
-    ): Flow<AgentRunEvent> = runInternal(prompt, targetConversationId, maxTurns, mediaPath, mediaMimeType, false, toolsOverride)
+        hidePromptInChat: Boolean = false,
+    ): Flow<AgentRunEvent> = runInternal(prompt, targetConversationId, maxTurns, mediaPath, mediaMimeType, false, toolsOverride, hidePromptInChat)
 
     private fun runInternal(
         prompt: String,
@@ -148,6 +151,7 @@ class AgentEngine(
         mediaMimeType: String?,
         isAssistantMode: Boolean,
         toolsOverride: JSONArray? = null,
+        hidePromptInChat: Boolean = false,
     ): Flow<AgentRunEvent> = channelFlow {
         stopRequested.set(false)
         Log.i("AgentEngine", "runInternal started assistant=$isAssistantMode promptLen=${prompt.length} targetConversationId=$targetConversationId mediaPath=$mediaPath mediaMimeType=$mediaMimeType")
@@ -197,11 +201,13 @@ class AgentEngine(
         var emptyScreenCount = 0
         var screenCaptureBlocked = false
 
-        // 2. Save current user prompt to DB if not already present as the last message
+        // 2. Save current user prompt to DB if not already present as the last message.
+        // Internal enhanced prompts stay in model context but are filtered out of chat UI.
         val existingMessages = messageDao.getAll(conversationId)
         val lastMsg = existingMessages.lastOrNull()
-        if (lastMsg == null || lastMsg.role != "user" || lastMsg.content != prompt) {
-            contextBuilder.saveUserMessage(conversationId, prompt, mediaPath, mediaMimeType)
+        val storedPrompt = if (hidePromptInChat) internalUserPrompt(prompt) else prompt
+        if (lastMsg == null || lastMsg.role != "user" || lastMsg.content != storedPrompt) {
+            contextBuilder.saveUserMessage(conversationId, storedPrompt, mediaPath, mediaMimeType)
         } else if (lastMsg.mediaPath != mediaPath || lastMsg.mediaMimeType != mediaMimeType) {
             messageDao.update(lastMsg.copy(mediaPath = mediaPath, mediaMimeType = mediaMimeType))
         }
@@ -223,7 +229,10 @@ class AgentEngine(
             val steering = steeringQueue.drain()
             if (steering.isNotEmpty()) {
                 for (msg in steering) {
-                    contextBuilder.saveUserMessage(conversationId, msg)
+                    val latest = messageDao.getAll(conversationId).lastOrNull()
+                    if (latest == null || latest.role != "user" || latest.content != msg) {
+                        contextBuilder.saveUserMessage(conversationId, msg)
+                    }
                     send(AgentRunEvent.SteeringApplied(msg))
                 }
                 messages = contextBuilder.buildContext(conversationId)

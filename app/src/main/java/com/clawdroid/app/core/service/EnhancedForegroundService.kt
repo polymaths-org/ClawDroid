@@ -32,7 +32,7 @@ class EnhancedForegroundService : Service() {
         // Start foreground with dataSync type
         val notification = NotificationHelper.foregroundNotification(
             this,
-            "Background agent active — channels connected"
+            "Background agent active"
         )
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             startForeground(

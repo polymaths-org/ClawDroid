@@ -2,8 +2,11 @@ package com.clawdroid.app.ui.settings
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -78,6 +81,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -89,7 +93,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.content.ContextCompat
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.control.ScreenCaptureManager
+import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.ui.components.AnimatedPresetCard
 import com.clawdroid.app.ui.components.ChannelConnectionStatus
 import com.clawdroid.app.ui.components.ChannelStatusCard
@@ -130,14 +137,14 @@ fun AudioConfigScreen(onBack: () -> Unit) {
     ConfigScaffold("Audio & Voice", onBack) {
         InfoCard(
             title = "Voice Runtime",
-            body = "Pick the spoken voice engine, tune speed, and control how ClawDroid talks while working. Piper provides on-device neural TTS."
+            body = "Pick Android system TTS or a cloud voice engine, tune speed, and control how ClawDroid talks while working."
         )
 
         GlassCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionTitle("TTS Engine")
 
-                ConfigChoice("Android TTS", "Offline system voice. Reliable fallback with device language support.", ttsEngine == "device") { ttsEngine = "device" }
+                ConfigChoice("Android TTS", "Native Android system voice. Fast, offline, and reliable.", ttsEngine == "device") { ttsEngine = "device" }
                 ConfigChoice("OpenAI TTS", "Cloud voices: alloy, echo, fable, onyx, nova, shimmer. 6 distinct personalities.", ttsEngine == "openai") { ttsEngine = "openai" }
                 ConfigChoice("ElevenLabs", "Premium neural voices: Rachel, Domi, Josh, Bella. Ultra-realistic.", ttsEngine == "elevenlabs") { ttsEngine = "elevenlabs" }
                 ConfigChoice("Deepgram", "Fast cloud TTS: Asteria, Luna, Orion, Zeus. Low latency.", ttsEngine == "deepgram") { ttsEngine = "deepgram" }
@@ -192,6 +199,290 @@ fun AudioConfigScreen(onBack: () -> Unit) {
             AppConfigManager.deepgramApiKey = deepgramKey.trim()
             AppConfigManager.dynamicThinkingEnabled = dynamicThinking
             AppConfigManager.emojiToneEnabled = emojiTone
+        }
+    }
+}
+
+@Composable
+fun ThemeConfigScreen(onBack: () -> Unit) {
+    var selectedTheme by remember { mutableStateOf(AppConfigManager.appTheme) }
+    val themes = remember {
+        listOf(
+            ThemePreset("light", "Light", "Bright Material 3 surfaces for daytime use.", listOf(Color(0xFFF7F9FC), Color(0xFFD6E3FF), Color(0xFF245FA8))),
+            ThemePreset("dark", "Dark", "Default focused dark surface.", listOf(Color(0xFF111416), Color(0xFF323537), Color(0xFFD3E2FF))),
+            ThemePreset("minimalist", "Minimalist", "Quiet grayscale controls with reduced visual noise.", listOf(Color(0xFF101112), Color(0xFF2B2F32), Color(0xFFE8EAED))),
+            ThemePreset("liquid_glass_light", "Liquid Glass Light", "Apple-style translucent white glass with blue system accents.", listOf(Color(0xFFFFFFFF), Color(0xFFEAF4FF), Color(0xFF007AFF), Color(0xFFAF52DE))),
+            ThemePreset("liquid_glass_dark", "Liquid Glass Dark", "Deep translucent glass with luminous blue, violet, and soft highlights.", listOf(Color(0xFF05070A), Color(0xFF1C1C1E), Color(0xFF64D2FF), Color(0xFFBF5AF2))),
+        )
+    }
+
+    ConfigScaffold("Themes", onBack) {
+        InfoCard(
+            title = "Application Theme",
+            body = "Choose the visual treatment for ClawDroid. The selected theme is persisted and used by UI surfaces as theme support expands.",
+        )
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Theme Presets")
+                themes.forEach { preset ->
+                    ThemeChoiceCard(
+                        preset = preset,
+                        selected = selectedTheme == preset.id,
+                        onClick = { selectedTheme = preset.id },
+                    )
+                }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle("Preview")
+                DetailRow("Current", selectedTheme.replace('_', ' ').replaceFirstChar { it.uppercaseChar() })
+                DetailRow("Applies To", "Chat, sidebar, settings, terminal surfaces")
+            }
+        }
+
+        SaveConfigButton {
+            AppConfigManager.appTheme = selectedTheme
+        }
+    }
+}
+
+private data class ThemePreset(
+    val id: String,
+    val name: String,
+    val description: String,
+    val colors: List<Color>,
+)
+
+@Composable
+private fun ThemeChoiceCard(
+    preset: ThemePreset,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.46f) else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.68f))
+            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), shape)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    Brush.linearGradient(preset.colors),
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp)),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(preset.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(preset.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        if (selected) {
+            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+@Composable
+fun PermissionManagerScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var refreshTick by remember { mutableStateOf(0) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { refreshTick++ }
+
+    val settingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { refreshTick++ }
+
+    fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    fun notificationListenerEnabled(): Boolean {
+        val cn = ComponentName(context, com.clawdroid.app.core.channels.ClawNotificationListenerService::class.java)
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        return flat?.contains(cn.flattenToString()) == true
+    }
+
+    fun batteryUnrestricted(): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun openAppSettings() {
+        settingsLauncher.launch(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            },
+        )
+    }
+
+    ConfigScaffold("Permissions", onBack) {
+        InfoCard(
+            title = "Permission Manager",
+            body = "Review and manage every Android permission or special access ClawDroid uses for agent work.",
+        )
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Runtime Permissions")
+                PermissionRow(
+                    title = "Microphone",
+                    description = "Voice input and realtime call mode.",
+                    granted = hasPermission(Manifest.permission.RECORD_AUDIO),
+                    actionLabel = "Request",
+                ) {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    PermissionRow(
+                        title = "Notifications",
+                        description = "Task completion and background progress alerts.",
+                        granted = hasPermission(Manifest.permission.POST_NOTIFICATIONS),
+                        actionLabel = "Request",
+                    ) {
+                        permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                    }
+                }
+                PermissionRow(
+                    title = "Shared Files",
+                    description = "Documents/ClawDroid inbox, output, projects, and exports.",
+                    granted = if (android.os.Build.VERSION.SDK_INT >= 30) android.os.Environment.isExternalStorageManager()
+                    else hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                    actionLabel = "Manage",
+                ) {
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        settingsLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
+                        )
+                    } else {
+                        permissionLauncher.launch(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                    }
+                }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Special Access")
+                PermissionRow(
+                    title = "Display Over Other Apps",
+                    description = "Floating assistant and visual overlay controls.",
+                    granted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || Settings.canDrawOverlays(context),
+                    actionLabel = "Manage",
+                ) {
+                    settingsLauncher.launch(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}"),
+                        ),
+                    )
+                }
+                PermissionRow(
+                    title = "Accessibility Service",
+                    description = "Screen understanding and device control tools.",
+                    granted = ScreenReaderService.instance != null,
+                    actionLabel = "Open",
+                ) {
+                    settingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                PermissionRow(
+                    title = "Notification Listener",
+                    description = "Reads selected app notifications for channel workflows.",
+                    granted = notificationListenerEnabled(),
+                    actionLabel = "Open",
+                ) {
+                    settingsLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+                PermissionRow(
+                    title = "Screen Capture",
+                    description = "Screenshot context for the assistant.",
+                    granted = ScreenCaptureManager.isActive(),
+                    actionLabel = "Start",
+                ) {
+                    Toast.makeText(context, "Start screen capture from Agent settings.", Toast.LENGTH_LONG).show()
+                }
+                PermissionRow(
+                    title = "Battery Optimization",
+                    description = "Keeps long-running tasks and background service alive.",
+                    granted = batteryUnrestricted(),
+                    actionLabel = "Manage",
+                ) {
+                    settingsLauncher.launch(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        },
+                    )
+                }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle("System Page")
+                Text(
+                    "Use Android's app info screen to revoke any permission at the OS level.",
+                    color = MutedGray,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                GlassButton(onClick = ::openAppSettings, modifier = Modifier.fillMaxWidth().height(44.dp)) {
+                    Text("Open App Permission Settings", color = SoftWhite, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    title: String,
+    description: String,
+    granted: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (granted) GlassFillStrong else GlassFill)
+            .border(1.dp, if (granted) NeonCyan.copy(alpha = 0.35f) else GlassBorderDim, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(if (granted) NeonCyan else MutedGray.copy(alpha = 0.5f)),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = SoftWhite, fontWeight = FontWeight.SemiBold)
+            Text(description, color = MutedGray, style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (granted) "Granted" else "Not granted",
+                color = if (granted) NeonCyan else MutedGray,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        GlassButton(onClick = onAction, modifier = Modifier.width(92.dp).height(38.dp)) {
+            Text(actionLabel, color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
 }
@@ -390,7 +681,7 @@ fun SkillsConfigScreen(onBack: () -> Unit) {
                 SectionTitle("Available Skills")
                 SkillCard("Web Researcher", "Deep research with citations and source comparison.", Icons.Outlined.Cloud)
                 SkillCard("Code Reviewer", "Review patches, run tests, check project conventions.", Icons.Outlined.Cloud)
-                SkillCard("OpenClaws WhatsApp", "WhatsApp automation skill for channel workflows.", Icons.Outlined.Cloud)
+                SkillCard("ClawDroid WhatsApp", "WhatsApp automation skill for channel workflows.", Icons.Outlined.Cloud)
                 SkillCard("Workflow Builder", "Create recurring automations from natural language.", Icons.Outlined.Cloud)
                 SkillCard("Finance Tracker", "Categorize expenses, forecast budget.", Icons.Outlined.Cloud)
                 SkillCard("Study Buddy", "Generate flashcards, quiz, explain concepts.", Icons.Outlined.Cloud)
@@ -537,6 +828,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
     var maxTurns by remember { mutableStateOf(AppConfigManager.maxAgentTurns) }
     var approvalMode by remember { mutableStateOf(AppConfigManager.approvalMode) }
     var dynamicThinking by remember { mutableStateOf(AppConfigManager.dynamicThinkingEnabled) }
+    var promptEnhancement by remember { mutableStateOf(AppConfigManager.promptEnhancementEnabled) }
     var emojiTone by remember { mutableStateOf(AppConfigManager.emojiToneEnabled) }
     
     // Prompt Files
@@ -653,6 +945,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
                 SectionTitle("Behavior")
 
                 ConfigSwitch("Dynamic Thinking Phrases", "Task-aware processing messages. Shows contextual thinking phrases based on what the agent is doing (coding, researching, editing).", dynamicThinking) { dynamicThinking = it }
+                ConfigSwitch("Prompt Improvement", "Refines app-control tasks internally before sending them to the agent. The refined prompt stays hidden from chat.", promptEnhancement) { promptEnhancement = it }
                 ConfigSwitch("Emoji Tone Conversion", "Emojis are stripped from speech and converted into subtle tone/emotion hints in the voice output.", emojiTone) { emojiTone = it }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -694,6 +987,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
             AppConfigManager.maxAgentTurns = maxTurns
             AppConfigManager.approvalMode = approvalMode
             AppConfigManager.dynamicThinkingEnabled = dynamicThinking
+            AppConfigManager.promptEnhancementEnabled = promptEnhancement
             AppConfigManager.emojiToneEnabled = emojiTone
             
             AppConfigManager.agentsMd = agentsMd.trim()
@@ -713,27 +1007,27 @@ private fun ConfigScaffold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Scaffold(
-        containerColor = DeepBlack,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(title, color = SoftWhite, fontWeight = FontWeight.SemiBold) },
+                title = { Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = SoftWhite,
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DeepBlack),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
             )
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(DeepBlack)
+                .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
@@ -763,15 +1057,15 @@ private fun ConfigScreenHeader(title: String) {
             modifier = Modifier
                 .size(42.dp)
                 .clip(CircleShape)
-                .background(GlassFillStrong),
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = EmberOrange, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column {
-            Text(title, color = SoftWhite, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-            Text("Configure ClawDroid behavior", color = MutedGray, style = MaterialTheme.typography.bodySmall)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("Configure ClawDroid behavior", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -782,11 +1076,11 @@ private fun InfoCard(title: String, body: String) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 title,
-                color = EmberOrange,
+                color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleMedium,
             )
-            Text(body, color = MutedGray, style = MaterialTheme.typography.bodyMedium)
+            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -795,7 +1089,7 @@ private fun InfoCard(title: String, body: String) {
 private fun SectionTitle(text: String) {
     Text(
         text,
-        color = EmberOrange,
+        color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.SemiBold,
         style = MaterialTheme.typography.labelLarge,
     )
@@ -808,15 +1102,16 @@ private fun ConfigChoice(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) GlassFillStrong else GlassFill)
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f) else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.64f))
             .border(
                 1.dp,
-                if (selected) EmberOrange else GlassBorderDim,
-                RoundedCornerShape(12.dp),
+                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                shape,
             )
             .clickable(onClick = onClick)
             .padding(12.dp),
@@ -825,13 +1120,13 @@ private fun ConfigChoice(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 label,
-                color = SoftWhite,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
             )
             Text(
                 description,
-                color = MutedGray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
         }
@@ -839,7 +1134,7 @@ private fun ConfigChoice(
             Icon(
                 Icons.Rounded.CheckCircle,
                 contentDescription = null,
-                tint = EmberOrange,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
             )
         }
@@ -859,10 +1154,10 @@ private fun ConfigSwitch(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = SoftWhite, fontWeight = FontWeight.Bold)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             Text(
                 description,
-                color = MutedGray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -871,10 +1166,10 @@ private fun ConfigSwitch(
             checked = checked,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = EmberOrange,
-                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
-                uncheckedThumbColor = MutedGray,
-                uncheckedTrackColor = DeepBlack,
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.58f),
+                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             ),
         )
     }
@@ -883,7 +1178,7 @@ private fun ConfigSwitch(
 @Composable
 private fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = MutedGray, style = MaterialTheme.typography.bodySmall)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         GlassTextField(
             value = value,
             onValueChange = onChange,
@@ -902,13 +1197,13 @@ private fun DetailRow(label: String, value: String) {
     ) {
         Text(
             label,
-            color = MutedGray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(0.4f),
         )
         Text(
             value,
-            color = SoftWhite,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(0.6f),
         )
@@ -921,11 +1216,11 @@ private fun StatusLine(text: String) {
         Icon(
             Icons.Rounded.CheckCircle,
             contentDescription = null,
-            tint = EmberOrange,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text, color = EmberOrange, fontWeight = FontWeight.Medium)
+        Text(text, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -939,34 +1234,34 @@ private fun SkillCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(GlassFill)
-            .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.68f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f), RoundedCornerShape(12.dp))
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = NeonCyan,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                color = SoftWhite,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
             )
             Text(
                 description,
-                color = MutedGray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
             )
         }
         Text(
             "install",
-            color = EmberOrange,
+            color = MaterialTheme.colorScheme.primary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -990,18 +1285,18 @@ private fun SaveConfigButton(onSave: () -> Unit) {
             Icon(
                 Icons.Rounded.Save,
                 contentDescription = null,
-                tint = SoftWhite,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Save Changes", color = SoftWhite, fontWeight = FontWeight.Bold)
+            Text("Save Changes", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 private fun configSliderColors() = SliderDefaults.colors(
-    thumbColor = EmberOrange,
-    activeTrackColor = EmberOrange,
-    inactiveTrackColor = GlassBorderDim,
+    thumbColor = MaterialTheme.colorScheme.primary,
+    activeTrackColor = MaterialTheme.colorScheme.primary,
+    inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant,
 )

@@ -19,6 +19,18 @@ import java.util.UUID
  */
 import android.content.Context
 
+const val INTERNAL_USER_PROMPT_PREFIX = "[[CLAWDROID_INTERNAL_USER_PROMPT]]\n"
+
+fun internalUserPrompt(content: String): String = INTERNAL_USER_PROMPT_PREFIX + content
+
+private fun String.stripInternalUserPromptMarker(): String {
+    return if (startsWith(INTERNAL_USER_PROMPT_PREFIX)) {
+        removePrefix(INTERNAL_USER_PROMPT_PREFIX).trimStart()
+    } else {
+        this
+    }
+}
+
 class ContextBuilder(
     private val context: Context,
     private val projectId: String?,
@@ -187,8 +199,8 @@ class ContextBuilder(
  * Convert a [MessageEntity] to a [ChatMessage] for the LLM API.
  */
 fun MessageEntity.toChatMessage(toolCalls: List<CompletedToolCall> = emptyList()): ChatMessage = ChatMessage(
-    role = role,
-    content = content.takeIf { it.isNotBlank() },
+    role = if (role == "user" && content.startsWith(INTERNAL_USER_PROMPT_PREFIX)) "user" else role,
+    content = content.stripInternalUserPromptMarker().takeIf { it.isNotBlank() },
     toolCallId = toolCallId,
     toolCalls = toolCalls,
     mediaPath = mediaPath,

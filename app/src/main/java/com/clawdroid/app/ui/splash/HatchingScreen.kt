@@ -11,17 +11,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -44,165 +51,213 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.clawdroid.app.R
 import com.clawdroid.app.core.config.AppConfigManager
-import com.clawdroid.app.ui.theme.DeepBlack
-import com.clawdroid.app.ui.theme.EmberOrange
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.SoftWhite
 import kotlinx.coroutines.delay
 
 @Composable
 fun HatchingScreen(onComplete: () -> Unit) {
     val haptics = LocalHapticFeedback.current
-    var hatchPhase by remember { mutableIntStateOf(0) }
-    var typedMessage by remember { mutableStateOf("") }
+    var phase by remember { mutableIntStateOf(0) }
+    var typedLine by remember { mutableStateOf("") }
 
-    val message = when (hatchPhase) {
-        0 -> "OpenClaw is waiting inside. Tap the egg to begin."
-        1 -> "The shell is cracking. Tap once more to hatch it."
-        else -> "OpenClaw is awake. Preparing your agent memory."
+    val background = MaterialTheme.colorScheme.background
+    val accent = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
+
+    val headline = when (phase) {
+        0 -> "Claw Droid is dormant"
+        1 -> "The shell is cracking"
+        else -> "Claw Droid is awake"
+    }
+    val line = when (phase) {
+        0 -> "Tap the egg to start the agent core."
+        1 -> "Tap again to hatch your pocket agent."
+        else -> "Preparing memory, tools, and workspace."
     }
 
-    LaunchedEffect(message) {
-        typedMessage = ""
-        message.forEachIndexed { index, _ ->
-            typedMessage = message.take(index + 1)
-            delay(18)
+    LaunchedEffect(line) {
+        typedLine = ""
+        line.forEachIndexed { index, _ ->
+            typedLine = line.take(index + 1)
+            delay(16)
         }
     }
 
-    LaunchedEffect(hatchPhase) {
-        if (hatchPhase >= 2) {
+    LaunchedEffect(phase) {
+        if (phase >= 2) {
             delay(1500)
             AppConfigManager.hasSeenHatching = true
             onComplete()
         }
     }
 
-    val infinite = rememberInfiniteTransition(label = "egg_motion")
-    val idleScale by infinite.animateFloat(
+    val infinite = rememberInfiniteTransition(label = "hatch_motion")
+    val breathe by infinite.animateFloat(
         initialValue = 0.96f,
         targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "idle_scale",
+        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "egg_breathe",
     )
-    val idleLift by infinite.animateFloat(
-        initialValue = -8f,
-        targetValue = 8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "idle_lift",
+    val lift by infinite.animateFloat(
+        initialValue = -10f,
+        targetValue = 10f,
+        animationSpec = infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "egg_lift",
     )
-    val crackWiggle by infinite.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(90),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "crack_wiggle",
+    val wiggle by infinite.animateFloat(
+        initialValue = -6f,
+        targetValue = 6f,
+        animationSpec = infiniteRepeatable(tween(80), RepeatMode.Reverse),
+        label = "egg_wiggle",
     )
-    val hintAlpha by infinite.animateFloat(
-        initialValue = 0.35f,
+    val pulse by infinite.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "hint_pulse",
+    )
+    val scan by infinite.animateFloat(
+        initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "hint_alpha",
+        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "scan",
     )
-
     val eggSize by animateFloatAsState(
-        targetValue = when (hatchPhase) {
-            0 -> 212f
-            1 -> 228f
+        targetValue = when (phase) {
+            0 -> 214f
+            1 -> 232f
             else -> 252f
         },
-        animationSpec = tween(450, easing = FastOutSlowInEasing),
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
         label = "egg_size",
-    )
-    val openedScale by animateFloatAsState(
-        targetValue = if (hatchPhase >= 2) 1.08f else 1f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing),
-        label = "opened_scale",
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepBlack),
-        contentAlignment = Alignment.Center,
+            .background(background),
     ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width * 0.5f, size.height * (0.48f + scan * 0.04f))
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        accent.copy(alpha = 0.28f),
+                        accent.copy(alpha = 0.08f),
+                        Color.Transparent,
+                    ),
+                    center = center,
+                    radius = size.maxDimension * 0.48f,
+                ),
+                radius = size.maxDimension,
+                center = center,
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        secondary.copy(alpha = 0.16f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(size.width * 0.22f, size.height * 0.18f),
+                    radius = size.maxDimension * 0.38f,
+                ),
+                radius = size.maxDimension,
+                center = Offset(size.width * 0.22f, size.height * 0.18f),
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 28.dp, vertical = 36.dp),
+                .padding(horizontal = 28.dp, vertical = 34.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "OpenClaw",
-                color = SoftWhite,
-                style = MaterialTheme.typography.headlineLarge,
+                "Claw Droid",
+                color = onSurface,
+                style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                headline,
+                color = accent,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = typedMessage,
-                color = MutedGray,
+                typedLine,
+                color = onVariant,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 minLines = 2,
             )
-            Spacer(modifier = Modifier.height(42.dp))
+
+            Spacer(modifier = Modifier.height(40.dp))
 
             AnimatedContent(
-                targetState = hatchPhase,
+                targetState = phase,
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
                 label = "egg_phase",
-            ) { phase ->
-                val drawable = when (phase) {
+            ) { currentPhase ->
+                val drawable = when (currentPhase) {
                     0 -> R.drawable.egg_00
                     1 -> R.drawable.egg_01_cracked
                     else -> R.drawable.egg_02_open
                 }
                 Image(
                     painter = painterResource(drawable),
-                    contentDescription = when (phase) {
-                        0 -> "Closed egg"
-                        1 -> "Cracked egg"
-                        else -> "Open egg"
-                    },
+                    contentDescription = headline,
                     modifier = Modifier
                         .size(eggSize.dp)
-                        .scale(if (phase == 0) idleScale else openedScale)
+                        .scale(if (currentPhase == 0) breathe else 1.05f)
                         .graphicsLayer(
-                            translationY = if (phase == 0) idleLift else 0f,
-                            rotationZ = if (phase == 1) crackWiggle else 0f,
+                            translationY = if (currentPhase == 0) lift else 0f,
+                            rotationZ = if (currentPhase == 1) wiggle else 0f,
                         )
-                        .clickable(enabled = hatchPhase < 2) {
+                        .clickable(enabled = phase < 2) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            hatchPhase = (hatchPhase + 1).coerceAtMost(2)
+                            phase = (phase + 1).coerceAtMost(2)
                         },
                 )
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(34.dp))
+            HatchProgress(phase = phase, accent = accent, onVariant = onVariant)
+            Spacer(modifier = Modifier.height(18.dp))
             Text(
-                text = when (hatchPhase) {
+                text = when (phase) {
                     0 -> "Tap the egg to hatch"
-                    1 -> "Tap again"
-                    else -> "Hatched"
+                    1 -> "One more tap"
+                    else -> "Booting workspace"
                 },
-                color = EmberOrange,
+                color = accent,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.alpha(if (hatchPhase < 2) hintAlpha else 1f),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.alpha(if (phase < 2) pulse else 1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HatchProgress(
+    phase: Int,
+    accent: Color,
+    onVariant: Color,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { index ->
+            Box(
+                modifier = Modifier
+                    .size(if (index <= phase) 10.dp else 7.dp)
+                    .clip(CircleShape)
+                    .background(if (index <= phase) accent else onVariant.copy(alpha = 0.35f)),
             )
         }
     }
