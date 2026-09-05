@@ -174,8 +174,13 @@ object AndroidControlTools {
     suspend fun getInstalledApps(context: Context): JSONObject = withContext(Dispatchers.Default) {
         runTool {
             val pm = context.packageManager
-            val apps = pm.getInstalledApplications(0)
+            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val apps = pm.queryIntentActivities(launcherIntent, 0)
+                .map { it.activityInfo.applicationInfo }
                 .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+                .distinctBy { it.packageName }
                 .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
                 .map { app ->
                     JSONObject()
