@@ -39,6 +39,7 @@ data class TokenUsage(
 
 sealed interface StreamEvent {
     data class TextDelta(val text: String) : StreamEvent
+    data class ToolCallDeltaReceived(val index: Int, val id: String, val name: String, val arguments: String) : StreamEvent
     data class ToolCallComplete(val call: CompletedToolCall) : StreamEvent
     data class Usage(val usage: TokenUsage) : StreamEvent
     data class Error(val message: String) : StreamEvent
@@ -140,6 +141,12 @@ class LlmApiClient(
                         val parsed = raw.toToolCallDelta() ?: continue
                         val builder = toolCalls.getOrPut(parsed.index) { ToolCallBuilder() }
                         builder.append(parsed)
+                        emit(StreamEvent.ToolCallDeltaReceived(
+                            index = parsed.index,
+                            id = builder.getId().orEmpty(),
+                            name = builder.getName().orEmpty(),
+                            arguments = builder.getArguments()
+                        ))
                     }
                 }
             }
@@ -214,6 +221,10 @@ class LlmApiClient(
             if (delta.name != null) name = delta.name
             arguments.append(delta.argumentsDelta)
         }
+
+        fun getId(): String? = id
+        fun getName(): String? = name
+        fun getArguments(): String = arguments.toString()
 
         fun buildOrNull(): CompletedToolCall? {
             val finalId = id ?: return null

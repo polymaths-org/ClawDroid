@@ -18,12 +18,10 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.clawdroid.app.ui.theme.ElectricBlue
+import com.clawdroid.app.ui.theme.ActivePurple
+import com.clawdroid.app.ui.theme.AstraPrimary
 import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.NeonCyan
 import com.clawdroid.app.ui.theme.SoftWhite
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun CustomProcessingLoader(
@@ -31,26 +29,37 @@ fun CustomProcessingLoader(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
 
-    // Rotate the gears/claws
+    // Smooth continuous rotation
     val rotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
+            animation = tween(1500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
     )
 
-    // Pulse the glow
+    // Pulsing glow intensity
     val glowPulse by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
+        initialValue = 0.5f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = EaseInOutSine),
+            animation = tween(1000, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow"
+    )
+
+    // Breathing size of the center dot
+    val centerDotRadius by infiniteTransition.animateFloat(
+        initialValue = 3f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "center_dot"
     )
 
     Row(
@@ -61,18 +70,17 @@ fun CustomProcessingLoader(
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Canvas(
-            modifier = Modifier.size(56.dp)
+            modifier = Modifier.size(48.dp)
         ) {
             val center = Offset(size.width / 2, size.height / 2)
-            val outerRadius = size.width / 2 - 4.dp.toPx()
-            val innerRadius = outerRadius - 10.dp.toPx()
+            val outerRadius = size.width / 2 - 3.dp.toPx()
 
-            // 1. Draw Glass/Metal background container with glow
+            // 1. Soft radial background glow
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        ElectricBlue.copy(alpha = 0.25f * glowPulse),
-                        NeonCyan.copy(alpha = 0.05f * glowPulse),
+                        ActivePurple.copy(alpha = 0.2f * glowPulse),
+                        AstraPrimary.copy(alpha = 0.05f * glowPulse),
                         Color.Transparent
                     ),
                     center = center,
@@ -81,71 +89,42 @@ fun CustomProcessingLoader(
                 radius = outerRadius + 8.dp.toPx()
             )
 
-            // Container Ring
+            // 2. Faint background circular track
             drawCircle(
-                brush = Brush.sweepGradient(
-                    colors = listOf(ElectricBlue, NeonCyan, ElectricBlue.copy(alpha = 0.2f), ElectricBlue),
-                    center = center
-                ),
+                color = ActivePurple.copy(alpha = 0.08f),
                 radius = outerRadius,
-                style = Stroke(width = 2.dp.toPx())
+                style = Stroke(width = 3.dp.toPx())
             )
 
-            // 2. Draw Rotating Gears/Claws inside
+            // 3. Rotating gradient arc spinner (comet tail style)
             rotate(rotationAngle, center) {
-                // Gear Center
-                drawCircle(
-                    color = ElectricBlue.copy(alpha = 0.4f),
-                    radius = 8.dp.toPx()
-                )
-
-                // Draw 3 Claws/Teeth curved outwards from the center to inner ring
-                val numClaws = 3
-                for (i in 0 until numClaws) {
-                    val angleRad = Math.toRadians((i * (360 / numClaws)).toDouble()).toFloat()
-                    val startX = center.x + 6.dp.toPx() * cos(angleRad)
-                    val startY = center.y + 6.dp.toPx() * sin(angleRad)
-                    val endX = center.x + innerRadius * cos(angleRad + 0.3f)
-                    val endY = center.y + innerRadius * sin(angleRad + 0.3f)
-
-                    // Draw curved claw using line with stroke cap Round
-                    drawLine(
-                        brush = Brush.linearGradient(
-                            colors = listOf(NeonCyan, ElectricBlue),
-                            start = Offset(startX, startY),
-                            end = Offset(endX, endY)
-                        ),
-                        start = Offset(startX, startY),
-                        end = Offset(endX, endY),
-                        strokeWidth = 3.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-
-                    // Small gear tip at the outer tip
-                    drawCircle(
-                        color = NeonCyan,
-                        radius = 2.dp.toPx(),
-                        center = Offset(endX, endY)
-                    )
-                }
-            }
-
-            // Draw counter-rotating inner ring for high-tech premium feel
-            rotate(-rotationAngle * 1.5f, center) {
-                drawCircle(
+                drawArc(
                     brush = Brush.sweepGradient(
-                        colors = listOf(NeonCyan.copy(alpha = 0.1f), ElectricBlue, NeonCyan.copy(alpha = 0.1f)),
+                        colors = listOf(
+                            ActivePurple.copy(alpha = 0.1f),
+                            ActivePurple,
+                            ActivePurple.copy(alpha = 0.1f)
+                        ),
                         center = center
                     ),
-                    radius = innerRadius - 4.dp.toPx(),
-                    style = Stroke(width = 1.dp.toPx())
+                    startAngle = 0f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
+
+            // 4. Soft breathing center indicator dot
+            drawCircle(
+                color = ActivePurple,
+                radius = centerDotRadius.dp.toPx(),
+                center = center
+            )
         }
 
         Column(verticalArrangement = Arrangement.Center) {
             Text(
-                text = "Processing…",
+                text = "Thinking…",
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = SoftWhite,
@@ -153,9 +132,9 @@ fun CustomProcessingLoader(
                 )
             )
             Text(
-                text = "Autonomous ClawDroid Engine active",
+                text = "Analyzing query and planning actions",
                 style = MaterialTheme.typography.bodySmall.copy(
-                    color = MutedGray.copy(alpha = 0.8f)
+                    color = MutedGray.copy(alpha = 0.7f)
                 )
             )
         }
