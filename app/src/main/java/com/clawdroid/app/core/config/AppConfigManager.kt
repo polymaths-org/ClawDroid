@@ -193,6 +193,33 @@ object AppConfigManager {
         get() = p.getBoolean("permissions_asked", false)
         set(value) = p.edit().putBoolean("permissions_asked", value).apply()
 
+    // Google OAuth & MCP configurations
+    const val KEY_GOOGLE_CLIENT_ID = "google_client_id"
+    const val KEY_GOOGLE_CLIENT_SECRET = "google_client_secret"
+    const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token"
+    const val KEY_GOOGLE_ACCOUNT_EMAIL = "google_account_email"
+    const val KEY_MCP_SERVERS_CONFIG = "mcp_servers_config"
+
+    var googleClientId: String
+        get() = p.getString(KEY_GOOGLE_CLIENT_ID, "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com") ?: "430112870946-niqg2aadqk31uhmitaqdapp3mt17bfu9.apps.googleusercontent.com"
+        set(value) = p.edit().putString(KEY_GOOGLE_CLIENT_ID, value).apply()
+
+    var googleClientSecret: String
+        get() = p.getString(KEY_GOOGLE_CLIENT_SECRET, "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") ?: "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"
+        set(value) = p.edit().putString(KEY_GOOGLE_CLIENT_SECRET, value).apply()
+
+    var googleRefreshToken: String
+        get() = p.getString(KEY_GOOGLE_REFRESH_TOKEN, "") ?: ""
+        set(value) = p.edit().putString(KEY_GOOGLE_REFRESH_TOKEN, value).apply()
+
+    var googleAccountEmail: String
+        get() = p.getString(KEY_GOOGLE_ACCOUNT_EMAIL, "") ?: ""
+        set(value) = p.edit().putString(KEY_GOOGLE_ACCOUNT_EMAIL, value).apply()
+
+    var mcpServersConfig: String
+        get() = p.getString(KEY_MCP_SERVERS_CONFIG, "") ?: ""
+        set(value) = p.edit().putString(KEY_MCP_SERVERS_CONFIG, value).apply()
+
     fun syncToSandbox(context: Context) {
         val channelsList = mutableListOf<ChannelConfig>()
         channelsList.add(ChannelConfig(type = "whatsapp", enabled = whatsappEnabled, config = mapOf("phone" to whatsappAllowedContacts)))
@@ -212,3 +239,4 @@ object AppConfigManager {
         AgentConfigLoader.save(context, config)
     }
 }
+
