@@ -3,6 +3,9 @@ package com.clawdroid.app.core.config
 import android.content.Context
 import android.content.SharedPreferences
 import com.clawdroid.app.BuildConfig
+import com.clawdroid.app.core.agent.AgentConfig
+import com.clawdroid.app.core.agent.AgentConfigLoader
+import com.clawdroid.app.core.agent.ChannelConfig
 
 object AppConfigManager {
     private const val PREFS = "clawdroid_config"
@@ -48,7 +51,7 @@ object AppConfigManager {
         get() = apiKey.isNotBlank()
 
     val isOnboardingComplete: Boolean
-        get() = p.getBoolean(KEY_ONBOARDING_COMPLETE, false) || isConfigured
+        get() = p.getBoolean(KEY_ONBOARDING_COMPLETE, false)
 
     fun save(baseUrl: String, apiKey: String, model: String) {
         p.edit()
@@ -131,6 +134,7 @@ object AppConfigManager {
 
     // Skills & Channels Integration Configuration
     const val KEY_ACTIVE_PROJECT_ID = "active_project_id"
+    const val KEY_ACTIVE_CONVERSATION_ID = "active_conversation_id"
     const val KEY_WHATSAPP_ENABLED = "whatsapp_enabled"
     const val KEY_WHATSAPP_ALLOWED_CONTACTS = "whatsapp_allowed_contacts"
     const val KEY_HEARTBEAT_ENABLED = "heartbeat_enabled"
@@ -139,6 +143,10 @@ object AppConfigManager {
     var activeProjectId: String?
         get() = p.getString(KEY_ACTIVE_PROJECT_ID, null)
         set(value) = p.edit().putString(KEY_ACTIVE_PROJECT_ID, value).apply()
+
+    var activeConversationId: String?
+        get() = p.getString(KEY_ACTIVE_CONVERSATION_ID, null)
+        set(value) = p.edit().putString(KEY_ACTIVE_CONVERSATION_ID, value).apply()
 
     var whatsappEnabled: Boolean
         get() = p.getBoolean(KEY_WHATSAPP_ENABLED, false)
@@ -185,4 +193,23 @@ object AppConfigManager {
     var permissionsAsked: Boolean
         get() = p.getBoolean("permissions_asked", false)
         set(value) = p.edit().putBoolean("permissions_asked", value).apply()
+
+    fun syncToSandbox(context: Context) {
+        val channelsList = mutableListOf<ChannelConfig>()
+        channelsList.add(ChannelConfig(type = "whatsapp", enabled = whatsappEnabled, config = mapOf("phone" to whatsappAllowedContacts)))
+        channelsList.add(ChannelConfig(type = "sms", enabled = smsEnabled))
+
+        val config = AgentConfig(
+            name = agentName,
+            personality = agentPersonality,
+            purpose = agentPurpose,
+            providerBaseUrl = baseUrl,
+            providerApiKey = apiKey,
+            model = model,
+            voice = agentVoiceProfile,
+            ttsEngine = ttsEngine,
+            channels = channelsList
+        )
+        AgentConfigLoader.save(context, config)
+    }
 }

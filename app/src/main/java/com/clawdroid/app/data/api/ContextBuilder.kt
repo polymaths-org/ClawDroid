@@ -89,7 +89,12 @@ class ContextBuilder(
     /**
      * Save a user message to the database and return its ID.
      */
-    suspend fun saveUserMessage(conversationId: String, content: String): String {
+    suspend fun saveUserMessage(
+        conversationId: String,
+        content: String,
+        mediaPath: String? = null,
+        mediaMimeType: String? = null,
+    ): String {
         val id = UUID.randomUUID().toString()
         messageDao.insert(
             MessageEntity(
@@ -99,6 +104,8 @@ class ContextBuilder(
                 content = content,
                 createdAt = System.currentTimeMillis(),
                 tokenCount = (content.length / 4).coerceAtLeast(1),
+                mediaPath = mediaPath,
+                mediaMimeType = mediaMimeType,
             )
         )
         return id
@@ -184,4 +191,6 @@ fun MessageEntity.toChatMessage(toolCalls: List<CompletedToolCall> = emptyList()
     content = content.takeIf { it.isNotBlank() },
     toolCallId = toolCallId,
     toolCalls = toolCalls,
+    mediaPath = mediaPath,
+    mediaMimeType = mediaMimeType,
 )

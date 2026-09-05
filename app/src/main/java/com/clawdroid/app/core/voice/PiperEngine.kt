@@ -105,28 +105,66 @@ class PiperEngine(
         }
     }
 
-    private fun downloadAndExtractPiper() {
-        val url = URL(PIPER_BINARY_URL)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 60_000
-        connection.instanceFollowRedirects = true
+    private fun getRedirectedConnection(urlString: String): HttpURLConnection {
+        var currentUrl = urlString
+        var redirectCount = 0
+        while (redirectCount < 5) {
+            val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 120_000
+                requestMethod = "GET"
+                instanceFollowRedirects = false
+            }
+            val status = conn.responseCode
+            if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == 307 || status == 308) {
+                val location = conn.getHeaderField("Location")
+                if (location != null) {
+                    currentUrl = if (location.startsWith("http")) location else URL(URL(currentUrl), location).toString()
+                    redirectCount++
+                    conn.disconnect()
+                    continue
+                }
+            }
+            return conn
+        }
+        error("Too many redirects: $urlString")
+    }
 
+    private fun downloadAndExtractPiper() {
         val tarFile = File(piperDir, "piper.tar.gz")
-        val contentLength = connection.contentLength
-        var bytesRead = 0L
-        connection.inputStream.use { input ->
-            FileOutputStream(tarFile).use { output ->
-                val buf = ByteArray(8192)
-                var read: Int
-                while (input.read(buf).also { read = it } != -1) {
-                    output.write(buf, 0, read)
-                    bytesRead += read
-                    if (contentLength > 0) {
-                        _downloadProgress.value = (bytesRead.toFloat() / contentLength) * 0.5f
+        val tempTarFile = File(piperDir, "piper.tar.gz.tmp")
+        tempTarFile.delete()
+
+        try {
+            val connection = getRedirectedConnection(PIPER_BINARY_URL)
+            val contentLength = connection.contentLengthLong
+            var bytesRead = 0L
+
+            connection.inputStream.use { input ->
+                FileOutputStream(tempTarFile).use { output ->
+                    val buf = ByteArray(8192)
+                    var read: Int
+                    while (input.read(buf).also { read = it } != -1) {
+                        output.write(buf, 0, read)
+                        bytesRead += read
+                        if (contentLength > 0) {
+                            _downloadProgress.value = (bytesRead.toFloat() / contentLength) * 0.5f
+                        }
                     }
                 }
             }
+            connection.disconnect()
+
+            if (contentLength > 0 && tempTarFile.length() != contentLength) {
+                error("Downloaded piper tarball size (${tempTarFile.length()}) does not match expected size ($contentLength)")
+            }
+
+            if (!tempTarFile.renameTo(tarFile)) {
+                error("Failed to rename temp tarball to ${tarFile.absolutePath}")
+            }
+        } catch (e: Exception) {
+            tempTarFile.delete()
+            throw e
         }
 
         // Extract binary from tar.gz
@@ -144,27 +182,40 @@ class PiperEngine(
 
     private suspend fun downloadFile(urlString: String, destination: File, progressStart: Float = 0.5f, progressEnd: Float = 1.0f) {
         withContext(Dispatchers.IO) {
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 120_000
-            connection.instanceFollowRedirects = true
+            val tempFile = File(destination.absolutePath + ".tmp")
+            tempFile.delete()
 
-            val contentLength = connection.contentLength
-            var bytesRead = 0L
-            connection.inputStream.use { input ->
-                FileOutputStream(destination).use { output ->
-                    val buf = ByteArray(8192)
-                    var read: Int
-                    while (input.read(buf).also { read = it } != -1) {
-                        output.write(buf, 0, read)
-                        bytesRead += read
-                        if (contentLength > 0) {
-                            val range = progressEnd - progressStart
-                            _downloadProgress.value = progressStart + (bytesRead.toFloat() / contentLength) * range
+            try {
+                val connection = getRedirectedConnection(urlString)
+                val contentLength = connection.contentLengthLong
+                var bytesRead = 0L
+
+                connection.inputStream.use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buf = ByteArray(8192)
+                        var read: Int
+                        while (input.read(buf).also { read = it } != -1) {
+                            output.write(buf, 0, read)
+                            bytesRead += read
+                            if (contentLength > 0) {
+                                val range = progressEnd - progressStart
+                                _downloadProgress.value = progressStart + (bytesRead.toFloat() / contentLength) * range
+                            }
                         }
                     }
                 }
+                connection.disconnect()
+
+                if (contentLength > 0 && tempFile.length() != contentLength) {
+                    error("Downloaded model file size (${tempFile.length()}) does not match expected size ($contentLength) for $urlString")
+                }
+
+                if (!tempFile.renameTo(destination)) {
+                    error("Failed to rename temp file to ${destination.absolutePath}")
+                }
+            } catch (e: Exception) {
+                tempFile.delete()
+                throw e
             }
         }
     }

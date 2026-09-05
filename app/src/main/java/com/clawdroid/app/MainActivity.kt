@@ -27,12 +27,15 @@ import com.clawdroid.app.ui.splash.SplashScreen
 import com.clawdroid.app.ui.theme.ClawDroidTheme
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        var isFreshLaunch = true
+    }
+
     private val startVoiceSessionTrigger = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        AppConfigManager.init(applicationContext)
         NotificationHelper.ensureChannels(this)
         AutomationScheduler.schedule(this)
 
@@ -72,7 +75,13 @@ private fun ClawDroidApp(
     startVoiceTrigger: Boolean,
     onVoiceTriggerHandled: () -> Unit,
 ) {
-    var currentScreen by remember { mutableStateOf(Screen.Splash) }
+    var currentScreen by remember {
+        mutableStateOf(
+            if (MainActivity.isFreshLaunch) Screen.Splash else {
+                if (AppConfigManager.isOnboardingComplete) Screen.Chat else Screen.Setup
+            }
+        )
+    }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -85,6 +94,7 @@ private fun ClawDroidApp(
             Screen.Splash -> {
                 SplashScreen(
                     onSplashComplete = {
+                        MainActivity.isFreshLaunch = false
                         currentScreen = if (AppConfigManager.isOnboardingComplete) {
                             Screen.Chat
                         } else {

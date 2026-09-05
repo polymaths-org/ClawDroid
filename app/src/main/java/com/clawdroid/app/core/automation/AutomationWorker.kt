@@ -8,7 +8,7 @@ import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.BackgroundAgentRunner
 import com.clawdroid.app.data.db.ConversationEntity
-import com.clawdroid.app.core.notifications.AgentForegroundService
+import com.clawdroid.app.core.service.EnhancedForegroundService
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.first
@@ -19,10 +19,10 @@ class AutomationWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        // Self-heal AgentForegroundService if Ultra Agent is enabled
+        // Self-heal EnhancedForegroundService if Ultra Agent is enabled
         if (AppConfigManager.ultraAgentEnabled) {
             runCatching {
-                val serviceIntent = Intent(applicationContext, AgentForegroundService::class.java)
+                val serviceIntent = Intent(applicationContext, EnhancedForegroundService::class.java)
                 ContextCompat.startForegroundService(applicationContext, serviceIntent)
             }
         }

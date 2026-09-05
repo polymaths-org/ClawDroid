@@ -189,6 +189,23 @@ fun SettingsScreen(
     var heartbeatIntervalMin by remember { mutableStateOf(AppConfigManager.heartbeatIntervalMin) }
     var notificationAccessGranted by remember { mutableStateOf(false) }
 
+    val saveAndSync = {
+        AppConfigManager.save(baseUrl.trim(), apiKey.trim(), model.trim())
+        AppConfigManager.ttsEngine = ttsEngine
+        AppConfigManager.ttsVoice = ttsVoice.trim()
+        AppConfigManager.ttsSpeed = ttsSpeed
+        AppConfigManager.openaiTtsApiKey = openaiTtsApiKey.trim()
+        AppConfigManager.elevenlabsApiKey = elevenlabsApiKey.trim()
+        AppConfigManager.deepgramApiKey = deepgramApiKey.trim()
+        AppConfigManager.ultraAgentEnabled = isUltraAgentEnabled
+        AppConfigManager.whatsappEnabled = whatsappEnabled
+        AppConfigManager.whatsappAllowedContacts = whatsappAllowedContacts.trim()
+        AppConfigManager.smsEnabled = smsEnabled
+        AppConfigManager.heartbeatEnabled = heartbeatEnabled
+        AppConfigManager.heartbeatIntervalMin = heartbeatIntervalMin
+        AppConfigManager.syncToSandbox(context)
+    }
+
     // Check notification listener access on resume
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1045,9 +1062,8 @@ fun SettingsScreen(
                             color = MutedGray,
                         )
                         GlassButton(onClick = {
+                            saveAndSync()
                             Toast.makeText(context, "Config saved to ~/agent_config.json", Toast.LENGTH_SHORT).show()
-                            val cfg = com.clawdroid.app.core.agent.AgentConfigLoader.load(context)
-                            com.clawdroid.app.core.agent.AgentConfigLoader.save(context, cfg)
                         }) {
                             Text("Export Config", fontWeight = FontWeight.SemiBold, color = SoftWhite)
                         }
@@ -1184,19 +1200,7 @@ fun SettingsScreen(
                 saved = saved,
                 enabled = apiKey.isNotBlank(),
                 onClick = {
-                    AppConfigManager.save(baseUrl.trim(), apiKey.trim(), model.trim())
-                    AppConfigManager.ttsEngine = ttsEngine
-                    AppConfigManager.ttsVoice = ttsVoice.trim()
-                    AppConfigManager.ttsSpeed = ttsSpeed
-                    AppConfigManager.openaiTtsApiKey = openaiTtsApiKey.trim()
-                    AppConfigManager.elevenlabsApiKey = elevenlabsApiKey.trim()
-                    AppConfigManager.deepgramApiKey = deepgramApiKey.trim()
-                    AppConfigManager.ultraAgentEnabled = isUltraAgentEnabled
-                    AppConfigManager.whatsappEnabled = whatsappEnabled
-                    AppConfigManager.whatsappAllowedContacts = whatsappAllowedContacts.trim()
-                    AppConfigManager.smsEnabled = smsEnabled
-                    AppConfigManager.heartbeatEnabled = heartbeatEnabled
-                    AppConfigManager.heartbeatIntervalMin = heartbeatIntervalMin
+                    saveAndSync()
                     if (heartbeatEnabled) {
                         com.clawdroid.app.core.automation.AutomationScheduler.schedule(context)
                     }
