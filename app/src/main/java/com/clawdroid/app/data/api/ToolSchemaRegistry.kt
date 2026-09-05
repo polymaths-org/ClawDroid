@@ -110,6 +110,79 @@ object ToolSchemaRegistry {
                     required("summary", "start_time", "end_time")
                 })
             }
+            // Google Drive & Docs Tools
+            array.put(tool("google_drive_create_file", "Upload or create a file in Google Drive.") {
+                putString("name", "Name of the file.")
+                putString("mimeType", "MIME type (e.g. text/plain, application/pdf, image/png).")
+                putString("content", "Raw text content of the file.")
+                required("name", "mimeType", "content")
+            })
+            array.put(tool("google_drive_search_files", "Search for files in Google Drive.") {
+                putString("query", "Search term or file name query.")
+                required("query")
+            })
+            array.put(tool("google_docs_write_doc", "Create a new Google Doc and write content to it.") {
+                putString("title", "Document title.")
+                putString("body", "Document content body.")
+                required("title", "body")
+            })
+        }
+
+        // GitHub Tools
+        val isGithubActive = com.clawdroid.app.core.service.GithubAuthManager.isConnected &&
+                com.clawdroid.app.core.config.AppConfigManager.githubConnectorEnabled
+        if (isGithubActive) {
+            array.put(tool("github_list_repos", "List repositories for the authenticated GitHub user.") {
+                // No parameters required
+            })
+            array.put(tool("github_create_issue", "Create an issue in a GitHub repository.") {
+                putString("repo", "Full repository name, formatted as 'owner/repo' (e.g. 'octocat/Hello-World').")
+                putString("title", "Title of the issue.")
+                putString("body", "Body content of the issue.")
+                required("repo", "title", "body")
+            })
+            array.put(tool("github_create_pr", "Create a Pull Request in a GitHub repository.") {
+                putString("repo", "Full repository name, formatted as 'owner/repo'.")
+                putString("title", "Title of the Pull Request.")
+                putString("head", "The name of the branch where your changes are implemented (e.g. 'my-feature-branch').")
+                putString("base", "The name of the branch you want the changes pulled into (e.g. 'main' or 'master').")
+                putString("body", "Description body of the Pull Request.")
+                required("repo", "title", "head", "base", "body")
+            })
+        }
+
+        // Notion Tools
+        val isNotionActive = com.clawdroid.app.core.service.NotionAuthManager.isConnected &&
+                com.clawdroid.app.core.config.AppConfigManager.notionConnectorEnabled
+        if (isNotionActive) {
+            array.put(tool("notion_create_page", "Create a new page under a parent page in Notion.") {
+                putString("parentPageId", "The UUID of the parent page (e.g. '8b3687595b1a45749f7e8b6ee7bdf354').")
+                putString("title", "Title of the new page.")
+                putString("content", "Text content block to insert inside the page.")
+                required("parentPageId", "title", "content")
+            })
+            array.put(tool("notion_append_block", "Append a paragraph block of text to an existing Notion page or block.") {
+                putString("pageId", "The UUID of the page or block to append to.")
+                putString("content", "Text content to append.")
+                required("pageId", "content")
+            })
+        }
+
+        // Spotify Tools
+        val isSpotifyActive = com.clawdroid.app.core.service.SpotifyAuthManager.isConnected &&
+                com.clawdroid.app.core.config.AppConfigManager.spotifyConnectorEnabled
+        if (isSpotifyActive) {
+            array.put(tool("spotify_playback_control", "Control media playback on Spotify (PLAY, PAUSE, NEXT, PREV).") {
+                putString("action", "Playback control action: PLAY, PAUSE, NEXT, or PREV.")
+                required("action")
+            })
+            array.put(tool("spotify_get_current_track", "Retrieve details of the currently playing track on Spotify.") {
+                // No parameters required
+            })
+            array.put(tool("spotify_search_and_play", "Search for a track on Spotify and play it on the device.") {
+                putString("query", "Search query for track name and/or artist (e.g. 'Stairway to Heaven' or 'Blinding Lights').")
+                required("query")
+            })
         }
 
         return array
