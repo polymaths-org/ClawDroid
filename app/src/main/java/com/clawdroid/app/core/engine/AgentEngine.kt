@@ -351,8 +351,17 @@ class AgentEngine(
                 send(AgentRunEvent.ToolCallRequested(call))
                 when (val loopCheck = loopDetector.record(call)) {
                     LoopCheckResult.Ok -> Unit
-                    is LoopCheckResult.Warn -> send(AgentRunEvent.LoopWarning(loopCheck.message))
+                    is LoopCheckResult.Warn -> {
+                        send(AgentRunEvent.LoopWarning(loopCheck.message))
+                        // Loop warnings were UI-only, so a small local model never saw them
+                        // and repeated the same call. Persist the reminder for the next turn.
+                        contextBuilder.saveUserMessage(conversationId, loopCheck.message)
+                    }
                     is LoopCheckResult.Stop -> {
+                        contextBuilder.saveUserMessage(
+                            conversationId,
+                            loopCheck.message + " Reply in plain text with what you have.",
+                        )
                         send(AgentRunEvent.Stopped(loopCheck.message))
                         saveSummary(finalText.toString())
                         return@channelFlow

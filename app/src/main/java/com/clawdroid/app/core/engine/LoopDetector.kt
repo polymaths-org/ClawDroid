@@ -10,7 +10,7 @@ sealed interface LoopCheckResult {
 }
 
 class LoopDetector(
-    private val warnAfterSimilarCalls: Int = 3,
+    private val warnAfterSimilarCalls: Int = 2,
     private val hardStopAfterIdenticalCalls: Int = 10,
 ) {
     private val recentCalls = ArrayDeque<String>()
@@ -30,7 +30,7 @@ class LoopDetector(
             )
 
             identicalCount >= warnAfterSimilarCalls -> LoopCheckResult.Warn(
-                "You've attempted this tool call multiple times. Try a fundamentally different approach or explain the blocker."
+                "You already called this exact tool with the same arguments and received the result. Reply in plain text using that result. Do NOT repeat the same tool call."
             )
 
             else -> LoopCheckResult.Ok

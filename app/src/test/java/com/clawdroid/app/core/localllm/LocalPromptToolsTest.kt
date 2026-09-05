@@ -169,4 +169,28 @@ class LocalPromptToolsTest {
         assertTrue(msg.contains("runtime plugin", ignoreCase = true))
         assertTrue(msg.contains("Re-download", ignoreCase = true))
     }
+
+    @Test
+    fun `stripToolBlock hides tool fence from chat text`() {
+        val raw = "Thinking.\n```tool_json\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"SKILL.md\"}}\n```\nMore."
+        val stripped = LocalPromptTools.stripToolBlock(raw)
+        assertTrue(!stripped.contains("tool_json"))
+        assertTrue(!stripped.contains("read_file"))
+        assertTrue(stripped.contains("Thinking."))
+    }
+
+    @Test
+    fun `plain JSON without fence still parses`() {
+        val text = "Call it {\"name\": \"read_file\", \"arguments\": {\"path\": \"SKILL.md\"}} now"
+        val call = LocalPromptTools.parseToolCall(text)
+        assertNotNull(call)
+        assertEquals("read_file", call!!.name)
+        assertTrue(call.arguments.contains("SKILL.md"))
+    }
+
+    @Test
+    fun `tool suffix forbids repeat calls`() {
+        assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("NEVER repeat"))
+        assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("plain text"))
+    }
 }

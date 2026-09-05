@@ -18,6 +18,17 @@ object LocalPromptTools {
     const val MAX_PROMPT_CHARS = 6_000
 
     val TOOL_JSON_REGEX = Regex("```tool_json\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
+    // Fallback for small models that forget the fence and emit raw JSON.
+    val PLAIN_TOOL_REGEX = Regex("\\{\\s*\"name\"\\s*:\\s*\"([a-z_]+)\"\\s*,\\s*\"arguments\"\\s*:\\s*(\\{.*?\\})\\s*\\}", RegexOption.DOT_MATCHES_ALL)
+
+    fun stripToolBlock(text: String): String {
+        return TOOL_JSON_REGEX.replace(text, "").trim()
+    }
+
+    fun duplicateReminder(toolName: String): String {
+        return "System reminder: you already called $toolName with these exact arguments and received the Tool result above. " +
+            "Now reply in plain text using that result. Do NOT emit another ```tool_json block with the same call."
+    }
 
     const val TOOL_PREAMBLE = """You control an Android phone agent. Available tools (reply with at most ONE per message):
 """
@@ -29,7 +40,9 @@ To call a tool, end your response with exactly one fenced block:
 {"name": "<tool name>", "arguments": {...}}
 ```
 Each tool spec lists its args (* = required). Use those exact argument names.
-Describe a tool result only after you receive its Tool result message.
+After you receive a Tool result message, you MUST reply in plain text using that result.
+NEVER repeat the same tool call with the same arguments twice.
+If the result already answers the user, print it and stop. No more tool blocks.
 Otherwise reply with plain text only. Keep replies short."""
 
     val BASIC_TOOLS = setOf("execute_command", "read_file", "write_file", "list_directory")
@@ -111,9 +124,20 @@ Otherwise reply with plain text only. Keep replies short."""
     }
 
     fun parseToolCall(text: String): CompletedToolCall? {
-        val match = TOOL_JSON_REGEX.findAll(text).lastOrNull() ?: return null
-        val obj = DefensiveJsonParser.parseObjectOrError(match.groupValues[1]).getOrNull()
-            ?: return null
+        val fenced = TOOL_JSON_REGEX.findAll(text).lastOrNull()
+        if (fenced != null) {
+            val obj = DefensiveJsonParser.parseObjectOrError(fenced.groupValues[1]).getOrNull()
+            if (obj != null) {
+                val name = obj.optString("name").trim()
+                if (name.isNotEmpty()) {
+                    val args = obj.optJSONObject("arguments")?.toString() ?: "{}"
+                    return CompletedToolCall(id = UUID.randomUUID().toString(), name = name, arguments = args)
+                }
+            }
+        }
+        val plain = PLAIN_TOOL_REGEX.findAll(text).lastOrNull() ?: return null
+        val rebuilt = "{\"name\":\"${plain.groupValues[1]}\",\"arguments\":${plain.groupValues[2]}}"
+        val obj = DefensiveJsonParser.parseObjectOrError(rebuilt).getOrNull() ?: return null
         val name = obj.optString("name").trim()
         if (name.isEmpty()) return null
         val args = obj.optJSONObject("arguments")?.toString() ?: "{}"

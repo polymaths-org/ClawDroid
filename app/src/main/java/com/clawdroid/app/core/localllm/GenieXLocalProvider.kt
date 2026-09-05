@@ -112,10 +112,9 @@ class GenieXLocalProvider(
                 GenerationConfig(maxTokens = LocalLlmConfig.LOCAL_MAX_TOKENS),
             ).collect { result ->
                 when (result) {
-                    is LlmStreamResult.Token -> {
-                        fullText.append(result.text)
-                        emit(StreamEvent.TextDelta(result.text))
-                    }
+                    // Buffer only: tool_json blocks must not appear as chat text.
+                    // Visible text is emitted once, stripped, after generation.
+                    is LlmStreamResult.Token -> fullText.append(result.text)
                     is LlmStreamResult.Completed -> Unit
                     is LlmStreamResult.Error -> {
                         Log.e(TAG, "generate error", result.throwable)
@@ -126,7 +125,17 @@ class GenieXLocalProvider(
         } finally {
             runCatching { handle.stopStream() }
         }
-        parseToolCall(fullText.toString())?.let { emit(StreamEvent.ToolCallComplete(it)) }
+        val raw = fullText.toString()
+        val toolCall = parseToolCall(raw)
+        val visible = LocalPromptTools.stripToolBlock(raw).trim()
+        // If the turn is only a tool call, show no chat bubble; the tool step covers it.
+        // If text accompanies the call, show only that text.
+        if (toolCall == null) {
+            if (visible.isNotEmpty()) emit(StreamEvent.TextDelta(visible))
+        } else if (visible.isNotEmpty()) {
+            emit(StreamEvent.TextDelta(visible))
+        }
+        toolCall?.let { emit(StreamEvent.ToolCallComplete(it)) }
         emit(StreamEvent.Done)
     }.flowOn(Dispatchers.IO)
 
