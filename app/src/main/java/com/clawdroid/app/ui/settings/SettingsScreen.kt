@@ -126,6 +126,9 @@ fun SettingsScreen(
                 SettingsRow(Icons.Outlined.Code, "SKILL.md", "Core skills and domain instructions", accent, onSurface, onVariant) {
                     onNavigateToConfigEditor(ConfigFileType.SKILL)
                 }
+                SettingsRow(Icons.Outlined.Code, "SYSTEM.md", "System-level base prompt overrides", accent, onSurface, onVariant) {
+                    onNavigateToConfigEditor(ConfigFileType.SYSTEM)
+                }
             }
         }
     }

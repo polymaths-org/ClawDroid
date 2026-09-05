@@ -48,7 +48,7 @@ enum class ConfigFileType(val fileName: String, val label: String) {
     SOUL("SOUL.md", "SOUL.md — Agent Identity"),
     TOOLS("TOOLS.md", "TOOLS.md — Tool Rules"),
     SKILL("SKILL.md", "SKILL.md — Core Skills"),
-    CLAUDE("CLAUDE.md", "CLAUDE.md — Base Prompt"),
+    SYSTEM("SYSTEM.md", "SYSTEM.md — Base Prompt"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,7 +67,12 @@ fun ConfigEditorScreen(
         loading = true
         val text = withContext(Dispatchers.IO) {
             val file = File(context.filesDir, fileType.fileName)
-            if (file.exists()) file.readText() else "# ${fileType.fileName}\n\n"
+            val legacyFile = File(context.filesDir, "CLAUDE.md")
+            when {
+                file.exists() -> file.readText()
+                fileType == ConfigFileType.SYSTEM && legacyFile.exists() -> legacyFile.readText()
+                else -> "# ${fileType.fileName}\n\n"
+            }
         }
         content = text
         originalContent = text

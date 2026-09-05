@@ -59,7 +59,7 @@ object MessageBuilder {
             appendLine("- CRITICAL: Before sending ANY message to an external service (WhatsApp, SMS, email, Slack, Telegram, etc.), you MUST ask the user what to say first. Never auto-reply.")
             appendLine("- If the user tells you to send a specific message, you may send it without further confirmation.")
             appendLine("- Do NOT use web.whatsapp.com or any browser-based messaging interface to send messages without explicit user approval.")
-            appendLine("- If the user teaches you durable preferences, workflows, identity facts, or operating rules, update the relevant markdown memory/config files such as AGENTS.md, SOUL.md, TOOLS.md, SKILL.md, CLAUDE.md, or files under home/.memory/.")
+            appendLine("- If the user teaches you durable preferences, workflows, identity facts, or operating rules, update the relevant markdown memory/config files such as AGENTS.md, SOUL.md, TOOLS.md, SKILL.md, SYSTEM.md, or files under home/.memory/.")
             
             if (!customInstructions.isNullOrBlank()) {
                 appendLine()
