@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.clawdroid.app.core.automation.AutomationScheduler
 import com.clawdroid.app.ui.chat.ChatScreen
 import com.clawdroid.app.ui.sidebar.SidebarContent
 import com.clawdroid.app.ui.theme.ClawDroidTheme
@@ -32,6 +33,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AutomationScheduler.schedule(this)
         setContent {
             ClawDroidTheme {
                 ClawDroidApp()
