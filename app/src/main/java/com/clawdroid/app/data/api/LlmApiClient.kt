@@ -1,5 +1,6 @@
 package com.clawdroid.app.data.api
 
+import android.util.Log
 import com.clawdroid.app.BuildConfig
 import com.clawdroid.app.core.config.AppConfigManager
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,8 @@ data class ChatMessage(
     val content: String? = null,
     val toolCallId: String? = null,
     val toolCalls: List<CompletedToolCall> = emptyList(),
+    val mediaPath: String? = null,
+    val mediaMimeType: String? = null,
 )
 
 data class ToolCallDelta(
@@ -56,6 +59,7 @@ class LlmApiClient(
         tools: JSONArray? = null,
         forcedToolName: String? = null,
     ): Flow<StreamEvent> = flow {
+        Log.i("LlmApiClient", "streamChat started. baseUrl=$baseUrl, model=$model, messages=${messages.size}")
         check(baseUrl.isNotBlank()) { "Missing LLM base URL" }
         check(apiKey.isNotBlank()) { "Missing LLM API key" }
         check(model.isNotBlank()) { "Missing LLM model" }
@@ -78,6 +82,8 @@ class LlmApiClient(
             )
         }
 
+        Log.d("LlmApiClient", "Request payload: $payload")
+
         val connection = (URL("$baseUrl/chat/completions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20_000
@@ -90,65 +96,87 @@ class LlmApiClient(
             setRequestProperty("X-Title", "ClawDroid")
         }
 
+        Log.d("LlmApiClient", "HTTP connection opened to $baseUrl/chat/completions")
+
         connection.outputStream.use { output ->
             output.write(payload.toString().toByteArray(Charsets.UTF_8))
         }
 
-        if (connection.responseCode !in 200..299) {
+        Log.d("LlmApiClient", "Request written, fetching responseCode...")
+        val code = connection.responseCode
+        Log.i("LlmApiClient", "Response code: $code")
+
+        if (code !in 200..299) {
             val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            emit(StreamEvent.Error("HTTP ${connection.responseCode}: $errorText"))
+            Log.e("LlmApiClient", "HTTP error $code: $errorText")
+            emit(StreamEvent.Error("HTTP $code: $errorText"))
             return@flow
         }
 
+        Log.d("LlmApiClient", "Response body stream read start...")
         val toolCalls = mutableMapOf<Int, ToolCallBuilder>()
         var lastUsage: TokenUsage? = null
-        connection.inputStream.bufferedReader().useLines { lines ->
-            lines.forEach { line ->
-                if (!line.startsWith("data:")) return@forEach
-                val data = line.removePrefix("data:").trim()
-                if (data == "[DONE]") {
-                    toolCalls.values
-                        .mapNotNull { it.buildOrNull() }
-                        .forEach { emit(StreamEvent.ToolCallComplete(it)) }
-                    lastUsage?.let { emit(StreamEvent.Usage(it)) }
-                    emit(StreamEvent.Done)
-                    return@useLines
-                }
+        var isDoneEmitted = false
+        try {
+            connection.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    if (!line.startsWith("data:")) return@forEach
+                    val data = line.removePrefix("data:").trim()
+                    Log.d("LlmApiClient", "Received line: $line")
+                    if (data == "[DONE]") {
+                        toolCalls.values
+                            .mapNotNull { it.buildOrNull() }
+                            .forEach { emit(StreamEvent.ToolCallComplete(it)) }
+                        toolCalls.clear()
+                        lastUsage?.let { emit(StreamEvent.Usage(it)) }
+                        emit(StreamEvent.Done)
+                        isDoneEmitted = true
+                        return@useLines
+                    }
 
-                val event = runCatching { JSONObject(data) }.getOrNull()
-                    ?: return@forEach
+                    val event = runCatching { JSONObject(data) }.getOrNull()
+                        ?: return@forEach
 
-                val usageObj = event.optJSONObject("usage")
-                if (usageObj != null) {
-                    val prompt = usageObj.optInt("prompt_tokens", 0)
-                    val completion = usageObj.optInt("completion_tokens", 0)
-                    val cached = usageObj.optJSONObject("prompt_tokens_details")?.optInt("cached_tokens", 0) ?: 0
-                    lastUsage = TokenUsage(prompt, completion, cached)
-                }
+                    val usageObj = event.optJSONObject("usage")
+                    if (usageObj != null) {
+                        val prompt = usageObj.optInt("prompt_tokens", 0)
+                        val completion = usageObj.optInt("completion_tokens", 0)
+                        val cached = usageObj.optJSONObject("prompt_tokens_details")?.optInt("cached_tokens", 0) ?: 0
+                        lastUsage = TokenUsage(prompt, completion, cached)
+                    }
 
-                val choice = event.optJSONArray("choices")
-                    ?.optJSONObject(0)
-                    ?: return@forEach
-                val delta = choice.optJSONObject("delta") ?: return@forEach
+                    val choice = event.optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?: return@forEach
+                    val delta = choice.optJSONObject("delta") ?: return@forEach
 
-                val text = delta.optNullableString("content")
-                if (!text.isNullOrEmpty()) emit(StreamEvent.TextDelta(text))
+                    val text = delta.optNullableString("content")
+                    if (!text.isNullOrEmpty()) emit(StreamEvent.TextDelta(text))
 
-                val deltaToolCalls = delta.optJSONArray("tool_calls")
-                if (deltaToolCalls != null) {
-                    for (i in 0 until deltaToolCalls.length()) {
-                        val raw = deltaToolCalls.optJSONObject(i) ?: continue
-                        val parsed = raw.toToolCallDelta() ?: continue
-                        val builder = toolCalls.getOrPut(parsed.index) { ToolCallBuilder() }
-                        builder.append(parsed)
-                        emit(StreamEvent.ToolCallDeltaReceived(
-                            index = parsed.index,
-                            id = builder.getId().orEmpty(),
-                            name = builder.getName().orEmpty(),
-                            arguments = builder.getArguments()
-                        ))
+                    val deltaToolCalls = delta.optJSONArray("tool_calls")
+                    if (deltaToolCalls != null) {
+                        for (i in 0 until deltaToolCalls.length()) {
+                            val raw = deltaToolCalls.optJSONObject(i) ?: continue
+                            val parsed = raw.toToolCallDelta() ?: continue
+                            val builder = toolCalls.getOrPut(parsed.index) { ToolCallBuilder() }
+                            builder.append(parsed)
+                            emit(StreamEvent.ToolCallDeltaReceived(
+                                index = parsed.index,
+                                id = builder.getId().orEmpty(),
+                                name = builder.getName().orEmpty(),
+                                arguments = builder.getArguments()
+                            ))
+                        }
                     }
                 }
+            }
+        } finally {
+            if (!isDoneEmitted) {
+                toolCalls.values
+                    .mapNotNull { it.buildOrNull() }
+                    .forEach { emit(StreamEvent.ToolCallComplete(it)) }
+                lastUsage?.let { emit(StreamEvent.Usage(it)) }
+                emit(StreamEvent.Done)
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -158,15 +186,39 @@ class LlmApiClient(
         forEach { message ->
             val json = JSONObject().put("role", message.role)
 
-            if (message.content != null) {
-                json.put("content", message.content)
+            if (message.mediaPath != null && message.mediaMimeType != null) {
+                val contentArray = JSONArray()
+                if (message.content != null) {
+                    contentArray.put(
+                        JSONObject()
+                            .put("type", "text")
+                            .put("text", message.content)
+                    )
+                }
+                val file = java.io.File(message.mediaPath)
+                if (file.exists() && file.isFile) {
+                    val bytes = file.readBytes()
+                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val urlValue = "data:${message.mediaMimeType};base64,$base64"
+                    contentArray.put(
+                        JSONObject()
+                            .put("type", "image_url")
+                            .put("image_url", JSONObject().put("url", urlValue))
+                    )
+                }
+                json.put("content", contentArray)
+            } else {
+                if (message.content != null) {
+                    json.put("content", message.content)
+                }
             }
+
             if (message.toolCallId != null) {
                 json.put("tool_call_id", message.toolCallId)
             }
             if (message.toolCalls.isNotEmpty()) {
                 json.put("tool_calls", message.toolCalls.toToolCallsJson())
-                if (message.content == null) {
+                if (message.content == null && message.mediaPath == null) {
                     json.put("content", JSONObject.NULL)
                 }
             }
