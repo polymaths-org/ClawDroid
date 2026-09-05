@@ -127,7 +127,7 @@ object AndroidControlTools {
 
     suspend fun tapText(label: String): JSONObject = runTool {
         val service = requireService() ?: return@runTool serviceNotRunning()
-        val ok = service.tapByText(label)
+        val ok = service.tapByTextWithCenterFallback(label)
         if (!ok) {
             return@runTool errorResult(
                 "tap_target_not_found",

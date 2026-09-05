@@ -248,6 +248,40 @@ class ScreenReaderService : AccessibilityService() {
         }
     }
 
+    suspend fun tapByTextWithCenterFallback(label: String): Boolean {
+        if (tapByText(label)) return true
+        val root = getUsableRoot() ?: return false
+        return try {
+            val bounds = findAnyNodeBounds(root, label.trim()) ?: return false
+            if (bounds.isEmpty) return false
+            tap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findAnyNodeBounds(node: AccessibilityNodeInfo, label: String): android.graphics.Rect? {
+        if (label.isEmpty()) return null
+        val text = node.text?.toString()?.trim().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        val matches = text.equals(label, ignoreCase = true) ||
+            desc.equals(label, ignoreCase = true) ||
+            text.contains(label, ignoreCase = true) ||
+            desc.contains(label, ignoreCase = true)
+        if (matches) {
+            val out = android.graphics.Rect()
+            node.getBoundsInScreen(out)
+            if (!out.isEmpty) return out
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findAnyNodeBounds(child, label)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
+    }
+
     fun tapByResourceId(id: String): Boolean {
         val root = getUsableRoot() ?: return false
         return try {

@@ -52,6 +52,7 @@ object LocalMdQuantizer {
 object LocalPromptTools {
     const val MAX_SYSTEM_CHARS = 800
     const val MAX_MSG_CHARS = 800
+    const val MAX_MINI_CONTEXT_CHARS = 1_500
     const val MAX_HISTORY = 6
     const val MAX_TOOLS = 6
     const val MAX_PROMPT_CHARS = 3_500
@@ -264,6 +265,47 @@ Otherwise reply with plain text only. Keep replies short."""
 
     val BASIC_TOOLS = setOf("execute_command", "read_file", "write_file", "list_directory")
 
+    /**
+     * Intent-routed tool allowlist for on-device models. Gmail/Calendar tools
+     * are offered to EVERY local model (including the 0.6B one) whenever the
+     * last user message asks for mail or events — the schemas only arrive in
+     * `tools` when Google is actually connected, so offering them is harmless
+     * otherwise. Each set stays within [MAX_TOOLS].
+     */
+    fun localAllowlist(modelId: String, lastUserText: String): Set<String> {
+        val lower = lastUserText.lowercase()
+        val wantsGmail = lower.contains("gmail") || lower.contains("email") ||
+            lower.contains("mail") || lower.contains("inbox") || lower.contains("draft") ||
+            lower.contains("send mail") || lower.contains("check mail")
+        val wantsCalendar = lower.contains("calendar") || lower.contains("event") ||
+            lower.contains("meeting") || lower.contains("schedule") ||
+            lower.contains("appointment") || lower.contains("invite")
+        if (wantsGmail && wantsCalendar) {
+            return linkedSetOf(
+                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
+                "calendar_list_events", "calendar_create_event", "launch_app",
+            )
+        }
+        if (wantsGmail) {
+            return linkedSetOf(
+                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
+                "gmail_create_draft", "launch_app", "get_screen",
+            )
+        }
+        if (wantsCalendar) {
+            return linkedSetOf(
+                "calendar_list_events", "calendar_create_event", "launch_app",
+                "get_screen", "tap_text", "type_text",
+            )
+        }
+        if (modelId == LocalLlmConfig.GGUF_MODEL_06B) return BASIC_TOOLS
+        return linkedSetOf(
+            "launch_app", "get_screen", "tap_text", "tap", "type_text",
+            "press_back", "press_home", "scroll", "swipe", "wait",
+            "execute_command", "read_file", "write_file", "list_directory",
+        )
+    }
+
     fun renderTools(tools: JSONArray?, allowlist: Set<String>): String {
         if (tools == null || tools.length() == 0) return ""
         val byName = mutableMapOf<String, String>()
@@ -308,6 +350,7 @@ Otherwise reply with plain text only. Keep replies short."""
         "To open an app, call launch_app with the app name. Never tap blind at guessed coordinates. " +
         "After launch_app, you MUST call get_screen before any tap. " +
         "After get_screen, use tap_text with a visible label. " +
+        "If get_screen already shows the screen you were asked to open, the task is done. Describe what you see and stop. " +
         "If a tap fails, call get_screen again and pick a different exact label. Never repeat the same failed tap. " +
         "When asked for a file location, reply with the File path from the Tool result, not the full content."
 
@@ -316,9 +359,16 @@ Otherwise reply with plain text only. Keep replies short."""
         tools: JSONArray?,
         allowlist: Set<String>,
         workingDir: String? = null,
+        miniContext: String? = null,
     ): String {
         val sb = StringBuilder()
         sb.append(LOCAL_SYSTEM).append("\n\n")
+        val mini = miniContext?.trim().orEmpty()
+        if (mini.isNotEmpty()) {
+            // Pocket identity card (mini.md): who the agent/owner are, in a few
+            // lines, so small-context models still know who they serve.
+            sb.append(mini.take(MAX_MINI_CONTEXT_CHARS)).append("\n\n")
+        }
         val toolSpecs = renderTools(tools, allowlist)
         if (toolSpecs.isNotEmpty()) {
             sb.append(TOOL_PREAMBLE).append(toolSpecs).append(TOOL_SUFFIX).append("\n\n")

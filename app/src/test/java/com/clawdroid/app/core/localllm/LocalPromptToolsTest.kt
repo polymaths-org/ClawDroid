@@ -305,5 +305,59 @@ class LocalPromptToolsTest {
     fun `local system requires screen grounding after launch`() {
         assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("MUST call get_screen"))
         assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("Never repeat the same failed tap"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("already shows the screen"))
+    }
+
+    @Test
+    fun `local allowlist routes gmail intent including bare mail`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_17B, "check my mail")
+        assertTrue(allow.contains("gmail_list_messages"))
+        assertTrue(allow.contains("gmail_get_message"))
+        assertTrue(allow.contains("gmail_send_message"))
+        val allow2 = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_4B, "read my inbox")
+        assertTrue(allow2.contains("gmail_list_messages"))
+    }
+
+    @Test
+    fun `local allowlist routes calendar intent including invites`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_17B, "any meeting invites today?")
+        assertTrue(allow.contains("calendar_list_events"))
+        assertTrue(allow.contains("calendar_create_event"))
+    }
+
+    @Test
+    fun `local allowlist routes combined mail and calendar intent`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_XLAM_3B, "email me my calendar events")
+        assertTrue(allow.contains("gmail_list_messages"))
+        assertTrue(allow.contains("calendar_list_events"))
+        assertTrue(allow.size <= LocalPromptTools.MAX_TOOLS)
+    }
+
+    @Test
+    fun `local allowlist gives 06B gmail tools on mail intent`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_06B, "check gmail")
+        assertTrue(allow.contains("gmail_list_messages"))
+    }
+
+    @Test
+    fun `local allowlist keeps 06B basic tools otherwise`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_06B, "open settings")
+        assertEquals(LocalPromptTools.BASIC_TOOLS, allow)
+    }
+
+    @Test
+    fun `local allowlist intent sets respect the six tool cap`() {
+        // Intent-routed sets must fit the prompt budget outright; the default
+        // set is priority-ordered and trimmed to MAX_TOOLS by renderTools.
+        val models = listOf(
+            LocalLlmConfig.GGUF_MODEL_06B,
+            LocalLlmConfig.GGUF_MODEL_17B,
+            LocalLlmConfig.GGUF_MODEL_4B,
+            LocalLlmConfig.GGUF_MODEL_XLAM_3B,
+        )
+        val intents = listOf("check my mail", "what meetings today", "mail and calendar please")
+        for (m in models) for (p in intents) {
+            assertTrue(LocalPromptTools.localAllowlist(m, p).size <= LocalPromptTools.MAX_TOOLS)
+        }
     }
 }
