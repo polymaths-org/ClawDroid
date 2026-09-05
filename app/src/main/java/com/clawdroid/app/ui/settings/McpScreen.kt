@@ -39,6 +39,7 @@ import com.clawdroid.app.core.interpole.DesktopEnvironment
 import com.clawdroid.app.core.interpole.InterpoleConfig
 import com.clawdroid.app.core.interpole.InterpoleConfigRepository
 import com.clawdroid.app.core.service.GoogleAuthManager
+import com.clawdroid.app.core.service.googleSignInErrorText
 import com.clawdroid.app.ui.theme.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -194,7 +195,7 @@ fun McpScreen(
                 Toast.makeText(context, googleStatusMessage, Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            googleStatusMessage = "Sign-in error: ${e.localizedMessage ?: "unknown error"}"
+            googleStatusMessage = googleSignInErrorText(e)
             Toast.makeText(context, googleStatusMessage, Toast.LENGTH_LONG).show()
         }
     }
