@@ -7,6 +7,45 @@ import org.json.JSONArray
 import java.util.UUID
 
 /**
+ * Quantized markdown for on-device models only.
+ *
+ * Cloud prompts use the full AGENTS/SOUL/TOOLS/SKILL/SYSTEM files untouched.
+ * Small local models (0.6B/1.7B, 2K ctx) repeat markdown headers verbatim and
+ * overflow, so file reads of those configs return these 1-2 line versions
+ * through [LocalPromptTools.summarizeToolResult]. Disk files are unchanged.
+ */
+object LocalMdQuantizer {
+    const val MAX_QUANT_CHARS = 400
+
+    fun quantizedFor(fileName: String, content: String): String {
+        when (fileName.uppercase()) {
+            "SOUL.MD", "SOULD.MD" ->
+                return "Nova is pocket agent for TesterDeveloper. Calm, practical, observant; short when fast. Memory: hello."
+            "AGENTS.MD" ->
+                return "Nova, ClawDroid agent for TesterDeveloper. Transparent, autonomous in sandbox, short updates."
+            "SYSTEM.MD" ->
+                return "Visible Android agent: clear, interruptible, precise. Calm UX."
+            "TOOLS.MD" ->
+                return "Use terminal for Linux, screen tools for apps. Prefer non-interactive commands. Ask before external sends."
+            "SKILL.MD" ->
+                return "Skills: app control, sandbox commands, files/coding/automation."
+        }
+        if (!fileName.endsWith(".md", ignoreCase = true)) return content.take(MAX_QUANT_CHARS)
+        return stripMarkdown(content).take(MAX_QUANT_CHARS)
+    }
+
+    fun stripMarkdown(raw: String): String {
+        return raw.lines()
+            .map { it.trim().removePrefix("#").removePrefix("#").trim() }
+            .map { it.removePrefix("-").removePrefix("*").removePrefix(">").trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+}
+
+/**
  * Pure prompt handling for the on-device provider. No Android APIs so unit
  * tests can drive the shipped parsing and trimming without hardware.
  */
@@ -101,7 +140,13 @@ object LocalPromptTools {
                 val c = obj.optString("content")
                 if (c.isNotEmpty()) {
                     val p = obj.optString("path").take(200)
-                    return if (p.isNotEmpty()) "File $p:\n${c.take(650)}" else c.take(800)
+                    val fileName = p.substringAfterLast('/').ifBlank { "file" }
+                    val body = if (p.endsWith(".md", ignoreCase = true)) {
+                        LocalMdQuantizer.quantizedFor(fileName, c)
+                    } else {
+                        c.take(650)
+                    }
+                    return if (p.isNotEmpty()) "File $p:\n$body" else body.take(800)
                 }
             }
         } catch (_: Exception) { }
@@ -217,7 +262,8 @@ Otherwise reply with plain text only. Keep replies short."""
         return ",\"args\":\"${names.joinToString(",")}\""
     }
 
-    const val LOCAL_SYSTEM = "You are Nova, on-device Android agent. Answer briefly from Tool results. " +
+    const val LOCAL_SYSTEM = "You are Nova, pocket agent for TesterDeveloper. Calm, practical, observant. " +
+        "Answer briefly from Tool results. " +
         "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure. " +
         "When asked for a file location, reply with the File path from the Tool result, not the full content."
 

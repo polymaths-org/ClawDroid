@@ -209,4 +209,44 @@ class LocalPromptToolsTest {
         assertEquals("Here are files: a, b", LocalPromptTools.stripThinking(raw))
         assertTrue(LocalPromptTools.extractThinking(raw).contains("plan"))
     }
+
+    @Test
+    fun `quantizer keeps known configs to one-liners`() {
+        val soul = LocalMdQuantizer.quantizedFor("SOUL.md", "# SOUL.md\nName: Nova\n- hello")
+        assertTrue(soul.contains("Nova"))
+        assertTrue(soul.contains("TesterDeveloper"))
+        assertTrue(!soul.contains("#"))
+        assertTrue(soul.length <= LocalMdQuantizer.MAX_QUANT_CHARS)
+        assertEquals(soul, LocalMdQuantizer.quantizedFor("SOULD.md", "other"))
+        assertTrue(LocalMdQuantizer.quantizedFor("SYSTEM.md", "x").contains("interruptible"))
+        assertTrue(LocalMdQuantizer.quantizedFor("TOOLS.md", "x").contains("terminal"))
+        assertTrue(LocalMdQuantizer.quantizedFor("AGENTS.md", "x").contains("TesterDeveloper"))
+    }
+
+    @Test
+    fun `quantizer strips generic markdown`() {
+        val out = LocalMdQuantizer.quantizedFor("notes.md", "# Title\n- a\n- b\n\nSome  text")
+        assertTrue(!out.contains("#"))
+        assertTrue(out.contains("Title"))
+        assertTrue(out.contains("a"))
+    }
+
+    @Test
+    fun `read_file summary keeps path with quantized body`() {
+        val json = JSONObject()
+            .put("path", "/data/user/0/com.clawdroid.app/files/home/SOUL.md")
+            .put("content", "# SOUL.md\nName: Nova\nMemory: hello")
+            .toString()
+        val out = LocalPromptTools.summarizeToolResult(json)
+        assertTrue(out.contains("/data/user/0/com.clawdroid.app/files/home/SOUL.md"))
+        assertTrue(out.contains("Nova"))
+        assertTrue(!out.contains("# SOUL.md"))
+    }
+
+    @Test
+    fun `firstTurnOnly cuts fake repeated turns`() {
+        val raw = "File content here\nAssistant: # SOUL.md\nrepeated"
+        assertEquals("File content here", LocalPromptTools.firstTurnOnly(raw))
+        assertEquals("plain", LocalPromptTools.firstTurnOnly("plain"))
+    }
 }
