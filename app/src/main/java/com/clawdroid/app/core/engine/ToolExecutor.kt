@@ -50,6 +50,19 @@ data class ToolExecutionResult(
 )
 
 object ToolExecutor {
+    /**
+     * Required-arg lookup tolerant of key-name guessing by small local models
+     * (they emit file/name/filename for path, text/data for content).
+     * Falls back to [primary] so the original error surfaces when absent.
+     */
+    internal fun JSONObject.pick(primary: String, vararg aliases: String): String {
+        if (!isNull(primary) && optString(primary).isNotBlank()) return getString(primary)
+        for (alias in aliases) {
+            if (!isNull(alias) && optString(alias).isNotBlank()) return getString(alias)
+        }
+        return getString(primary)
+    }
+
     suspend fun execute(
         context: Context,
         call: CompletedToolCall,
@@ -83,22 +96,22 @@ object ToolExecutor {
             "list_processes" -> ListProcessesTool.execute(context)
             "read_file" -> ReadFileTool.execute(
                 context = context,
-                path = args.getString("path"),
+                path = args.pick("path", "file", "name", "filename"),
                 startLine = args.optIntOrNull("start_line"),
                 endLine = args.optIntOrNull("end_line"),
             )
             "write_file" -> WriteFileTool.execute(
                 context = context,
-                path = args.getString("path"),
-                content = args.getString("content"),
+                path = args.pick("path", "file", "name", "filename"),
+                content = args.pick("content", "text", "data"),
             )
             "edit_file" -> EditFileTool.execute(
                 context = context,
-                path = args.getString("path"),
+                path = args.pick("path", "file", "name", "filename"),
                 search = args.getString("search"),
                 replace = args.getString("replace"),
             )
-            "list_directory" -> ListDirectoryTool.execute(context, args.getString("path"))
+            "list_directory" -> ListDirectoryTool.execute(context, args.pick("path", "dir", "directory", "folder"))
             "browse_web" -> BrowseWebTool.execute(args.getString("url"))
             "web_search" -> WebSearchTool.execute(args.getString("query"))
             "send_notification" -> NotificationTool.execute(

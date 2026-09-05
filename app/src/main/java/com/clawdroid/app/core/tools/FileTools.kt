@@ -136,13 +136,27 @@ suspend fun checkAndRequestStoragePermission(context: Context, path: String): Bo
     return false
 }
 
+/**
+ * On some devices /data/data is a bind mount rather than a symlink, so Java's
+ * canonical path keeps the /data/data prefix while [EnvironmentSetup] roots
+ * use /data/user/0. Rewrite our own package prefix so both spellings resolve
+ * to the same sandbox directory. Pure for unit tests.
+ */
+internal fun normalizeDataPath(rawPath: String, packageName: String, filesDirPath: String): String {
+    val alias = "/data/data/$packageName/"
+    if (!rawPath.startsWith(alias)) return rawPath
+    val filesDir = File(filesDirPath)
+    return File(filesDir.parent, rawPath.removePrefix(alias)).absolutePath
+}
+
 private suspend fun resolveAgentPath(context: Context, rawPath: String): File {
     if (!checkAndRequestStoragePermission(context, rawPath)) {
         throw SecurityException("The user did not grant storage permission.")
     }
     val env = EnvironmentSetup.build(context)
     val sharedRoot = runCatching { SharedFolderManager.ensureSharedFolders() }.getOrNull()
-    val file = if (rawPath.startsWith("/")) File(rawPath) else File(env.home, rawPath)
+    val normalized = normalizeDataPath(rawPath, context.packageName, context.filesDir.absolutePath)
+    val file = if (normalized.startsWith("/")) File(normalized) else File(env.home, normalized)
     val canonical = file.canonicalFile
     val allowedRoots = listOfNotNull(env.home, env.prefix, env.tmp, sharedRoot).map { it.canonicalFile }
     check(allowedRoots.any { root -> canonical == root || canonical.path.startsWith(root.path + File.separator) }) {

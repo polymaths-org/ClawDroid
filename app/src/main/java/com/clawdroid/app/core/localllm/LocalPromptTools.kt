@@ -28,6 +28,8 @@ To call a tool, end your response with exactly one fenced block:
 ```tool_json
 {"name": "<tool name>", "arguments": {...}}
 ```
+Each tool spec lists its args (* = required). Use those exact argument names.
+Describe a tool result only after you receive its Tool result message.
 Otherwise reply with plain text only. Keep replies short."""
 
     val BASIC_TOOLS = setOf("execute_command", "read_file", "write_file", "list_directory")
@@ -42,15 +44,38 @@ Otherwise reply with plain text only. Keep replies short."""
             val name = fn.optString("name").trim()
             if (name.isEmpty() || name !in allowlist) continue
             val desc = fn.optString("description").trim().take(100).replace('\n', ' ')
-            specs.add("{\"name\":\"$name\",\"description\":\"$desc\"}")
+            val args = argSpec(fn)
+            specs.add("{\"name\":\"$name\",\"description\":\"$desc\"$args}")
         }
         return specs.joinToString("\n")
+    }
+
+    private fun argSpec(fn: org.json.JSONObject): String {
+        val props = runCatching {
+            fn.optJSONObject("parameters")?.optJSONObject("properties")
+        }.getOrNull() ?: return ""
+        if (props.length() == 0) return ""
+        val required = runCatching {
+            fn.optJSONObject("parameters")?.optJSONArray("required")
+        }.getOrNull()?.let { arr ->
+            buildSet { for (i in 0 until arr.length()) add(arr.optString(i)) }
+        } ?: emptySet()
+        val names = buildList {
+            val keys = props.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                add(if (key in required) "$key*" else key)
+            }
+        }.sorted()
+        if (names.isEmpty()) return ""
+        return ",\"args\":\"${names.joinToString(",")}\""
     }
 
     fun buildPrompt(
         messages: List<ChatMessage>,
         tools: JSONArray?,
         allowlist: Set<String>,
+        workingDir: String? = null,
     ): String {
         val sb = StringBuilder()
         val systems = messages.filter { it.role == "system" }.mapNotNull { it.content }
@@ -60,6 +85,10 @@ Otherwise reply with plain text only. Keep replies short."""
         val toolSpecs = renderTools(tools, allowlist)
         if (toolSpecs.isNotEmpty()) {
             sb.append(TOOL_PREAMBLE).append(toolSpecs).append(TOOL_SUFFIX).append("\n\n")
+        }
+        if (!workingDir.isNullOrBlank()) {
+            sb.append("Working directory: $workingDir\n")
+                .append("For file tools use relative paths or paths under it.\n\n")
         }
         for (m in messages.filter { it.role != "system" }.takeLast(MAX_HISTORY)) {
             when (m.role) {
