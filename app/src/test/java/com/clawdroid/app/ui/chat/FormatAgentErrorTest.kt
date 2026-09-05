@@ -35,4 +35,13 @@ class FormatAgentErrorTest {
         assertNull(ui.details)
         assertFalse(ui.isProviderError)
     }
+
+    @Test
+    fun connectionFailureStaysVisibleWithShortMessage() {
+        val ui = formatAgentError("Failed to connect to localhost/127.0.0.1:11434")
+
+        assertEquals("Could not reach the model service. Check your connection and retry.", ui.shortMessage)
+        assertTrue(ui.isProviderError)
+        assertFalse(ui.shortMessage.contains("{"))
+    }
 }

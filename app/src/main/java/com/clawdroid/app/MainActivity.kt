@@ -213,6 +213,7 @@ private fun ClawDroidApp(
         )
     }
     var selectedConfigFileType by remember { mutableStateOf(ConfigFileType.AGENTS) }
+    var providerReturnScreen by remember { mutableStateOf(Screen.Settings) }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -252,14 +253,20 @@ private fun ClawDroidApp(
             Screen.PostSetup -> {
                 PostSetupScreen(
                     onComplete = { currentScreen = Screen.Chat },
-                    onOpenProviderSettings = { currentScreen = Screen.Provider },
+                    onOpenProviderSettings = {
+                        providerReturnScreen = Screen.PostSetup
+                        currentScreen = Screen.Provider
+                    },
                 )
             }
 
             Screen.Settings -> {
                 SettingsScreen(
                     onBack = { currentScreen = Screen.Chat },
-                    onNavigateToProvider = { currentScreen = Screen.Provider },
+                    onNavigateToProvider = {
+                        providerReturnScreen = Screen.Settings
+                        currentScreen = Screen.Provider
+                    },
                     onNavigateToAudio = { currentScreen = Screen.Audio },
                     onNavigateToNotifications = { currentScreen = Screen.Notifications },
                     onNavigateToOverlay = { currentScreen = Screen.Overlay },
@@ -283,7 +290,12 @@ private fun ClawDroidApp(
 
             Screen.Notifications -> NotificationConfigScreen(onBack = { currentScreen = Screen.Settings })
 
-            Screen.Provider -> ProviderConfigScreen(onBack = { currentScreen = Screen.Settings })
+            Screen.Provider -> ProviderConfigScreen(
+                onBack = {
+                    currentScreen = providerReturnScreen
+                    providerReturnScreen = Screen.Settings
+                }
+            )
 
             Screen.Overlay -> OverlayConfigScreen(onBack = { currentScreen = Screen.Settings })
 
