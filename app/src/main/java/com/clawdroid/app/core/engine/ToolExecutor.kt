@@ -8,6 +8,7 @@ import com.clawdroid.app.core.tools.EditFileTool
 import com.clawdroid.app.core.tools.KillProcessTool
 import com.clawdroid.app.core.tools.ListDirectoryTool
 import com.clawdroid.app.core.tools.ListProcessesTool
+import com.clawdroid.app.core.tools.NotificationTool
 import com.clawdroid.app.core.tools.ReadFileTool
 import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
@@ -62,6 +63,11 @@ object ToolExecutor {
             "list_directory" -> ListDirectoryTool.execute(context, args.getString("path"))
             "browse_web" -> BrowseWebTool.execute(args.getString("url"))
             "web_search" -> WebSearchTool.execute(args.getString("query"))
+            "send_notification" -> NotificationTool.execute(
+                context = context,
+                title = args.getString("title"),
+                body = args.getString("body"),
+            )
             else -> error("Unsupported tool: ${call.name}")
         }.toString()
     }.fold(
