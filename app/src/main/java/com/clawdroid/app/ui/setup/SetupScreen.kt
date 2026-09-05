@@ -40,6 +40,7 @@ import android.speech.tts.TextToSpeech
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -118,6 +119,11 @@ fun SetupScreen(
     onSetupComplete: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
+    if (step > 0) {
+        BackHandler {
+            step--
+        }
+    }
     var selectedProvider by remember { mutableStateOf<ProviderInfo?>(null) }
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
