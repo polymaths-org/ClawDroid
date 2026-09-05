@@ -1,8 +1,11 @@
 package com.clawdroid.app.ui.settings
 
 import android.Manifest
+import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
@@ -83,6 +86,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.control.AndroidControlTools
+import com.clawdroid.app.core.control.ScreenCaptureManager
+import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.PiperEngine
 import com.clawdroid.app.ui.components.GlassButton
@@ -90,6 +96,7 @@ import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
 import com.clawdroid.app.ui.components.GlowText
 import com.clawdroid.app.ui.components.PiperDownloadDialog
+import kotlinx.coroutines.launch
 import java.util.Locale
 import com.clawdroid.app.ui.theme.DeepBlack
 import com.clawdroid.app.ui.theme.EmberOrange
@@ -197,6 +204,28 @@ fun SettingsScreen(
     var heartbeatEnabled by remember { mutableStateOf(AppConfigManager.heartbeatEnabled) }
     var heartbeatIntervalMin by remember { mutableStateOf(AppConfigManager.heartbeatIntervalMin) }
     var notificationAccessGranted by remember { mutableStateOf(false) }
+    var accessibilityActive by remember { mutableStateOf(ScreenReaderService.instance != null) }
+    var screenCaptureActive by remember { mutableStateOf(ScreenCaptureManager.isActive()) }
+    var showScreenTestDialog by remember { mutableStateOf(false) }
+    var screenTestResult by remember { mutableStateOf("") }
+    var screenTestLoading by remember { mutableStateOf(false) }
+
+    val projectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val ok = ScreenCaptureManager.startCapture(context, result.resultCode, result.data!!)
+            screenCaptureActive = ok
+            Toast.makeText(
+                context,
+                if (ok) "Screen capture active" else "Failed to start screen capture",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
 
     val saveAndSync = {
         AppConfigManager.save(baseUrl.trim(), apiKey.trim(), model.trim())
@@ -227,6 +256,8 @@ fun SettingsScreen(
                 val cn = ComponentName(context, com.clawdroid.app.core.channels.ClawNotificationListenerService::class.java)
                 val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
                 notificationAccessGranted = flat != null && flat.contains(cn.flattenToString())
+                accessibilityActive = ScreenReaderService.instance != null
+                screenCaptureActive = ScreenCaptureManager.isActive()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -900,6 +931,169 @@ fun SettingsScreen(
                     dismissButton = {
                         TextButton(onClick = { showWarningDialog = false }) {
                             Text("CANCEL", color = SoftWhite)
+                        }
+                    },
+                    containerColor = DeepBlack,
+                    tonalElevation = 6.dp,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Android Control ─────────────────────────────
+            GlowText(
+                text = "Android Control",
+                style = MaterialTheme.typography.titleLarge,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Accessibility Service",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = SoftWhite,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                if (accessibilityActive) "Screen control active" else "Required for UI tree reading and gestures",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (accessibilityActive) Color(0xFF66BB6A) else MutedGray,
+                            )
+                        }
+                        if (accessibilityActive) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF66BB6A),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    GlassButton(
+                        onClick = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (accessibilityActive) "Manage Accessibility" else "Enable Accessibility Access",
+                            color = SoftWhite,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Screen Capture",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = SoftWhite,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                if (screenCaptureActive) "Vision fallback active" else "Fallback when UI tree is empty",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (screenCaptureActive) Color(0xFF66BB6A) else MutedGray,
+                            )
+                        }
+                        if (screenCaptureActive) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF66BB6A),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        GlassButton(
+                            onClick = {
+                                screenCaptureLauncher.launch(projectionManager.createScreenCaptureIntent())
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Grant Capture", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (screenCaptureActive) {
+                            GlassButton(
+                                onClick = {
+                                    ScreenCaptureManager.stopCapture()
+                                    screenCaptureActive = false
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Stop Capture", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    GlassButton(
+                        onClick = {
+                            screenTestLoading = true
+                            scope.launch {
+                                val result = AndroidControlTools.getScreen(context).toString(2)
+                                screenTestResult = if (result.length > 8000) {
+                                    result.take(8000) + "\n…(truncated)"
+                                } else {
+                                    result
+                                }
+                                screenTestLoading = false
+                                showScreenTestDialog = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !screenTestLoading,
+                    ) {
+                        Text(
+                            if (screenTestLoading) "Reading screen…" else "Test Screen Read",
+                            color = SoftWhite,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+
+            if (showScreenTestDialog) {
+                AlertDialog(
+                    onDismissRequest = { showScreenTestDialog = false },
+                    title = {
+                        Text("Screen Read Result", color = SoftWhite, fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(320.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                text = screenTestResult.ifBlank { "No result" },
+                                color = SoftWhite,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showScreenTestDialog = false }) {
+                            Text("CLOSE", color = SoftWhite)
                         }
                     },
                     containerColor = DeepBlack,
