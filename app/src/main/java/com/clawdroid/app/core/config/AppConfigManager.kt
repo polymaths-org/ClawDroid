@@ -23,19 +23,19 @@ object AppConfigManager {
     val baseUrl: String
         get() = p.getString(KEY_BASE_URL, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.OPENROUTER_BASE_URL.trimEnd('/')
+            ?: BuildConfig.LLM_BASE_URL.trimEnd('/')
             .takeIf { it.isNotBlank() }
             ?: "https://openrouter.ai/api/v1"
 
     val apiKey: String
         get() = p.getString(KEY_API_KEY, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.OPENROUTER_API_KEY
+            ?: BuildConfig.LLM_API_KEY
 
     val model: String
         get() = p.getString(KEY_MODEL, null)
             ?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.OPENROUTER_MODEL
+            ?: BuildConfig.LLM_MODEL
             .takeIf { it.isNotBlank() }
             ?: "openai/gpt-4o"
 

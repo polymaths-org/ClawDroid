@@ -14,6 +14,7 @@ import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
 import com.clawdroid.app.core.tools.WebSearchTool
 import com.clawdroid.app.core.tools.WriteFileTool
+import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
 import org.json.JSONObject
@@ -32,7 +33,13 @@ object ToolExecutor {
     ): ToolExecutionResult = runCatching {
         val args = DefensiveJsonParser.parseObjectOrError(call.arguments).getOrThrow()
         when (call.name) {
-            "execute_command" -> executeCommand(context, args, onProgress)
+            "execute_command" -> {
+                val command = args.getString("command")
+                if (!checkAndRequestStoragePermission(context, command)) {
+                    throw SecurityException("Storage permission is missing on the device. I have launched the Android system settings screen for the user to grant 'All Files Access'. Please inform the user that they must toggle the permission 'ON' and then ask you to retry.")
+                }
+                executeCommand(context, args, onProgress)
+            }
             "start_process" -> StartProcessTool.execute(
                 context = context,
                 command = args.getString("command"),

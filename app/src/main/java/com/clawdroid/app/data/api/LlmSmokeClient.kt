@@ -91,6 +91,7 @@ object LlmSmokeClient {
         ).collect { event ->
             when (event) {
                 is StreamEvent.TextDelta -> text.append(event.text)
+                is StreamEvent.ToolCallDeltaReceived -> Unit
                 is StreamEvent.Error -> error(event.message)
                 is StreamEvent.ToolCallComplete -> Unit
                 is StreamEvent.Usage -> Unit

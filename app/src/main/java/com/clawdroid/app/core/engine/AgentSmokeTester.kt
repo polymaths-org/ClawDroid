@@ -43,6 +43,7 @@ object AgentSmokeTester {
         ).collect { event ->
             when (event) {
                 is StreamEvent.TextDelta -> text.append(event.text)
+                is StreamEvent.ToolCallDeltaReceived -> Unit
                 is StreamEvent.ToolCallComplete -> calls += event.call
                 is StreamEvent.Usage -> Unit
                 is StreamEvent.Error -> error(event.message)
@@ -78,6 +79,7 @@ object AgentSmokeTester {
         ).collect { event ->
             when (event) {
                 is StreamEvent.TextDelta -> finalText.append(event.text)
+                is StreamEvent.ToolCallDeltaReceived -> Unit
                 is StreamEvent.ToolCallComplete -> Unit
                 is StreamEvent.Usage -> Unit
                 is StreamEvent.Error -> error(event.message)
