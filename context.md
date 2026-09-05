@@ -64,6 +64,11 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 - **SidebarContent** — Drawer with Projects/Chats/Settings/Quick Actions
 - **SettingsScreen** — Base URL, masked API key (show/hide), model field, save
 
+### Control (`core/control/`)
+- **ScreenReaderService** — `AccessibilityService` that reads the UI tree, truncates it to JSON for the LLM, and dispatches gestures (tap, swipe, type) and global actions.
+- **ScreenCaptureManager** — Manages `MediaProjection` to provide screenshot fallback (base64 JPEG) when the accessibility tree is empty (e.g., in games).
+- **AndroidControlTools** — Bridge exposing screen tools (`get_screen`, `tap`, `swipe`, `type_text`, `launch_app`) to the agent, returning JSON responses.
+
 ### Other
 - **BootstrapManager** — Downloads Termux bootstrap (~80MB), extracts Linux environment
 - **AppConfigManager** — SharedPreferences for API credentials (fallback to BuildConfig, then hardcoded defaults)
@@ -85,6 +90,7 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
 ## What's Working
 
+- Android Screen Control: AccessibilityService for reading UI trees and executing gestures, with MediaProjection fallback for screenshots. Integrated with agent tool schemas (`get_screen`, `tap`, etc.).
 - Voice chat: SpeechRecognizer STT → AgentEngine → TTS response with thinking phrases
 - Collapsible activity steps (3 levels: group → individual step → full output)
 - Sidebar navigation with Projects/Chats
@@ -92,16 +98,17 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 - Agent engine loop with tool execution
 - Terminal process management (PTY, input, output buffering)
 
-## What's Not Implemented (Post-MVP)
+## What's Not Implemented / Future Plans
 
-- Voice input / camera (post-MVP)
-- Connected Services / OAuth
-- Native Anthropic / Google API clients (use OpenAI-compatible)
-- Local LLM inference
-- Multi-user / cloud sync
-- End-to-end encryption
-- Widgets
-- EncryptedSharedPreferences (currently plain SharedPreferences)
+- **Root-Only Bonus Features:** Bypass `FLAG_SECURE`, persistent accessibility service recovery, silent MediaProjection.
+- **Voice input / camera (post-MVP)**
+- **Connected Services / OAuth**
+- **Native Anthropic / Google API clients** (use OpenAI-compatible)
+- **Local LLM inference**
+- **Multi-user / cloud sync**
+- **End-to-end encryption**
+- **Widgets**
+- **EncryptedSharedPreferences** (currently plain SharedPreferences)
 
 ## Remaining Warning
 
