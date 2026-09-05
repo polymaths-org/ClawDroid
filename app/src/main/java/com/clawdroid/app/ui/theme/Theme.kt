@@ -1,46 +1,43 @@
 package com.clawdroid.app.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val LightColors = lightColorScheme(
-    primary = TealPrimary,
-    secondary = VioletSecondary,
-    tertiary = CoralTertiary
-)
-
-private val DarkColors = darkColorScheme(
-    primary = TealPrimaryDark,
-    secondary = VioletSecondaryDark,
-    tertiary = CoralTertiaryDark
+private val ObsidianAstraColors = darkColorScheme(
+    primary = AstraPrimary,
+    onPrimary = AstraOnPrimary,
+    primaryContainer = AstraPrimaryContainer,
+    onPrimaryContainer = AstraOnPrimaryContainer,
+    secondary = AstraSecondary,
+    onSecondary = ObsidianSurfaceHighest,
+    secondaryContainer = AstraSecondaryContainer,
+    onSecondaryContainer = AstraOnSecondaryContainer,
+    tertiary = AstraPrimary,
+    onTertiary = ObsidianSurfaceHighest,
+    background = ObsidianBackground,
+    onBackground = ObsidianOnSurface,
+    surface = ObsidianSurface,
+    onSurface = ObsidianOnSurface,
+    surfaceVariant = ObsidianSurfaceHighest,
+    onSurfaceVariant = ObsidianOnSurfaceVariant,
+    surfaceContainerLowest = ObsidianSurfaceLowest,
+    surfaceContainerLow = ObsidianSurfaceLow,
+    surfaceContainer = ObsidianSurfaceContainer,
+    surfaceContainerHigh = ObsidianSurfaceHigh,
+    surfaceContainerHighest = ObsidianSurfaceHighest,
+    outline = ObsidianOutline,
+    outlineVariant = ObsidianOutlineVariant,
+    error = AstraError,
 )
 
 @Composable
 fun ClawDroidTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColors
-        else -> LightColors
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = ObsidianAstraColors,
         typography = ClawDroidTypography,
-        content = content
+        content = content,
     )
 }
