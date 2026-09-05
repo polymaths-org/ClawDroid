@@ -67,6 +67,7 @@ import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.ProjectEntity
 import com.clawdroid.app.ui.components.ClawSkin
 import com.clawdroid.app.ui.components.currentClawSkin
+import com.clawdroid.app.ui.components.providerDisplayName
 import com.clawdroid.app.ui.theme.Dimens
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -163,7 +164,7 @@ fun SidebarContent(
             SidebarInfoCard(
                 icon = Icons.Rounded.Settings,
                 title = "Provider",
-                value = AppConfigManager.provider.replaceFirstChar { it.uppercaseChar() },
+                value = providerDisplayName(AppConfigManager.provider),
                 detail = AppConfigManager.baseUrl.removePrefix("https://").removePrefix("http://"),
             )
             SidebarInfoCard(
