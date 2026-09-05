@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -140,6 +141,9 @@ fun SettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    BackHandler {
+        onBack()
+    }
     var baseUrl by remember { mutableStateOf(AppConfigManager.baseUrl) }
     var apiKey by remember { mutableStateOf(AppConfigManager.apiKey) }
     var model by remember { mutableStateOf(AppConfigManager.model) }
