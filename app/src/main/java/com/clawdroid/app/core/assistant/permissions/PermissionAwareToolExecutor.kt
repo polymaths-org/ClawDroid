@@ -13,12 +13,12 @@ import org.json.JSONObject
 
 object PermissionAwareToolExecutor {
     private const val TAG = "PermissionAwareToolExecutor"
-    private val toolsNoOverlayHide = setOf("launch_app")
+    private val toolsNoOverlayHide = emptySet<String>()
     private val visionBlockingTools = setOf("get_screen", "screenshot")
     private val touchBlockingTools = setOf(
         "tap", "tap_text", "tap_resource_id", "long_press", "swipe", "scroll",
         "type_text", "clear_text", "press_back", "press_home", "press_recents",
-        "open_notifications", "perform_android_actions", "send_message_in_current_chat"
+        "open_notifications", "launch_app", "perform_android_actions", "send_message_in_current_chat"
     )
 
     suspend fun execute(
