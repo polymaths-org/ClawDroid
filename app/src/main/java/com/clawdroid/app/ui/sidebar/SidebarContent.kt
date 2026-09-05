@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Hub
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -88,6 +90,7 @@ fun SidebarContent(
     onNavigateToMcp: () -> Unit,
     onNavigateToAgentConfig: () -> Unit,
     onNavigateToTerminal: () -> Unit,
+    onNavigateToSelfManage: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -187,6 +190,7 @@ fun SidebarContent(
                 detail = "${conversations.size} chats tracked",
             )
             SidebarTerminalButton(onClick = onNavigateToTerminal)
+            SidebarSelfManageButton(onClick = onNavigateToSelfManage)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -443,18 +447,28 @@ private fun SidebarInfoCard(
 private fun SidebarTerminalButton(
     onClick: () -> Unit,
 ) {
-    val isMagic = currentClawSkin() == ClawSkin.ClawMagic
+    val skin = currentClawSkin()
+    val isMagic = skin == ClawSkin.ClawMagic
+    val isLiquid = skin == ClawSkin.LiquidGlass
     val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(46.dp)
+            .shadow(if (isLiquid) 8.dp else 0.dp, shape)
             .clip(shape)
             .background(
-                if (isMagic) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                when {
+                    isMagic -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    isLiquid -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                }
             )
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), shape)
+            .border(
+                1.dp,
+                if (isLiquid) Color.White.copy(alpha = 0.30f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                shape,
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -469,6 +483,52 @@ private fun SidebarTerminalButton(
         Text(
             text = "Open terminal",
             color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SidebarSelfManageButton(
+    onClick: () -> Unit,
+) {
+    val skin = currentClawSkin()
+    val isMagic = skin == ClawSkin.ClawMagic
+    val isLiquid = skin == ClawSkin.LiquidGlass
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .shadow(if (isLiquid) 8.dp else 0.dp, shape)
+            .clip(shape)
+            .background(
+                when {
+                    isMagic -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f)
+                    isLiquid -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                }
+            )
+            .border(
+                1.dp,
+                if (isLiquid) Color.White.copy(alpha = 0.30f) else MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f),
+                shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "Self Manage",
+            color = MaterialTheme.colorScheme.secondary,
             style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
             fontWeight = FontWeight.SemiBold,
         )

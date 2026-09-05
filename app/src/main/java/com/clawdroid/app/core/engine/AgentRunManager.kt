@@ -359,7 +359,6 @@ object AgentRunManager {
                 }
                 runState.runningAgentMessageId.value = null
                 runState.runningActivityId.value = null
-                appContext?.let { NotificationHelper.sendTaskFailed(it, "Stopped: ${event.reason}") }
             }
 
             is AgentRunEvent.RunError -> {

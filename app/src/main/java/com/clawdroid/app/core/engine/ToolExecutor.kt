@@ -24,6 +24,11 @@ import com.clawdroid.app.core.tools.NotionTools
 import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.core.control.AndroidControlTools
+import com.clawdroid.app.core.interpole.FileTransferClient
+import com.clawdroid.app.core.interpole.InterpoleTerminalTools
+import com.clawdroid.app.core.memory.MemoryManager
+import com.clawdroid.app.core.selfmanage.AgentAskTools
+import com.clawdroid.app.core.selfmanage.SelfManageTools
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
 import org.json.JSONObject
@@ -88,6 +93,7 @@ object ToolExecutor {
                 context = context,
                 title = args.getString("title"),
                 body = args.getString("body"),
+                triggerAction = args.optString("trigger_action").takeIf { it.isNotBlank() },
             )
             "set_reminder" -> ReminderTool.setReminder(context, args)
             "list_reminders" -> ReminderTool.listReminders(
@@ -98,6 +104,63 @@ object ToolExecutor {
                 context = context,
                 reminderId = args.getString("reminder_id"),
             )
+            "memory_read" -> JSONObject()
+                .put("context", MemoryManager(context).getRelevantContext(args.optString("query")))
+                .put("matches", MemoryManager(context).searchMemory(args.optString("query")))
+            "memory_write" -> {
+                MemoryManager(context).saveMemory(
+                    section = args.optString("section", "memory"),
+                    content = args.getString("content"),
+                )
+                JSONObject().put("ok", true).put("section", args.optString("section", "memory"))
+            }
+            "self_manage_add_alarm" -> SelfManageTools.addAlarm(context, args)
+            "self_manage_add_reminder" -> SelfManageTools.addReminder(context, args)
+            "self_manage_add_todo" -> SelfManageTools.addTodo(context, args)
+            "self_manage_list" -> SelfManageTools.list(context)
+            "self_manage_complete_reminder" -> SelfManageTools.completeReminder(context, args)
+            "self_manage_complete_todo" -> SelfManageTools.completeTodo(context, args)
+            "agent_ask" -> AgentAskTools.ask(context, args)
+            "agent_answer" -> AgentAskTools.answer(context, args)
+            "interpole_terminal_create" -> InterpoleTerminalTools.create(
+                context = context,
+                name = args.getString("name"),
+                cwd = args.optString("cwd").takeIf { it.isNotBlank() },
+                command = args.optString("command").takeIf { it.isNotBlank() },
+                shell = args.optString("shell").takeIf { it.isNotBlank() },
+                cols = args.optInt("cols", 120),
+                rows = args.optInt("rows", 40),
+            )
+            "interpole_terminal_send" -> InterpoleTerminalTools.send(
+                context = context,
+                name = args.getString("name"),
+                keys = args.getString("keys"),
+                enter = args.optBoolean("enter", true),
+            )
+            "interpole_terminal_read" -> InterpoleTerminalTools.read(
+                context = context,
+                name = args.getString("name"),
+                lines = args.optInt("lines", 100),
+            )
+            "interpole_terminal_resize" -> InterpoleTerminalTools.resize(
+                context = context,
+                name = args.getString("name"),
+                cols = args.getInt("cols"),
+                rows = args.getInt("rows"),
+            )
+            "interpole_terminal_list" -> InterpoleTerminalTools.list(context)
+            "interpole_terminal_kill" -> InterpoleTerminalTools.kill(
+                context = context,
+                name = args.getString("name"),
+            )
+            "interpole_transfer_push" -> JSONObject()
+                .put("ok", FileTransferClient(context).pushFile(args.getString("local_path"), args.getString("desktop_path")))
+                .put("local_path", args.getString("local_path"))
+                .put("desktop_path", args.getString("desktop_path"))
+            "interpole_transfer_pull" -> JSONObject()
+                .put("ok", FileTransferClient(context).pullFile(args.getString("desktop_path"), args.getString("local_path")))
+                .put("desktop_path", args.getString("desktop_path"))
+                .put("local_path", args.getString("local_path"))
             "gmail_list_messages", "gmail_get_message", "gmail_send_message", "gmail_create_draft" -> {
                 if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
                     !com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled ||

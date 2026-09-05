@@ -104,7 +104,6 @@ class BackgroundAgent(private val context: Context) {
         processingJob?.cancel()
         channelManager.disconnectAll()
         HeartbeatManager.cancelAll(context)
-        NotificationHelper.sendAgentNotification(context, "ClawDroid", "Background agent stopped")
     }
 
     private suspend fun processChannelMessage(msg: ChannelMessage) {
