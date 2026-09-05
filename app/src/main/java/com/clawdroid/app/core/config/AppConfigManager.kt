@@ -235,6 +235,30 @@ object AppConfigManager {
         get() = p.getString(KEY_MCP_SERVERS_CONFIG, "") ?: ""
         set(value) = p.edit().putString(KEY_MCP_SERVERS_CONFIG, value).apply()
 
+    var githubToken: String
+        get() = p.getString("github_token", "")?.takeIf { it.isNotBlank() } ?: BuildConfig.GITHUB_OAUTH_TOKEN
+        set(value) = p.edit().putString("github_token", value).apply()
+
+    var githubConnectorEnabled: Boolean
+        get() = p.getBoolean("github_connector_enabled", true)
+        set(value) = p.edit().putBoolean("github_connector_enabled", value).apply()
+
+    var notionToken: String
+        get() = p.getString("notion_token", "") ?: ""
+        set(value) = p.edit().putString("notion_token", value).apply()
+
+    var notionConnectorEnabled: Boolean
+        get() = p.getBoolean("notion_connector_enabled", true)
+        set(value) = p.edit().putBoolean("notion_connector_enabled", value).apply()
+
+    var spotifyRefreshToken: String
+        get() = p.getString("spotify_refresh_token", "") ?: ""
+        set(value) = p.edit().putString("spotify_refresh_token", value).apply()
+
+    var spotifyConnectorEnabled: Boolean
+        get() = p.getBoolean("spotify_connector_enabled", true)
+        set(value) = p.edit().putBoolean("spotify_connector_enabled", value).apply()
+
     fun syncToSandbox(context: Context) {
         val channelsList = mutableListOf<ChannelConfig>()
         channelsList.add(ChannelConfig(type = "whatsapp", enabled = whatsappEnabled, config = mapOf("phone" to whatsappAllowedContacts)))
