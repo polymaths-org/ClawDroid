@@ -49,33 +49,24 @@ class VoiceManager(private val context: Context) {
             ?: "female"
     }
 
+    private fun currentEngineId(): String? = when (activeEngine) {
+        is PiperEngine -> "piper"
+        is SherpaOnnxTtsEngine -> "sherpa"
+        is OpenAITtsEngine -> "openai"
+        is ElevenLabsTtsEngine -> "elevenlabs"
+        is DeepgramTtsEngine -> "deepgram"
+        is AndroidTtsEngine -> "device"
+        else -> null
+    }
+
     init {
         _state.value = State.Idle
         val desired = AppConfigManager.ttsEngine
         scope.launch {
-            if (desired == "device") {
-                val piper = PiperEngine(context, scope)
-                piper.downloadProgress.collect { _downloadProgress.value = it }
-                if (piper.isInstalled) {
-                    Log.i("VoiceManager", "Piper already installed, initializing")
-                    piper.startDownload()
-                    piper.state.first { it != TtsEngineState.Initializing }
-                    if (piper.state.value == TtsEngineState.Ready) {
-                        piperEngine = piper
-                        activeEngine = piper
-                        _state.value = State.Ready
-                        _piperAvailable.value = true
-                        Log.i("VoiceManager", "Piper TTS ready from cache")
-                    } else {
-                        initAndroidTts()
-                    }
-                } else {
-                    Log.i("VoiceManager", "Piper not installed, using Android TTS as default")
-                    initAndroidTts()
-                }
-            } else {
-                Log.i("VoiceManager", "Engine '$desired' selected, using Android TTS")
-                initAndroidTts()
+            when (desired) {
+                "sherpa" -> initSherpaOrFallback()
+                "openai", "elevenlabs", "deepgram", "piper" -> reconfigure()
+                else -> initAndroidTts()
             }
             drainQueue()
         }
@@ -90,6 +81,19 @@ class VoiceManager(private val context: Context) {
         activeEngine = android
         _state.value = State.Ready
         Log.i("VoiceManager", "Android TTS ready with voice profile: $voice")
+    }
+
+    private suspend fun initSherpaOrFallback() {
+        val sherpa = SherpaOnnxTtsEngine(context, scope)
+        if (sherpa.state.value == TtsEngineState.Ready) {
+            activeEngine = sherpa
+            activeVoice = getDesiredVoice()
+            _state.value = State.Ready
+            Log.i("VoiceManager", "Sherpa-ONNX TTS ready")
+        } else {
+            Log.w("VoiceManager", "Sherpa-ONNX unavailable, falling back to Android TTS")
+            initAndroidTts()
+        }
     }
 
     fun triggerPiperDownload() {
@@ -134,14 +138,7 @@ class VoiceManager(private val context: Context) {
     fun reconfigure() {
         val desiredEngine = AppConfigManager.ttsEngine
         val desiredVoice = getDesiredVoice()
-        val currentEngine = when (activeEngine) {
-            is PiperEngine -> "piper"
-            is OpenAITtsEngine -> "openai"
-            is ElevenLabsTtsEngine -> "elevenlabs"
-            is DeepgramTtsEngine -> "deepgram"
-            is AndroidTtsEngine -> "device"
-            else -> null
-        }
+        val currentEngine = currentEngineId()
 
         // Same engine, same voice — nothing to do
         if (currentEngine == desiredEngine && activeVoice == desiredVoice && activeEngine != null) return
@@ -152,6 +149,7 @@ class VoiceManager(private val context: Context) {
                 (activeEngine as AndroidTtsEngine).setVoiceProfile(desiredVoice)
                 activeVoice = desiredVoice
                 Log.i("VoiceManager", "Updated voice profile to: $desiredVoice")
+                drainQueue()
                 return@launch
             }
 
@@ -169,6 +167,7 @@ class VoiceManager(private val context: Context) {
                     }
                 }
                 "device" -> initAndroidTts()
+                "sherpa" -> initSherpaOrFallback()
                 "openai" -> {
                     val engine = OpenAITtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
@@ -205,11 +204,19 @@ class VoiceManager(private val context: Context) {
                 else -> initAndroidTts()
             }
             _state.value = State.Ready
+            drainQueue()
         }
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        reconfigure()
+        val desiredEngine = AppConfigManager.ttsEngine
+        val desiredVoice = getDesiredVoice()
+        val needsSwitch = currentEngineId() != desiredEngine || activeVoice != desiredVoice || activeEngine == null
+        if (needsSwitch) {
+            pendingQueue.add(text to onDone)
+            reconfigure()
+            return
+        }
         val engine = activeEngine
         if (engine == null || _state.value != State.Ready) {
             pendingQueue.add(text to onDone)

@@ -30,6 +30,12 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        ndk {
+            // Sherpa-ONNX native libs are large. Package the real-phone ABI by default;
+            // add x86/x86_64 here only when building emulator-specific APKs.
+            abiFilters += listOf("arm64-v8a")
+        }
+
         val llmBaseUrl = localProperties.getProperty("LLM_BASE_URL")
             ?: "https://api.siliconflow.com/v1"
         val llmModel = localProperties.getProperty("LLM_MODEL")
@@ -99,6 +105,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
     implementation("androidx.work:work-runtime-ktx:2.11.0")
+    implementation("org.apache.commons:commons-compress:1.26.2")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:html:4.6.2")
     implementation("io.noties.markwon:ext-tables:4.6.2")

@@ -29,11 +29,13 @@ object SkillManager {
      * Load configured skills from agent config and register built-in skills.
      */
     fun loadConfigured(context: Context) {
+        registered.clear()
+        SkillSettingsManager.seedDefaultSkills(context)
         val config = AgentConfigLoader.load(context)
         val env = EnvironmentSetup.build(context)
 
         // Register built-in skills
-        registerBuiltins(env)
+        registerBuiltins(context, env)
 
         // Register user-configured prompt skills
         config.skills.filter { it.enabled }.forEach { cfg ->
@@ -66,13 +68,14 @@ object SkillManager {
         return prompts.joinToString("\n\n") { "=== ${it.name} ===\n${it.systemPrompt}" }
     }
 
-    private fun registerBuiltins(env: LinuxEnvironment) {
+    private fun registerBuiltins(context: Context, env: LinuxEnvironment) {
         // Check for user-created skill scripts in ~/skills/
         val skillsDir = File(env.home, "skills")
         if (!skillsDir.isDirectory) return
 
         skillsDir.listFiles()?.filter { it.isFile && it.name.endsWith(".md") }?.forEach { file ->
             val skillName = file.nameWithoutExtension
+            if (!SkillSettingsManager.isEnabled(context, skillName)) return@forEach
             try {
                 val content = file.readText()
                 val title = content.lines().firstOrNull()?.removePrefix("#")?.trim() ?: skillName

@@ -6,6 +6,8 @@ import com.clawdroid.app.BuildConfig
 import com.clawdroid.app.core.agent.AgentConfig
 import com.clawdroid.app.core.agent.AgentConfigLoader
 import com.clawdroid.app.core.agent.ChannelConfig
+import com.clawdroid.app.data.api.AiProviders
+import com.clawdroid.app.data.api.ProviderDialect
 
 object AppConfigManager {
     private const val PREFS = "clawdroid_config"
@@ -13,6 +15,7 @@ object AppConfigManager {
     private const val KEY_API_KEY = "api_key"
     private const val KEY_MODEL = "model"
     private const val KEY_PROVIDER = "provider"
+    private const val KEY_PROVIDER_DIALECT = "provider_dialect"
     private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
     private var prefs: SharedPreferences? = null
@@ -46,6 +49,14 @@ object AppConfigManager {
             ?.takeIf { it.isNotBlank() }
             ?: if (DEV_MODE) "siliconflow" else "openrouter"
 
+    val providerDialect: ProviderDialect
+        get() = runCatching {
+            ProviderDialect.valueOf(
+                p.getString(KEY_PROVIDER_DIALECT, null)
+                    ?: AiProviders.byId(provider).dialect.name,
+            )
+        }.getOrDefault(ProviderDialect.OPENAI_COMPATIBLE)
+
     val isConfigured: Boolean
         get() = apiKey.isNotBlank()
 
@@ -61,11 +72,17 @@ object AppConfigManager {
     }
 
     fun save(provider: String, baseUrl: String, apiKey: String, model: String) {
+        val dialect = AiProviders.byId(provider).dialect
+        save(provider, baseUrl, apiKey, model, dialect)
+    }
+
+    fun save(provider: String, baseUrl: String, apiKey: String, model: String, dialect: ProviderDialect) {
         p.edit()
             .putString(KEY_PROVIDER, provider)
             .putString(KEY_BASE_URL, baseUrl)
             .putString(KEY_API_KEY, apiKey)
             .putString(KEY_MODEL, model)
+            .putString(KEY_PROVIDER_DIALECT, dialect.name)
             .putBoolean(KEY_ONBOARDING_COMPLETE, true)
             .apply()
     }
@@ -74,6 +91,8 @@ object AppConfigManager {
     const val KEY_TTS_ENGINE = "tts_engine"
     const val KEY_TTS_VOICE = "tts_voice"
     const val KEY_TTS_SPEED = "tts_speed"
+    const val KEY_OFFLINE_TTS_MODEL_ID = "offline_tts_model_id"
+    const val KEY_OFFLINE_TTS_SPEAKER_ID = "offline_tts_speaker_id"
 
     var ttsEngine: String
         get() = p.getString(KEY_TTS_ENGINE, "device") ?: "device"
@@ -86,6 +105,14 @@ object AppConfigManager {
     var ttsSpeed: Float
         get() = p.getFloat(KEY_TTS_SPEED, 1.0f)
         set(value) = p.edit().putFloat(KEY_TTS_SPEED, value).apply()
+
+    var offlineTtsModelId: String
+        get() = p.getString(KEY_OFFLINE_TTS_MODEL_ID, "vits-piper-en_US-glados") ?: "vits-piper-en_US-glados"
+        set(value) = p.edit().putString(KEY_OFFLINE_TTS_MODEL_ID, value).apply()
+
+    var offlineTtsSpeakerId: Int
+        get() = p.getInt(KEY_OFFLINE_TTS_SPEAKER_ID, 0)
+        set(value) = p.edit().putInt(KEY_OFFLINE_TTS_SPEAKER_ID, value).apply()
 
     const val KEY_REALTIME_VOICE_ENABLED = "realtime_voice_enabled"
     const val KEY_REALTIME_VOICE_MODEL = "realtime_voice_model"

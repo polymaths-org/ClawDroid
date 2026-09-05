@@ -3,6 +3,7 @@ package com.clawdroid.app.data.api
 import android.content.Context
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.control.ScreenReaderService
+import com.clawdroid.app.core.workspace.WorkspaceFileManager
 import java.io.File
 
 object MessageBuilder {
@@ -37,6 +38,7 @@ object MessageBuilder {
 
         val ownerName = AppConfigManager.ownerName.takeIf { it.isNotBlank() }
         val ownerInfo = AppConfigManager.ownerInfo.takeIf { it.isNotBlank() }
+        val workspaceContext = runCatching { WorkspaceFileManager.promptContext(context) }.getOrDefault("")
 
         val systemContent = buildString {
             appendLine("You are $agentName, a transparent Android agent with access to a Linux sandbox.")
@@ -59,6 +61,13 @@ object MessageBuilder {
             appendLine("- CRITICAL: Before sending ANY message to an external service (WhatsApp, SMS, email, Slack, Telegram, etc.), you MUST ask the user what to say first. Never auto-reply.")
             appendLine("- If the user tells you to send a specific message, you may send it without further confirmation.")
             appendLine("- Do NOT use web.whatsapp.com or any browser-based messaging interface to send messages without explicit user approval.")
+
+            if (workspaceContext.isNotBlank()) {
+                appendLine()
+                appendLine("## Workspace Files")
+                appendLine("These user-editable ClawDroid workspace files shape identity, operating rules, tool notes, user preferences, and background tasks:")
+                appendLine(workspaceContext)
+            }
             
             if (!customInstructions.isNullOrBlank()) {
                 appendLine()

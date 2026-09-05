@@ -160,6 +160,9 @@ import java.util.UUID
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToMcp: () -> Unit,
+    onNavigateToSkills: () -> Unit,
+    onNavigateToChannels: () -> Unit,
+    onNavigateToWorkspaceFiles: () -> Unit,
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -824,11 +827,11 @@ fun ChatScreen(
                     },
                     onNavigateToChannels = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToChannels()
                     },
                     onNavigateToSkills = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToSkills()
                     },
                     onNavigateToMcp = {
                         scope.launch { drawerState.close() }
@@ -836,7 +839,7 @@ fun ChatScreen(
                     },
                     onNavigateToAgentConfig = {
                         scope.launch { drawerState.close() }
-                        onNavigateToSettings()
+                        onNavigateToWorkspaceFiles()
                     },
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }

@@ -23,8 +23,11 @@ import com.clawdroid.app.core.service.ServiceManager
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.clawdroid.app.ui.chat.ChatScreen
+import com.clawdroid.app.ui.settings.ChannelsScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.McpScreen
+import com.clawdroid.app.ui.settings.SkillsScreen
+import com.clawdroid.app.ui.settings.WorkspaceFilesScreen
 import com.clawdroid.app.ui.setup.SetupScreen
 import com.clawdroid.app.ui.splash.SplashScreen
 import com.clawdroid.app.ui.theme.ClawDroidTheme
@@ -105,7 +108,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Screen { Splash, Setup, Chat, Settings, Mcp }
+enum class Screen { Splash, Setup, Chat, Settings, Mcp, Skills, Channels, WorkspaceFiles }
 
 @Composable
 private fun ClawDroidApp(
@@ -155,10 +158,25 @@ private fun ClawDroidApp(
                 McpScreen(onBack = { currentScreen = Screen.Chat })
             }
 
+            Screen.Skills -> {
+                SkillsScreen(onBack = { currentScreen = Screen.Chat })
+            }
+
+            Screen.Channels -> {
+                ChannelsScreen(onBack = { currentScreen = Screen.Chat })
+            }
+
+            Screen.WorkspaceFiles -> {
+                WorkspaceFilesScreen(onBack = { currentScreen = Screen.Chat })
+            }
+
             Screen.Chat -> {
                 ChatScreen(
                     onNavigateToSettings = { currentScreen = Screen.Settings },
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
+                    onNavigateToSkills = { currentScreen = Screen.Skills },
+                    onNavigateToChannels = { currentScreen = Screen.Channels },
+                    onNavigateToWorkspaceFiles = { currentScreen = Screen.WorkspaceFiles },
                     startVoiceTrigger = startVoiceTrigger,
                     onVoiceTriggerHandled = onVoiceTriggerHandled
                 )

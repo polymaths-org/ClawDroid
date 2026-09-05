@@ -5,10 +5,10 @@ import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.provider.Settings
-import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -51,7 +53,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -63,8 +67,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,19 +89,25 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.control.AndroidControlTools
 import com.clawdroid.app.core.control.ScreenCaptureManager
 import com.clawdroid.app.core.control.ScreenReaderService
 import com.clawdroid.app.core.service.ServiceManager
-import com.clawdroid.app.core.voice.PiperEngine
+import com.clawdroid.app.core.voice.SherpaOnnxTtsEngine
+import com.clawdroid.app.core.voice.OfflineTtsDownloadManager
+import com.clawdroid.app.core.voice.OfflineTtsModelCatalog
+import com.clawdroid.app.core.voice.VoiceManager
+import com.clawdroid.app.data.api.AiProviders
+import com.clawdroid.app.data.api.ModelDiscoveryClient
+import com.clawdroid.app.data.api.ProviderModel
 import com.clawdroid.app.ui.components.GlassButton
 import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
 import com.clawdroid.app.ui.components.GlowText
-import com.clawdroid.app.ui.components.PiperDownloadDialog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Locale
 import com.clawdroid.app.ui.theme.DeepBlack
 import com.clawdroid.app.ui.theme.EmberOrange
 import com.clawdroid.app.ui.theme.GlassBorderDim
@@ -126,6 +136,7 @@ private data class TtsEngineOption(
 
 private val ttsEngineOptions = listOf(
     TtsEngineOption("device", "On-Device (Android TTS)", "Built-in system TTS, works offline", Icons.Outlined.Android),
+    TtsEngineOption("sherpa", "Sherpa-ONNX", "Optional offline neural voice, falls back safely", Icons.Outlined.Headphones),
     TtsEngineOption("openai", "OpenAI TTS", "6 voices: alloy, echo, fable, onyx, nova, shimmer", Icons.Outlined.Cloud),
     TtsEngineOption("elevenlabs", "ElevenLabs TTS", "Premium neural voices (Rachel, Domi, Josh…)", Icons.Outlined.Cloud),
     TtsEngineOption("deepgram", "Deepgram TTS", "12 voices: Asteria, Luna, Orion, Zeus…", Icons.Outlined.Cloud),
@@ -159,10 +170,10 @@ fun SettingsScreen(
     var baseUrl by remember { mutableStateOf(AppConfigManager.baseUrl) }
     var apiKey by remember { mutableStateOf(AppConfigManager.apiKey) }
     var model by remember { mutableStateOf(AppConfigManager.model) }
+    var providerId by remember { mutableStateOf(AppConfigManager.provider) }
+    var selectedProvider by remember(providerId) { mutableStateOf(AiProviders.byId(providerId)) }
     var showKey by remember { mutableStateOf(false) }
-    var useCustomModel by remember {
-        mutableStateOf(modelPresets.none { it.id == AppConfigManager.model })
-    }
+    var useCustomModel by remember { mutableStateOf(false) }
 
     var ttsEngine by remember { mutableStateOf(AppConfigManager.ttsEngine) }
     var ttsVoice by remember { mutableStateOf(AppConfigManager.ttsVoice) }
@@ -170,6 +181,8 @@ fun SettingsScreen(
     var realtimeVoiceEnabled by remember { mutableStateOf(AppConfigManager.realtimeVoiceEnabled) }
     var realtimeVoiceModel by remember { mutableStateOf(AppConfigManager.realtimeVoiceModel) }
     var realtimeVoiceVoice by remember { mutableStateOf(AppConfigManager.realtimeVoiceVoice) }
+    var showTtsEngineSheet by remember { mutableStateOf(false) }
+    var showAdvancedVoice by remember { mutableStateOf(false) }
 
     var openaiTtsApiKey by remember { mutableStateOf(AppConfigManager.openaiTtsApiKey) }
     var openaiRealtimeApiKey by remember { mutableStateOf(AppConfigManager.openaiRealtimeApiKey) }
@@ -181,19 +194,57 @@ fun SettingsScreen(
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var offlineTtsModelId by remember { mutableStateOf(OfflineTtsModelCatalog.byId(AppConfigManager.offlineTtsModelId).id) }
+    var offlineTtsSpeakerId by remember { mutableStateOf(AppConfigManager.offlineTtsSpeakerId) }
+    var voiceTestStatus by remember { mutableStateOf("") }
+    val offlineTtsManager = remember { OfflineTtsDownloadManager(context.applicationContext) }
+    val offlineTtsState by offlineTtsManager.state.collectAsState()
+    val offlineTtsPreset = OfflineTtsModelCatalog.byId(offlineTtsModelId)
+    val modelDiscoveryClient = remember { ModelDiscoveryClient(context.applicationContext) }
+    var discoveredModels by remember {
+        mutableStateOf(modelDiscoveryClient.cachedModels(providerId, baseUrl, apiKey))
+    }
+    var modelSearch by remember { mutableStateOf("") }
+    var modelFetchStatus by remember { mutableStateOf("") }
+    var modelFetchLoading by remember { mutableStateOf(false) }
+    var showProviderSheet by remember { mutableStateOf(false) }
+    var showModelSheet by remember { mutableStateOf(false) }
 
-    // Piper engine for optional download
-    val piperEngine = remember { PiperEngine(context.applicationContext) }
-    val piperDownloadProgress by piperEngine.downloadProgress.collectAsState()
-    val piperInstalled = piperEngine.isInstalled
-    val piperDownloading = piperDownloadProgress > 0f && piperDownloadProgress < 1f
+    fun refreshCachedModels() {
+        discoveredModels = modelDiscoveryClient.cachedModels(providerId, baseUrl, apiKey)
+    }
+
+    fun fetchModels() {
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            modelFetchStatus = "Enter Base URL and API key to fetch models."
+            return
+        }
+        modelFetchLoading = true
+        modelFetchStatus = "Fetching models…"
+        scope.launch {
+            val result = modelDiscoveryClient.discover(selectedProvider, baseUrl, apiKey)
+            result.fold(
+                onSuccess = { models ->
+                    discoveredModels = models
+                    modelFetchStatus = if (models.isEmpty()) {
+                        "No models returned. You can still enter a manual model."
+                    } else {
+                        "Fetched ${models.size} models."
+                    }
+                },
+                onFailure = { error ->
+                    refreshCachedModels()
+                    modelFetchStatus = "Fetch failed: ${error.message ?: error::class.java.simpleName}. Cached/manual models are still available."
+                },
+            )
+            modelFetchLoading = false
+        }
+    }
 
     // Test voice TTS
-    var testTts by remember { mutableStateOf<TextToSpeech?>(null) }
+    val settingsVoiceManager = remember { VoiceManager(context.applicationContext) }
     DisposableEffect(Unit) {
-        val tts = TextToSpeech(context) { }
-        testTts = tts
-        onDispose { tts.shutdown() }
+        onDispose { settingsVoiceManager.destroy() }
     }
     var isUltraAgentEnabled by remember { mutableStateOf(AppConfigManager.ultraAgentEnabled) }
     var showWarningDialog by remember { mutableStateOf(false) }
@@ -204,6 +255,18 @@ fun SettingsScreen(
     var heartbeatEnabled by remember { mutableStateOf(AppConfigManager.heartbeatEnabled) }
     var heartbeatIntervalMin by remember { mutableStateOf(AppConfigManager.heartbeatIntervalMin) }
     var notificationAccessGranted by remember { mutableStateOf(false) }
+    var microphoneGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+    }
+    var notificationPermissionGranted by remember {
+        mutableStateOf(
+            android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var overlayGranted by remember {
+        mutableStateOf(android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || Settings.canDrawOverlays(context))
+    }
     var accessibilityActive by remember { mutableStateOf(ScreenReaderService.instance != null) }
     var screenCaptureActive by remember { mutableStateOf(ScreenCaptureManager.isActive()) }
     var showScreenTestDialog by remember { mutableStateOf(false) }
@@ -227,11 +290,29 @@ fun SettingsScreen(
         }
     }
 
+    LaunchedEffect(providerId, baseUrl, apiKey) {
+        refreshCachedModels()
+        if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
+            delay(800)
+            if (baseUrl.isNotBlank() && apiKey.isNotBlank()) {
+                fetchModels()
+            }
+        }
+    }
+
     val saveAndSync = {
-        AppConfigManager.save(baseUrl.trim(), apiKey.trim(), model.trim())
+        AppConfigManager.save(
+            provider = providerId,
+            baseUrl = baseUrl.trim(),
+            apiKey = apiKey.trim(),
+            model = model.trim(),
+            dialect = selectedProvider.dialect,
+        )
         AppConfigManager.ttsEngine = ttsEngine
         AppConfigManager.ttsVoice = ttsVoice.trim()
         AppConfigManager.ttsSpeed = ttsSpeed
+        AppConfigManager.offlineTtsModelId = offlineTtsModelId
+        AppConfigManager.offlineTtsSpeakerId = offlineTtsSpeakerId
         AppConfigManager.realtimeVoiceEnabled = realtimeVoiceEnabled
         AppConfigManager.realtimeVoiceModel = realtimeVoiceModel.trim().ifBlank { "gpt-realtime-2" }
         AppConfigManager.realtimeVoiceVoice = realtimeVoiceVoice.trim().ifBlank { "marin" }
@@ -248,6 +329,45 @@ fun SettingsScreen(
         AppConfigManager.syncToSandbox(context)
     }
 
+    fun selectOfflineVoice(preset: com.clawdroid.app.core.voice.OfflineTtsModelPreset, speakerId: Int = preset.defaultSpeakerId) {
+        offlineTtsModelId = preset.id
+        offlineTtsSpeakerId = speakerId
+        ttsEngine = "sherpa"
+        AppConfigManager.ttsEngine = "sherpa"
+        AppConfigManager.offlineTtsModelId = preset.id
+        AppConfigManager.offlineTtsSpeakerId = speakerId
+        offlineTtsManager.refresh(preset)
+        voiceTestStatus = ""
+        saved = false
+    }
+
+    fun testVoice(forceOffline: Boolean = false) {
+        if (forceOffline) {
+            selectOfflineVoice(offlineTtsPreset, offlineTtsSpeakerId)
+        }
+        saveAndSync()
+        val selectedOfflinePreset = OfflineTtsModelCatalog.byId(AppConfigManager.offlineTtsModelId)
+        if (AppConfigManager.ttsEngine == "sherpa") {
+            val readiness = SherpaOnnxTtsEngine.readinessMessage(context.applicationContext, selectedOfflinePreset)
+            if (readiness != "Ready") {
+                voiceTestStatus = readiness
+                Toast.makeText(context, readiness, Toast.LENGTH_LONG).show()
+                return
+            }
+            voiceTestStatus = "Testing ${selectedOfflinePreset.label}..."
+        } else {
+            voiceTestStatus = "Testing ${ttsEngineOptions.firstOrNull { it.id == AppConfigManager.ttsEngine }?.label ?: "selected voice"}..."
+        }
+        settingsVoiceManager.stop()
+        settingsVoiceManager.speak(
+            "Hello, I am ${AppConfigManager.agentName}. This is the selected ClawDroid voice.",
+        ) {
+            scope.launch {
+                voiceTestStatus = "Voice test finished"
+            }
+        }
+    }
+
     // Check notification listener access on resume
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -256,6 +376,10 @@ fun SettingsScreen(
                 val cn = ComponentName(context, com.clawdroid.app.core.channels.ClawNotificationListenerService::class.java)
                 val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
                 notificationAccessGranted = flat != null && flat.contains(cn.flattenToString())
+                microphoneGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                notificationPermissionGranted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                overlayGranted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
                 accessibilityActive = ScreenReaderService.instance != null
                 screenCaptureActive = ScreenCaptureManager.isActive()
             }
@@ -269,6 +393,14 @@ fun SettingsScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        microphoneGranted = permissions[Manifest.permission.RECORD_AUDIO]
+            ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        notificationPermissionGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissions[Manifest.permission.POST_NOTIFICATIONS]
+                ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        } else {
+            true
+        }
         Toast.makeText(context, "Permissions updated.", Toast.LENGTH_SHORT).show()
     }
 
@@ -351,11 +483,19 @@ fun SettingsScreen(
 
             GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Provider", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                    SelectableCard(
+                        label = selectedProvider.label,
+                        description = selectedProvider.description,
+                        isSelected = true,
+                        onClick = { showProviderSheet = true },
+                    )
+
                     Text("Base URL", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
                     GlassTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it; saved = false },
-                        placeholder = "https://openrouter.ai/api/v1",
+                        placeholder = selectedProvider.defaultBaseUrl.ifBlank { "https://example.com/v1" },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     )
 
@@ -379,54 +519,81 @@ fun SettingsScreen(
                     )
 
                     Text("Model", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                    SelectableCard(
+                        label = model.ifBlank { "Select model" },
+                        description = if (discoveredModels.isNotEmpty()) {
+                            "${discoveredModels.size} discovered models available"
+                        } else {
+                            "Fetch models or enter a manual model ID"
+                        },
+                        isSelected = model.isNotBlank() && !useCustomModel,
+                        onClick = { showModelSheet = true },
+                    )
 
-                    // Model preset cards (onboarding-style)
-                    modelPresets.forEach { preset ->
-                        val isSelected = !useCustomModel && model == preset.id
-                        SelectableCard(
-                            label = preset.label,
-                            description = preset.description,
-                            isSelected = isSelected,
-                            onClick = {
-                                model = preset.id
-                                useCustomModel = false
-                                saved = false
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        GlassButton(
+                            onClick = { fetchModels() },
+                            enabled = !modelFetchLoading && baseUrl.isNotBlank() && apiKey.isNotBlank(),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                if (modelFetchLoading) "Fetching…" else "Fetch Models",
+                                color = SoftWhite,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        GlassButton(
+                            onClick = { useCustomModel = true },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Manual", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    if (modelFetchStatus.isNotBlank()) {
+                        Text(
+                            text = modelFetchStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (modelFetchStatus.startsWith("Fetch failed")) MaterialTheme.colorScheme.error else MutedGray,
+                        )
+                    }
+
+                    if (!selectedProvider.supportsRuntime) {
+                        Text(
+                            text = "${selectedProvider.label} model discovery is available, but native chat runtime is pending. Choose an OpenAI-compatible provider for active chats.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFFB74D),
+                        )
+                    }
+
+                    AnimatedVisibility(visible = useCustomModel || model.isBlank()) {
+                        GlassTextField(
+                            value = model,
+                            onValueChange = { model = it; useCustomModel = true; saved = false },
+                            placeholder = when (selectedProvider.id) {
+                                "gemini" -> "gemini-2.5-pro"
+                                "anthropic" -> "claude-sonnet-4-5"
+                                "deepseek" -> "deepseek-chat"
+                                else -> "e.g. openai/gpt-4o"
                             },
                         )
                     }
 
-                    // Custom model toggle
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (useCustomModel) GlassFillStrong else GlassFill)
-                            .border(1.dp, if (useCustomModel) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
-                            .clickable { useCustomModel = true }
-                            .padding(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "✏️ Custom Model",
-                            color = SoftWhite,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f),
+                            text = "Runtime",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MutedGray,
                         )
-                        if (useCustomModel) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = EmberOrange,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-
-                    AnimatedVisibility(visible = useCustomModel) {
-                        GlassTextField(
-                            value = if (useCustomModel) model else "",
-                            onValueChange = { model = it; saved = false },
-                            placeholder = "e.g. anthropic/claude-3.5-sonnet",
+                        Text(
+                            text = selectedProvider.dialect.name.replace("_", " "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SoftWhite,
+                            fontWeight = FontWeight.Medium,
                         )
                     }
                 }
@@ -528,180 +695,156 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("TTS Engine", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
 
-                    ttsEngineOptions.forEach { option ->
-                        val isSelected = ttsEngine == option.id
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (isSelected) GlassFillStrong else GlassFill)
-                                .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(14.dp))
-                                .clickable { ttsEngine = option.id; saved = false }
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = option.icon,
-                                contentDescription = null,
-                                tint = if (isSelected) EmberOrange else MutedGray,
-                                modifier = Modifier.size(24.dp),
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = option.label,
-                                    color = SoftWhite,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    text = option.description,
-                                    color = MutedGray,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CheckCircle,
-                                    contentDescription = null,
-                                    tint = EmberOrange,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
+                    val selectedTtsOption = ttsEngineOptions.firstOrNull { it.id == ttsEngine } ?: ttsEngineOptions.first()
+                    SelectableCard(
+                        label = selectedTtsOption.label,
+                        description = selectedTtsOption.description,
+                        isSelected = true,
+                        onClick = { showTtsEngineSheet = true },
+                    )
+
+                    SettingSwitchRow(
+                        title = "Advanced voice options",
+                        subtitle = "Cloud keys, realtime voice, and provider-specific voices",
+                        checked = showAdvancedVoice,
+                        onCheckedChange = { showAdvancedVoice = it },
+                    )
 
                     // ── Engine-specific config ───────────────────────────
-                    when (ttsEngine) {
-                        "openai" -> {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("OpenAI API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            Text(
-                                text = "Uses a dedicated OpenAI TTS key, or falls back to the main API key above.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MutedGray,
-                            )
-                            GlassTextField(
-                                value = openaiTtsApiKey,
-                                onValueChange = { openaiTtsApiKey = it; saved = false },
-                                placeholder = "sk-… (leave blank to reuse main API key)",
-                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("OpenAI Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            openaiVoices.forEach { (id, label) ->
-                                val isSelected = ttsVoice == id
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isSelected) GlassFillStrong else GlassFill)
-                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
-                                        .clickable { ttsVoice = id; saved = false }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
+                    AnimatedVisibility(visible = showAdvancedVoice) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            when (ttsEngine) {
+                                "openai" -> {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("OpenAI API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
                                     Text(
-                                        text = label,
-                                        color = SoftWhite,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.weight(1f),
-                                        fontSize = 13.sp,
+                                        text = "Uses a dedicated OpenAI TTS key, or falls back to the main API key above.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MutedGray,
                                     )
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.CheckCircle,
-                                            contentDescription = null,
-                                            tint = EmberOrange,
-                                            modifier = Modifier.size(16.dp),
-                                        )
+                                    GlassTextField(
+                                        value = openaiTtsApiKey,
+                                        onValueChange = { openaiTtsApiKey = it; saved = false },
+                                        placeholder = "sk-… (leave blank to reuse main API key)",
+                                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("OpenAI Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                                    openaiVoices.forEach { (id, label) ->
+                                        val isSelected = ttsVoice == id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isSelected) GlassFillStrong else GlassFill)
+                                                .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+                                                .clickable { ttsVoice = id; saved = false }
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = SoftWhite,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.weight(1f),
+                                                fontSize = 13.sp,
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = EmberOrange,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
 
-                        "elevenlabs" -> {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("ElevenLabs API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            GlassTextField(
-                                value = elevenlabsApiKey,
-                                onValueChange = { elevenlabsApiKey = it; saved = false },
-                                placeholder = "Enter your ElevenLabs API key",
-                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("ElevenLabs Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            com.clawdroid.app.core.voice.ElevenLabsTtsEngine.PRESET_VOICES.forEach { (id, label) ->
-                                val isSelected = ttsVoice == id
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isSelected) GlassFillStrong else GlassFill)
-                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
-                                        .clickable { ttsVoice = id; saved = false }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = SoftWhite,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.weight(1f),
-                                        fontSize = 13.sp,
+                                "elevenlabs" -> {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("ElevenLabs API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                                    GlassTextField(
+                                        value = elevenlabsApiKey,
+                                        onValueChange = { elevenlabsApiKey = it; saved = false },
+                                        placeholder = "Enter your ElevenLabs API key",
+                                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     )
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.CheckCircle,
-                                            contentDescription = null,
-                                            tint = EmberOrange,
-                                            modifier = Modifier.size(16.dp),
-                                        )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("ElevenLabs Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                                    com.clawdroid.app.core.voice.ElevenLabsTtsEngine.PRESET_VOICES.forEach { (id, label) ->
+                                        val isSelected = ttsVoice == id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isSelected) GlassFillStrong else GlassFill)
+                                                .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+                                                .clickable { ttsVoice = id; saved = false }
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = SoftWhite,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.weight(1f),
+                                                fontSize = 13.sp,
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = EmberOrange,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
 
-                        "deepgram" -> {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Deepgram API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            GlassTextField(
-                                value = deepgramApiKey,
-                                onValueChange = { deepgramApiKey = it; saved = false },
-                                placeholder = "Enter your Deepgram API key",
-                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Deepgram Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            com.clawdroid.app.core.voice.DeepgramTtsEngine.PRESET_VOICES.forEach { (id, label) ->
-                                val isSelected = ttsVoice == id
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isSelected) GlassFillStrong else GlassFill)
-                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
-                                        .clickable { ttsVoice = id; saved = false }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = label,
-                                        color = SoftWhite,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.weight(1f),
-                                        fontSize = 13.sp,
+                                "deepgram" -> {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Deepgram API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                                    GlassTextField(
+                                        value = deepgramApiKey,
+                                        onValueChange = { deepgramApiKey = it; saved = false },
+                                        placeholder = "Enter your Deepgram API key",
+                                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     )
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.CheckCircle,
-                                            contentDescription = null,
-                                            tint = EmberOrange,
-                                            modifier = Modifier.size(16.dp),
-                                        )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("Deepgram Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                                    com.clawdroid.app.core.voice.DeepgramTtsEngine.PRESET_VOICES.forEach { (id, label) ->
+                                        val isSelected = ttsVoice == id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isSelected) GlassFillStrong else GlassFill)
+                                                .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+                                                .clickable { ttsVoice = id; saved = false }
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = SoftWhite,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.weight(1f),
+                                                fontSize = 13.sp,
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = EmberOrange,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -727,61 +870,143 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Piper download card
+                    // Sherpa setup card
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { selectOfflineVoice(offlineTtsPreset, offlineTtsSpeakerId) }
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (piperInstalled) GlassFillStrong.copy(alpha = 0.5f) else GlassFill)
-                            .border(1.dp, if (piperInstalled) EmberOrange.copy(alpha = 0.4f) else GlassBorderDim, RoundedCornerShape(14.dp))
+                            .background(if (offlineTtsState.installed) GlassFillStrong.copy(alpha = 0.5f) else GlassFill)
+                            .border(
+                                1.dp,
+                                if (ttsEngine == "sherpa") EmberOrange else if (offlineTtsState.installed) EmberOrange.copy(alpha = 0.4f) else GlassBorderDim,
+                                RoundedCornerShape(14.dp),
+                            )
                             .padding(14.dp),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (piperInstalled) Icons.Rounded.CheckCircle else Icons.Outlined.Headphones,
-                                contentDescription = null,
-                                tint = if (piperInstalled) EmberOrange else MutedGray,
-                                modifier = Modifier.size(28.dp),
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (piperInstalled) "Piper Neural Voice Installed" else "Piper Neural TTS",
-                                    color = SoftWhite,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (ttsEngine == "sherpa") Icons.Rounded.CheckCircle else Icons.Outlined.Headphones,
+                                    contentDescription = null,
+                                    tint = if (ttsEngine == "sherpa") EmberOrange else MutedGray,
+                                    modifier = Modifier.size(28.dp),
                                 )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Offline Neural Voice",
+                                        color = SoftWhite,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                    )
+                                    Text(
+                                        text = "${offlineTtsPreset.label} • ${if (ttsEngine == "sherpa") "selected" else "tap to use"}",
+                                        color = MutedGray,
+                                        fontSize = 12.sp,
+                                    )
+                                }
                                 Text(
-                                    text = if (piperInstalled) "Ryan — Male US (realistic, offline)" else "Download 50MB male voice model for realistic speech",
-                                    color = MutedGray,
-                                    fontSize = 12.sp,
+                                    text = if (offlineTtsState.installed) "Installed" else "Not installed",
+                                    color = if (offlineTtsState.installed) EmberOrange else MutedGray,
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             }
-                            if (!piperInstalled) {
-                                GlassButton(
-                                    onClick = { piperEngine.startDownload() },
-                                    modifier = Modifier.width(100.dp).height(36.dp),
-                                ) {
-                                    Text("Download", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = SoftWhite)
+
+                            Text(
+                                text = offlineTtsState.message,
+                                color = if (offlineTtsState.installed) EmberOrange else MutedGray,
+                                fontSize = 12.sp,
+                            )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OfflineTtsModelCatalog.presets.forEach { preset ->
+                                    SelectableCard(
+                                        label = preset.label,
+                                        description = when (preset.id) {
+                                            "vits-piper-en_US-glados" -> "Runtime-compatible offline VITS voice"
+                                            else -> "Offline Sherpa-ONNX model"
+                                        },
+                                        isSelected = offlineTtsModelId == preset.id,
+                                        onClick = {
+                                            selectOfflineVoice(preset)
+                                        },
+                                    )
                                 }
                             }
+
+                            if (offlineTtsState.downloading) {
+                                LinearProgressIndicator(
+                                    progress = { offlineTtsState.progress.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = EmberOrange,
+                                    trackColor = GlassBorderDim,
+                                )
+                            }
+
+                            Text("Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                offlineTtsPreset.speakerLabels.forEach { (id, label) ->
+                                    SelectableCard(
+                                        label = label,
+                                        description = "Speaker $id",
+                                        isSelected = offlineTtsSpeakerId == id,
+                                        onClick = {
+                                            selectOfflineVoice(offlineTtsPreset, id)
+                                        },
+                                    )
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                GlassButton(
+                                    onClick = {
+                                        selectOfflineVoice(offlineTtsPreset, offlineTtsSpeakerId)
+                                        offlineTtsManager.install(offlineTtsPreset)
+                                    },
+                                    enabled = !offlineTtsState.downloading,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(
+                                        if (offlineTtsState.installed) "Reinstall" else "Install",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = SoftWhite,
+                                    )
+                                }
+                                GlassButton(
+                                    onClick = {
+                                        offlineTtsManager.delete(offlineTtsPreset)
+                                        voiceTestStatus = "${offlineTtsPreset.label} deleted"
+                                    },
+                                    enabled = !offlineTtsState.downloading && offlineTtsState.installed,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Delete", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = SoftWhite)
+                                }
+                            }
+
+                            GlassButton(
+                                onClick = { testVoice(forceOffline = true) },
+                                enabled = !offlineTtsState.downloading,
+                            ) {
+                                Text("Test Offline Voice", fontWeight = FontWeight.SemiBold, color = SoftWhite)
+                            }
                         }
+                    }
+
+                    if (voiceTestStatus.isNotBlank()) {
+                        Text(
+                            text = voiceTestStatus,
+                            color = if (voiceTestStatus.contains("failed", ignoreCase = true) || voiceTestStatus.contains("not ", ignoreCase = true) || voiceTestStatus.contains("Unsupported", ignoreCase = true)) MutedGray else EmberOrange,
+                            fontSize = 12.sp,
+                        )
                     }
 
                     // Test Voice button
                     GlassButton(
                         onClick = {
-                            testTts?.let { tts ->
-                                tts.language = Locale.US
-                                tts.setPitch(0.75f)
-                                tts.setSpeechRate(0.82f * ttsSpeed)
-                                tts.speak(
-                                    "Hello, I am ${AppConfigManager.agentName}. This is my voice.",
-                                    TextToSpeech.QUEUE_FLUSH,
-                                    null,
-                                    "test"
-                                )
-                            }
+                            testVoice(forceOffline = false)
                         },
                     ) {
                         Row(
@@ -795,15 +1020,10 @@ fun SettingsScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("🔊 Test Voice", fontWeight = FontWeight.SemiBold, color = SoftWhite)
+                            Text("Test Selected Voice", fontWeight = FontWeight.SemiBold, color = SoftWhite)
                         }
                     }
                 }
-            }
-
-            // Piper download progress dialog
-            if (piperDownloading) {
-                PiperDownloadDialog(progress = piperDownloadProgress)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1103,142 +1323,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── Skills & Channels ───────────────────────────
-            GlowText(
-                text = "Skills & Channels",
-                style = MaterialTheme.typography.titleLarge,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            GlassCard {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // WhatsApp
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "WhatsApp Automation (Channel)",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = SoftWhite,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "Draft and send responses autonomously",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MutedGray,
-                            )
-                        }
-                        Switch(
-                            checked = whatsappEnabled,
-                            onCheckedChange = { whatsappEnabled = it; saved = false },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = EmberOrange,
-                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
-                                uncheckedThumbColor = MutedGray,
-                                uncheckedTrackColor = DeepBlack,
-                            ),
-                        )
-                    }
-
-                    AnimatedVisibility(visible = whatsappEnabled) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (!notificationAccessGranted) {
-                                GlassButton(
-                                    onClick = {
-                                        val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
-                                        context.startActivity(intent)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Grant Notification Access", color = EmberOrange, fontWeight = FontWeight.Bold)
-                                }
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = null,
-                                        tint = EmberOrange,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Notification Access Granted", color = EmberOrange, fontWeight = FontWeight.Medium)
-                                }
-                            }
-
-                            Text("Allowed Contacts", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
-                            GlassTextField(
-                                value = whatsappAllowedContacts,
-                                onValueChange = { whatsappAllowedContacts = it; saved = false },
-                                placeholder = "e.g. John Doe, Alice Smith (leave empty for all)",
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(GlassBorderDim))
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Heartbeat
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Autonomous Heartbeat (Skill)",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = SoftWhite,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "Run tasks list inside heartbeat.md files",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MutedGray,
-                            )
-                        }
-                        Switch(
-                            checked = heartbeatEnabled,
-                            onCheckedChange = { heartbeatEnabled = it; saved = false },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = EmberOrange,
-                                checkedTrackColor = EmberOrange.copy(alpha = 0.5f),
-                                uncheckedThumbColor = MutedGray,
-                                uncheckedTrackColor = DeepBlack,
-                            ),
-                        )
-                    }
-
-                    AnimatedVisibility(visible = heartbeatEnabled) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "Checklist Scan Interval: ${heartbeatIntervalMin}m",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = SoftWhite,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Slider(
-                                value = heartbeatIntervalMin.toFloat(),
-                                onValueChange = { heartbeatIntervalMin = it.toInt(); saved = false },
-                                valueRange = 15f..120f,
-                                steps = 7, // 15, 30, 45, 60, 75, 90, 105, 120
-                                colors = SliderDefaults.colors(
-                                    thumbColor = EmberOrange,
-                                    activeTrackColor = EmberOrange,
-                                    inactiveTrackColor = GlassBorderDim
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             // ── Background Agent ─────────────────────────────
             GlowText(
                 text = "Background Agent",
@@ -1362,9 +1446,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── File Storage ─────────────────────────────────
+            // ── Permissions ──────────────────────────────────
             GlowText(
-                text = "File Storage",
+                text = "Permissions",
                 style = MaterialTheme.typography.titleLarge,
             )
 
@@ -1427,6 +1511,76 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MutedGray.copy(alpha = 0.7f),
                     )
+
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(GlassBorderDim))
+
+                    PermissionActionRow(
+                        title = "Microphone",
+                        status = if (microphoneGranted) "Granted" else "Needed for voice input",
+                        granted = microphoneGranted,
+                        buttonText = if (microphoneGranted) "Manage" else "Grant",
+                        onClick = {
+                            permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                        },
+                    )
+
+                    PermissionActionRow(
+                        title = "Notifications",
+                        status = if (notificationPermissionGranted && notificationAccessGranted) {
+                            "App and listener access ready"
+                        } else {
+                            "Needed for channels and background updates"
+                        },
+                        granted = notificationPermissionGranted && notificationAccessGranted,
+                        buttonText = "Manage",
+                        onClick = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU && !notificationPermissionGranted) {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                            } else {
+                                context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                            }
+                        },
+                    )
+
+                    PermissionActionRow(
+                        title = "Overlay",
+                        status = if (overlayGranted) "Granted" else "Needed for floating agent controls",
+                        granted = overlayGranted,
+                        buttonText = "Manage",
+                        onClick = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}"),
+                                    ),
+                                )
+                            }
+                        },
+                    )
+
+                    PermissionActionRow(
+                        title = "Accessibility",
+                        status = if (accessibilityActive) "Screen control active" else "Needed for UI tree and gestures",
+                        granted = accessibilityActive,
+                        buttonText = "Manage",
+                        onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                    )
+
+                    PermissionActionRow(
+                        title = "Screen Capture",
+                        status = if (screenCaptureActive) "Capture session active" else "Optional visual fallback",
+                        granted = screenCaptureActive,
+                        buttonText = if (screenCaptureActive) "Stop" else "Grant",
+                        onClick = {
+                            if (screenCaptureActive) {
+                                ScreenCaptureManager.stopCapture()
+                                screenCaptureActive = false
+                            } else {
+                                screenCaptureLauncher.launch(projectionManager.createScreenCaptureIntent())
+                            }
+                        },
+                    )
                 }
             }
 
@@ -1479,6 +1633,12 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MutedGray.copy(alpha = 0.7f),
                     )
+                    Text(
+                        text = "Built by Team Polymaths",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SoftWhite,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
 
@@ -1487,7 +1647,7 @@ fun SettingsScreen(
             // ── Save button ──────────────────────────────────
             SaveButton(
                 saved = saved,
-                enabled = apiKey.isNotBlank(),
+                enabled = apiKey.isNotBlank() && model.isNotBlank() && selectedProvider.supportsRuntime,
                 onClick = {
                     saveAndSync()
                     if (heartbeatEnabled) {
@@ -1511,8 +1671,146 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (apiKey.isNotBlank() && !selectedProvider.supportsRuntime) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "${selectedProvider.label} model discovery works, but native chat runtime is pending. Select OpenAI, OpenRouter, DeepSeek, OpenCode, or Custom to save active chat settings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             Spacer(modifier = Modifier.height(40.dp))
+        }
+    }
+
+    if (showProviderSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showProviderSheet = false },
+            containerColor = DeepBlack,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Choose Provider", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                AiProviders.presets.forEach { preset ->
+                    SelectableCard(
+                        label = preset.label,
+                        description = preset.description,
+                        isSelected = providerId == preset.id,
+                        onClick = {
+                            providerId = preset.id
+                            selectedProvider = preset
+                            if (preset.defaultBaseUrl.isNotBlank()) {
+                                baseUrl = preset.defaultBaseUrl
+                            }
+                            model = ""
+                            useCustomModel = false
+                            modelFetchStatus = ""
+                            discoveredModels = modelDiscoveryClient.cachedModels(preset.id, preset.defaultBaseUrl.ifBlank { baseUrl }, apiKey)
+                            saved = false
+                            showProviderSheet = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showModelSheet) {
+        val filteredModels = discoveredModels.filter { providerModel ->
+            val query = modelSearch.trim()
+            query.isBlank() ||
+                providerModel.id.contains(query, ignoreCase = true) ||
+                providerModel.label.contains(query, ignoreCase = true) ||
+                providerModel.owner?.contains(query, ignoreCase = true) == true
+        }
+        ModalBottomSheet(
+            onDismissRequest = { showModelSheet = false },
+            containerColor = DeepBlack,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Choose Model", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                GlassTextField(
+                    value = modelSearch,
+                    onValueChange = { modelSearch = it },
+                    placeholder = "Search models",
+                )
+                if (filteredModels.isEmpty()) {
+                    Text(
+                        text = if (discoveredModels.isEmpty()) "No fetched models yet. Fetch models or use manual entry." else "No models match your search.",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(360.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(filteredModels) { providerModel ->
+                            ModelRow(
+                                providerModel = providerModel,
+                                isSelected = providerModel.id == model,
+                                onClick = {
+                                    model = providerModel.id
+                                    useCustomModel = false
+                                    saved = false
+                                    showModelSheet = false
+                                },
+                            )
+                        }
+                    }
+                }
+                GlassButton(
+                    onClick = {
+                        useCustomModel = true
+                        showModelSheet = false
+                    },
+                ) {
+                    Text("Enter Model Manually", color = SoftWhite, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    if (showTtsEngineSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showTtsEngineSheet = false },
+            containerColor = DeepBlack,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Choose TTS Engine", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                ttsEngineOptions.forEach { option ->
+                    SelectableCard(
+                        label = option.label,
+                        description = option.description,
+                        isSelected = ttsEngine == option.id,
+                        onClick = {
+                            ttsEngine = option.id
+                            saved = false
+                            showTtsEngineSheet = false
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -1556,6 +1854,80 @@ private fun SelectableCard(
                 tint = EmberOrange,
                 modifier = Modifier.size(18.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun ModelRow(
+    providerModel: ProviderModel,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) GlassFillStrong else GlassFill)
+            .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = providerModel.id,
+                color = SoftWhite,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = listOfNotNull(providerModel.owner, providerModel.description).joinToString(" • ")
+                    .ifBlank { providerModel.label },
+                color = MutedGray,
+                fontSize = 11.sp,
+                maxLines = 2,
+            )
+        }
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = EmberOrange,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionActionRow(
+    title: String,
+    status: String,
+    granted: Boolean,
+    buttonText: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Outlined.Security,
+            contentDescription = null,
+            tint = if (granted) EmberOrange else MutedGray,
+            modifier = Modifier.size(20.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = SoftWhite, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(status, color = MutedGray, style = MaterialTheme.typography.bodySmall)
+        }
+        GlassButton(
+            onClick = onClick,
+            modifier = Modifier.width(96.dp).height(36.dp),
+        ) {
+            Text(buttonText, color = SoftWhite, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
         }
     }
 }
