@@ -43,6 +43,7 @@ object GoogleAuthManager {
                 "code" to authCode,
                 "client_id" to clientID,
                 "client_secret" to clientSecret,
+                "redirect_uri" to "",
                 "grant_type" to "authorization_code"
             )
 
@@ -171,7 +172,8 @@ object GoogleAuthManager {
     }
 
     private fun buildParams(vararg params: Pair<String, String>): String {
-        return params.filter { it.second.isNotBlank() }.joinToString("&") { (key, value) ->
+        // redirect_uri must be sent even when empty for the Android server-auth-code flow.
+        return params.filter { it.second.isNotBlank() || it.first == "redirect_uri" }.joinToString("&") { (key, value) ->
             URLEncoder.encode(key, "UTF-8") + "=" + URLEncoder.encode(value, "UTF-8")
         }
     }
