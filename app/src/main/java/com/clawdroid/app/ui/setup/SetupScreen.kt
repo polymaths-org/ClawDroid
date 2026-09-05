@@ -121,6 +121,7 @@ private val providers = listOf(
     ProviderInfo("xai", "xAI", "×", "Grok models through OpenAI-compatible API", "https://api.x.ai/v1", "grok-4"),
     ProviderInfo("together", "Together AI", "↗", "Open-source and fine-tuned models", "https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
     ProviderInfo("ollama", "Ollama", "⌂", "Local models, no key", "http://localhost:11434/v1", "llama3.2", needsApiKey = false),
+    ProviderInfo("geniex-local", "On-Device NPU", "⬢", "Qwen3 on Hexagon NPU, fully offline", "ondevice://geniex", "unsloth/Qwen3-4B-GGUF", "On-device", false),
     ProviderInfo("custom", "Custom", "⌘", "Any OpenAI-compatible endpoint", "", "openai/gpt-4o"),
 )
 

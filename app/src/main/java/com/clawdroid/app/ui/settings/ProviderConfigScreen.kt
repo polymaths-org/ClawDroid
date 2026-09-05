@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.config.OpenCodeZen
 import com.clawdroid.app.core.config.SavedProviderProfile
+import com.clawdroid.app.core.localllm.LocalLlmConfig
+import com.clawdroid.app.core.localllm.LocalModelManager
+import com.clawdroid.app.core.localllm.LocalModelStatus
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassTextField
@@ -53,6 +56,17 @@ fun ProviderConfigScreen(
     var zenModelsLoading by remember { mutableStateOf(false) }
     var zenModelsError by remember { mutableStateOf<String?>(null) }
     val isZen = OpenCodeZen.isZen(provider, baseUrl)
+    val localOptions = remember { LocalModelManager.options }
+    var localModelId by remember {
+        mutableStateOf(
+            localOptions.firstOrNull { it.id == AppConfigManager.model }?.id
+                ?: LocalLlmConfig.GGUF_MODEL_4B
+        )
+    }
+    val localStatusMap by LocalModelManager.status.collectAsState()
+    LaunchedEffect(localModelId) {
+        LocalModelManager.refreshStatus(context, localModelId)
+    }
 
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
@@ -256,12 +270,119 @@ fun ProviderConfigScreen(
                         ProviderPreset("Ollama (Local)", "llama3.2", "http://localhost:11434/v1", provider, model, baseUrl) {
                             provider = "ollama"; baseUrl = "http://localhost:11434/v1"; model = "llama3.2"
                         }
+                        ProviderPreset("On-Device NPU (GenieX)", LocalLlmConfig.GGUF_MODEL_4B, "ondevice://geniex", provider, model, baseUrl) {
+                            provider = LocalLlmConfig.PROVIDER_ID; baseUrl = "ondevice://geniex"; model = localModelId
+                        }
+                    }
+                }
+
+                ClawPanel(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 16.dp,
+                    contentPadding = PaddingValues(16.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("On-Device Model (Hexagon NPU)", color = accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "Weights download from the cloud on first use — never shipped in the APK. " +
+                                "Stay on Wi-Fi; downloads resume if interrupted.",
+                            color = onVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+
+                        localOptions.forEach { opt ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { localModelId = opt.id }
+                                    .padding(4.dp),
+                            ) {
+                                RadioButton(
+                                    selected = localModelId == opt.id,
+                                    onClick = { localModelId = opt.id },
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(opt.label, color = onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text(opt.id, color = onVariant, fontSize = 11.sp)
+                                    Text(opt.sizeNote, color = onVariant, fontSize = 11.sp)
+                                }
+                            }
+                        }
+
+                        val localStatus = localStatusMap[localModelId]
+                            ?: LocalModelStatus.NotDownloaded
+                        when (localStatus) {
+                            is LocalModelStatus.Downloading -> {
+                                val frac = if (localStatus.totalBytes > 0) {
+                                    (localStatus.downloadedBytes.toFloat() / localStatus.totalBytes).coerceIn(0f, 1f)
+                                } else 0f
+                                LinearProgressIndicator(
+                                    progress = { frac },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Text(
+                                    "Downloading ${(localStatus.downloadedBytes / 1048576)} / ${(localStatus.totalBytes / 1048576)} MB",
+                                    color = onVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                OutlinedButton(
+                                    onClick = { /* pullFlow has no cancel; runs to completion or error */ },
+                                    enabled = false,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("Downloading…")
+                                }
+                            }
+                            is LocalModelStatus.Ready -> {
+                                Text("✓ Downloaded and ready", color = accent, style = MaterialTheme.typography.bodySmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { scope.launch { LocalModelManager.delete(context, localModelId) } },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text("Delete")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            provider = LocalLlmConfig.PROVIDER_ID
+                                            baseUrl = "ondevice://geniex"
+                                            apiKey = ""
+                                            model = localModelId
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text("Use this model")
+                                    }
+                                }
+                            }
+                            is LocalModelStatus.Error -> {
+                                Text(localStatus.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    onClick = { scope.launch { LocalModelManager.download(context, localModelId) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("Retry download")
+                                }
+                            }
+                            is LocalModelStatus.NotDownloaded -> {
+                                Button(
+                                    onClick = { scope.launch { LocalModelManager.download(context, localModelId) } },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("Download")
+                                }
+                            }
+                        }
                     }
                 }
 
                 Button(
                     onClick = {
-                        val keyOptional = provider.equals("ollama", ignoreCase = true) || baseUrl.contains("localhost")
+                        val keyOptional = provider.equals("ollama", ignoreCase = true) || baseUrl.contains("localhost") ||
+                            provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex"
                         if (baseUrl.isNotBlank() && model.isNotBlank() && (apiKey.isNotBlank() || keyOptional)) {
                             AppConfigManager.save(provider.trim(), baseUrl.trim(), apiKey.trim(), model.trim())
                             AppConfigManager.saveProviderProfile(

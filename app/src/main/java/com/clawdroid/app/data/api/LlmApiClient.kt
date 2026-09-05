@@ -55,12 +55,15 @@ class LlmApiClient(
     private val apiKey: String = AppConfigManager.apiKey,
     private val model: String = AppConfigManager.model,
     private val provider: String = AppConfigManager.provider,
-) {
-    fun streamChat(
+) : LlmProvider {
+    override val contextLimit: Int = 128_000
+    override val isLocal: Boolean = false
+
+    override fun streamChat(
         messages: List<ChatMessage>,
-        tools: JSONArray? = null,
-        forcedToolName: String? = null,
-        openCodeSessionId: String? = null,
+        tools: JSONArray?,
+        forcedToolName: String?,
+        openCodeSessionId: String?,
     ): Flow<StreamEvent> {
         return if (isAnthropicProvider()) {
             streamAnthropicChat(messages, tools, forcedToolName)

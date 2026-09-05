@@ -2,8 +2,8 @@ package com.clawdroid.app.core.engine
 
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.ContextBuilder
-import com.clawdroid.app.data.api.LlmApiClient
 import com.clawdroid.app.core.config.OpenCodeZen
+import com.clawdroid.app.data.api.LlmProvider
 import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.db.ConversationDao
 import com.clawdroid.app.data.db.MessageDao
@@ -20,8 +20,8 @@ data class CompactionDecision(
 class CompactionManager(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
-    private val llmClient: LlmApiClient,
-    private val limitTokens: Int = 128_000,
+    private val llmClient: LlmProvider,
+    private val limitTokens: Int = llmClient.contextLimit,
     private val headroomRatio: Double = 0.20,
 ) {
     fun shouldCompact(messages: List<ChatMessage>): CompactionDecision {

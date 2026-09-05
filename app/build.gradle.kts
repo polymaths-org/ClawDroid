@@ -52,7 +52,7 @@ android {
 
     defaultConfig {
         applicationId = "com.clawdroid.app"
-        minSdk = 26
+        minSdk = 27 // 27 required by Qualcomm GenieX (Hexagon NPU on-device LLM); targetSdk stays 28 for overlay/a11y
         targetSdk = 28
         versionCode = 2
         versionName = "0.1.0"
@@ -132,6 +132,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
 }
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -184,8 +188,12 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0")
+    // On-device LLM (Hexagon NPU) via Qualcomm GenieX. Pinned — keep in sync with
+    // LocalLlmConfig.GENIEX_VERSION + model bundle QAIRT version (mismatch = #1 failure mode).
+    implementation("com.qualcomm.qti:geniex-android:0.3.12")
     ksp("androidx.room:room-compiler:2.8.4")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

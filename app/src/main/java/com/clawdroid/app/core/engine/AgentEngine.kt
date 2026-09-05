@@ -9,7 +9,8 @@ import com.clawdroid.app.core.assistant.permissions.PermissionAwareToolExecutor
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.ContextBuilder
 import com.clawdroid.app.data.api.CompletedToolCall
-import com.clawdroid.app.data.api.LlmApiClient
+import com.clawdroid.app.data.api.LlmProvider
+import com.clawdroid.app.data.api.LlmProviderFactory
 import com.clawdroid.app.data.api.MessageBuilder
 import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.api.TokenUsage
@@ -42,7 +43,7 @@ sealed interface AgentRunEvent {
 class AgentEngine(
     private val context: Context,
     private val projectId: String? = null,
-    private val client: LlmApiClient = LlmApiClient(),
+    private val client: LlmProvider = LlmProviderFactory.create(context),
     private val steeringQueue: SteeringQueue = SteeringQueue(),
     private val toolExecutor: ToolExecutor = ToolExecutor,
     private val loopDetector: LoopDetector = LoopDetector(),

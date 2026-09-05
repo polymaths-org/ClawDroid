@@ -87,7 +87,8 @@ object LlmSmokeClient {
                     role = "user",
                     content = "Say ClawDroid streaming smoke test ok.",
                 ),
-            )
+            ),
+            tools = null,
         ).collect { event ->
             when (event) {
                 is StreamEvent.TextDelta -> text.append(event.text)
