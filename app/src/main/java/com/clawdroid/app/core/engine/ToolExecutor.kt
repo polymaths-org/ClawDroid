@@ -15,6 +15,10 @@ import com.clawdroid.app.core.tools.StartProcessTool
 import com.clawdroid.app.core.tools.WebSearchTool
 import com.clawdroid.app.core.tools.WriteFileTool
 import com.clawdroid.app.core.tools.GoogleTools
+import com.clawdroid.app.core.tools.GoogleDriveTools
+import com.clawdroid.app.core.tools.GithubTools
+import com.clawdroid.app.core.tools.NotionTools
+import com.clawdroid.app.core.tools.SpotifyTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
@@ -123,6 +127,85 @@ object ToolExecutor {
                         description = args.optString("description").takeIf { it.isNotBlank() },
                         startTime = args.getString("start_time"),
                         endTime = args.getString("end_time")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
+            "google_drive_create_file", "google_drive_search_files", "google_docs_write_doc" -> {
+                if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled) {
+                    throw IllegalStateException("Google Drive/Docs tools are currently disabled or Google account is disconnected.")
+                }
+                when (call.name) {
+                    "google_drive_create_file" -> GoogleDriveTools.createDriveFile(
+                        name = args.getString("name"),
+                        mimeType = args.getString("mimeType"),
+                        content = args.getString("content")
+                    )
+                    "google_drive_search_files" -> GoogleDriveTools.searchDriveFiles(
+                        query = args.getString("query")
+                    )
+                    "google_docs_write_doc" -> GoogleDriveTools.writeGoogleDoc(
+                        title = args.getString("title"),
+                        body = args.getString("body")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
+            "github_list_repos", "github_create_issue", "github_create_pr" -> {
+                if (!com.clawdroid.app.core.service.GithubAuthManager.isConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.githubConnectorEnabled) {
+                    throw IllegalStateException("GitHub tools are currently disabled or GitHub account is disconnected.")
+                }
+                when (call.name) {
+                    "github_list_repos" -> GithubTools.listRepos()
+                    "github_create_issue" -> GithubTools.createIssue(
+                        repo = args.getString("repo"),
+                        title = args.getString("title"),
+                        body = args.getString("body")
+                    )
+                    "github_create_pr" -> GithubTools.createPullRequest(
+                        repo = args.getString("repo"),
+                        title = args.getString("title"),
+                        head = args.getString("head"),
+                        base = args.getString("base"),
+                        body = args.getString("body")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
+            "notion_create_page", "notion_append_block" -> {
+                if (!com.clawdroid.app.core.service.NotionAuthManager.isConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.notionConnectorEnabled) {
+                    throw IllegalStateException("Notion tools are currently disabled or Notion account is disconnected.")
+                }
+                when (call.name) {
+                    "notion_create_page" -> NotionTools.createPage(
+                        parentPageId = args.getString("parentPageId"),
+                        title = args.getString("title"),
+                        content = args.getString("content")
+                    )
+                    "notion_append_block" -> NotionTools.appendBlock(
+                        pageId = args.getString("pageId"),
+                        content = args.getString("content")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
+            "spotify_playback_control", "spotify_get_current_track", "spotify_search_and_play" -> {
+                if (!com.clawdroid.app.core.service.SpotifyAuthManager.isConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.spotifyConnectorEnabled) {
+                    throw IllegalStateException("Spotify tools are currently disabled or Spotify account is disconnected.")
+                }
+                when (call.name) {
+                    "spotify_playback_control" -> SpotifyTools.controlPlayback(
+                        context = context,
+                        action = args.getString("action")
+                    )
+                    "spotify_get_current_track" -> SpotifyTools.getCurrentTrack()
+                    "spotify_search_and_play" -> SpotifyTools.searchAndPlay(
+                        context = context,
+                        query = args.getString("query")
                     )
                     else -> error("Unreachable")
                 }
