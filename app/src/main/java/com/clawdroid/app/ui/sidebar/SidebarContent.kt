@@ -511,7 +511,7 @@ private fun SidebarInterpoleButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Cable,
+            imageVector = Icons.Rounded.Hub,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.size(20.dp),

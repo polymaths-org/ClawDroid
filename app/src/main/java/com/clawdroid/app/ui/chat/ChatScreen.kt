@@ -3173,6 +3173,7 @@ private fun iconForActivityStep(type: ActivityStepType): ImageVector = when (typ
     ActivityStepType.Edit -> Icons.Rounded.EditNote
     ActivityStepType.Package -> Icons.Rounded.Inventory2
     ActivityStepType.Service -> Icons.Rounded.Cloud
+    ActivityStepType.Desktop -> Icons.Rounded.Bolt
 }
 
 private fun mediaIconForMime(mimeType: String): ImageVector = when {
