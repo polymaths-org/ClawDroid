@@ -232,9 +232,9 @@ object AppConfigManager {
         get() = p.getString("skill_md", "") ?: ""
         set(value) = p.edit().putString("skill_md", value).apply()
 
-    var claudeMd: String
-        get() = p.getString("claude_md", "") ?: ""
-        set(value) = p.edit().putString("claude_md", value).apply()
+    var systemMd: String
+        get() = p.getString("system_md", null) ?: p.getString("claude_md", "") ?: ""
+        set(value) = p.edit().putString("system_md", value).apply()
 
     // Skills & Channels Integration Configuration
     const val KEY_ACTIVE_PROJECT_ID = "active_project_id"

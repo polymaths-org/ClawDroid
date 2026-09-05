@@ -127,7 +127,7 @@ Preset support includes:
 - Audio/TTS configuration.
 - MCP and connections.
 - Channels and automations.
-- Prompt files: `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `SKILL.md`, `CLAUDE.md`.
+- Prompt files: `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `SKILL.md`, `SYSTEM.md`.
 - Themes: Light, Dark, Minimalist, Liquid Glass Light, Liquid Glass Dark.
 
 ### First Wake

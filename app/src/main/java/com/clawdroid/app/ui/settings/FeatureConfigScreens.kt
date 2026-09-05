@@ -836,7 +836,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
     var soulMd by remember { mutableStateOf(AppConfigManager.soulMd) }
     var toolsMd by remember { mutableStateOf(AppConfigManager.toolsMd) }
     var skillMd by remember { mutableStateOf(AppConfigManager.skillMd) }
-    var claudeMd by remember { mutableStateOf(AppConfigManager.claudeMd) }
+    var systemMd by remember { mutableStateOf(AppConfigManager.systemMd) }
 
     ConfigScaffold("Agent Configuration", onBack) {
         InfoCard(
@@ -902,9 +902,9 @@ fun AgentConfigScreen(onBack: () -> Unit) {
                 )
                 
                 GlassTextField(
-                    value = claudeMd,
-                    onValueChange = { claudeMd = it },
-                    placeholder = "CLAUDE.md - System-level base prompt overrides",
+                    value = systemMd,
+                    onValueChange = { systemMd = it },
+                    placeholder = "SYSTEM.md - System-level base prompt overrides",
                     singleLine = false,
                     maxLines = 4,
                 )
@@ -994,7 +994,7 @@ fun AgentConfigScreen(onBack: () -> Unit) {
             AppConfigManager.soulMd = soulMd.trim()
             AppConfigManager.toolsMd = toolsMd.trim()
             AppConfigManager.skillMd = skillMd.trim()
-            AppConfigManager.claudeMd = claudeMd.trim()
+            AppConfigManager.systemMd = systemMd.trim()
         }
     }
 }

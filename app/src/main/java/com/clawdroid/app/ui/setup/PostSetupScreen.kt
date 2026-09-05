@@ -261,8 +261,8 @@ private suspend fun writePostHatchMarkdowns(
         File(home, "TOOLS.md") to generated.tools,
         File(root, "SKILL.md") to generated.skill,
         File(home, "SKILL.md") to generated.skill,
-        File(root, "CLAUDE.md") to generated.claude,
-        File(home, "CLAUDE.md") to generated.claude,
+        File(root, "SYSTEM.md") to generated.system,
+        File(home, "SYSTEM.md") to generated.system,
         File(memory, "Agent.md") to generated.agentMemory,
         File(memory, "user.md") to generated.userMemory,
         File(memory, "heartbeat.md") to generated.heartbeat,
@@ -273,7 +273,7 @@ private suspend fun writePostHatchMarkdowns(
     AppConfigManager.soulMd = generated.soul
     AppConfigManager.toolsMd = generated.tools
     AppConfigManager.skillMd = generated.skill
-    AppConfigManager.claudeMd = generated.claude
+    AppConfigManager.systemMd = generated.system
 
     files.forEachIndexed { index, (file, content) ->
         withContext(Dispatchers.IO) {
@@ -291,7 +291,7 @@ private data class GeneratedMarkdowns(
     val soul: String,
     val tools: String,
     val skill: String,
-    val claude: String,
+    val system: String,
     val agentMemory: String,
     val userMemory: String,
     val heartbeat: String,
@@ -358,8 +358,8 @@ private fun generatedMarkdowns(
         ## User-Specific Direction
         $facts
     """.trimIndent()
-    val claude = """
-        # CLAUDE.md
+    val system = """
+        # SYSTEM.md
 
         $agentName should act like a visible Android-native agent: clear, interruptible, and precise.
         Keep the UX calm. Use the overlay for ongoing device actions and concise status.
@@ -401,5 +401,5 @@ private fun generatedMarkdowns(
         - Platform: Android + Linux sandbox
         - Created: $timestamp
     """.trimIndent()
-    return GeneratedMarkdowns(agents, soul, tools, skill, claude, agentMemory, userMemory, heartbeat, memory)
+    return GeneratedMarkdowns(agents, soul, tools, skill, system, agentMemory, userMemory, heartbeat, memory)
 }
