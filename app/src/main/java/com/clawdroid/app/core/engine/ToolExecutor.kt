@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.engine
 
 import android.content.Context
+import com.clawdroid.app.core.assistant.overlay.AssistantOverlayCoordinator
 import com.clawdroid.app.core.tools.BrowseWebTool
 import com.clawdroid.app.core.tools.CheckProcessTool
 import com.clawdroid.app.core.tools.CommandTool
@@ -211,35 +212,45 @@ object ToolExecutor {
                     else -> error("Unreachable")
                 }
             }
-            "get_screen" -> AndroidControlTools.getScreen(context)
-            "tap" -> AndroidControlTools.tap(
+            "get_screen" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getScreen(context) }
+            "tap" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tap(
                 args.getDouble("x").toFloat(),
                 args.getDouble("y").toFloat(),
-            )
-            "tap_text" -> AndroidControlTools.tapText(args.getString("label"))
-            "tap_resource_id" -> AndroidControlTools.tapResourceId(args.getString("id"))
-            "long_press" -> AndroidControlTools.longPress(
+            ) }
+            "tap_text" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tapText(args.getString("label")) }
+            "tap_resource_id" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tapResourceId(args.getString("id")) }
+            "long_press" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.longPress(
                 args.getDouble("x").toFloat(),
                 args.getDouble("y").toFloat(),
-            )
-            "swipe" -> AndroidControlTools.swipe(
+            ) }
+            "swipe" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.swipe(
                 x1 = args.getDouble("x1").toFloat(),
                 y1 = args.getDouble("y1").toFloat(),
                 x2 = args.getDouble("x2").toFloat(),
                 y2 = args.getDouble("y2").toFloat(),
                 durationMs = args.optInt("duration_ms", 400),
-            )
-            "scroll" -> AndroidControlTools.scroll(args.getString("direction"))
-            "type_text" -> AndroidControlTools.typeText(args.getString("text"))
-            "clear_text" -> AndroidControlTools.clearText()
-            "press_back" -> AndroidControlTools.pressBack()
-            "press_home" -> AndroidControlTools.pressHome()
-            "press_recents" -> AndroidControlTools.pressRecents()
-            "open_notifications" -> AndroidControlTools.openNotifications()
-            "launch_app" -> AndroidControlTools.launchApp(args.getString("package_name"))
-            "get_installed_apps" -> AndroidControlTools.getInstalledApps(context)
-            "screenshot" -> AndroidControlTools.screenshot(context)
-            "wait" -> AndroidControlTools.wait(args.optInt("ms", 500))
+            ) }
+            "scroll" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.scroll(args.getString("direction")) }
+            "type_text" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.typeText(args.getString("text")) }
+            "clear_text" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.clearText() }
+            "press_back" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressBack() }
+            "press_home" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressHome() }
+            "press_recents" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.pressRecents() }
+            "open_notifications" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.openNotifications() }
+            "launch_app" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.launchApp(args.getString("package_name")) }
+            "get_installed_apps" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getInstalledApps(context) }
+            "screenshot" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.screenshot(context) }
+            "wait" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.wait(args.optInt("ms", 500)) }
+            "perform_android_actions" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.performActions(
+                context = context,
+                actions = args.getJSONArray("actions"),
+                verify = args.optBoolean("verify", true),
+            ) }
+            "send_message_in_current_chat" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.sendMessageInCurrentChat(
+                context = context,
+                text = args.getString("text"),
+                count = args.optInt("count", 1),
+            ) }
             else -> {
                 McpServerLauncher.executeMcpTool(call.name, args)?.toString()
                     ?: error("Unsupported tool: ${call.name}")
@@ -278,4 +289,20 @@ object ToolExecutor {
     }
 
     private fun JSONObject.optIntOrNull(name: String): Int? = if (has(name) && !isNull(name)) optInt(name) else null
+
+    private suspend fun withOverlayHiddenForTool(
+        name: String,
+        block: suspend () -> JSONObject,
+    ): JSONObject {
+        val settleMs = when (name) {
+            "get_screen", "screenshot" -> 3_000L
+            "wait" -> 150L
+            else -> 350L
+        }
+        return AssistantOverlayCoordinator.withOverlayHiddenForExternalUi(
+            reason = name,
+            settleMs = settleMs,
+            block = block,
+        )
+    }
 }
