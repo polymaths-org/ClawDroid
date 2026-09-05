@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -95,10 +96,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -157,6 +162,10 @@ fun ChatScreen(
     val db = remember { ClawDroidDatabase.get(context) }
     var currentConversationId by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        db.conversations().pruneAllEmpty()
+    }
+
     // Pick latest conversation on start
     val allConversations by db.conversations().observeConversations().collectAsState(initial = null)
     LaunchedEffect(allConversations) {
@@ -175,17 +184,6 @@ fun ChatScreen(
                         updatedAt = System.currentTimeMillis(),
                         status = "idle",
                         costUsd = 0.0
-                    )
-                )
-                val greeting = "Hello! I am ${AppConfigManager.agentName}, your ${AppConfigManager.agentPersonality} assistant. I'm ready to help you with ${AppConfigManager.agentPurpose}."
-                db.messages().insert(
-                    MessageEntity(
-                        id = UUID.randomUUID().toString(),
-                        conversationId = newId,
-                        role = "assistant",
-                        content = greeting,
-                        createdAt = System.currentTimeMillis(),
-                        tokenCount = 0
                     )
                 )
                 currentConversationId = newId
@@ -216,11 +214,29 @@ fun ChatScreen(
                     val toolCalls = db.toolCalls().getForMessage(msg.id)
                     if (toolCalls.isNotEmpty()) {
                         val steps = toolCalls.map { t ->
+                            val summary = when (t.toolName) {
+                                "write_file" -> {
+                                    val content = runCatching { JSONObject(t.arguments).optString("content") }.getOrNull()
+                                        ?: extractJsonField(t.arguments, "content").orEmpty()
+                                    val lineCount = content.lines().size
+                                    "Write File (+$lineCount lines)"
+                                }
+                                "edit_file" -> {
+                                    val search = runCatching { JSONObject(t.arguments).optString("search") }.getOrNull()
+                                        ?: extractJsonField(t.arguments, "search").orEmpty()
+                                    val replace = runCatching { JSONObject(t.arguments).optString("replace") }.getOrNull()
+                                        ?: extractJsonField(t.arguments, "replace").orEmpty()
+                                    val searchLines = search.lines().size
+                                    val replaceLines = replace.lines().size
+                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
+                                }
+                                else -> t.toolName.readableToolName()
+                            }
                             ActivityStepItem(
                                 id = t.id,
                                 callId = t.id,
                                 type = t.toolName.toActivityStepType(),
-                                summary = t.toolName.readableToolName(),
+                                summary = summary,
                                 detail = t.result ?: t.arguments,
                                 result = t.result ?: "",
                                 arguments = t.arguments,
@@ -262,23 +278,8 @@ fun ChatScreen(
     val partialSpeech by voiceRecognizer.partialResult.collectAsState()
     val piperDownloadProgress by voiceManager.downloadProgress.collectAsState()
 
-    // Permissions
     var showPermissionsDialog by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (AppConfigManager.isOnboardingComplete
-            && !AppConfigManager.permissionsAsked
-            && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
-        ) {
-            showPermissionsDialog = true
-            AppConfigManager.permissionsAsked = true
-        }
-    }
-    val permissionsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) {}
-    val overlayPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {}
+    var wasInterrupted by remember { mutableStateOf(false) }
 
     // Real-time Voice Amplitudes
     val userAmplitude by voiceRecognizer.userVoiceAmplitude.collectAsState()
@@ -289,13 +290,23 @@ fun ChatScreen(
         else -> 0f
     }
 
-    // Dynamically feed partial speech results into transcript
-    LaunchedEffect(partialSpeech) {
-        if (isCallModeActive && partialSpeech.isNotBlank()) {
-            userPartialText = partialSpeech
+    // Permission Launchers defined AT THE COMPOSABLE TOP LEVEL
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {}
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {}
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            isCallModeActive = true
+            isCallMuted = false
         }
     }
 
+    // ── Local helper functions placed BEFORE any LaunchedEffect / usage ──
     fun showSystemNotification(title: String, content: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "clawdroid_agent_channel"
@@ -427,6 +438,7 @@ fun ChatScreen(
         runningActivityId = null
         runtimeState = AgentRuntimeState.Running
         orbState = OrbState.Thinking
+        ensureAgentMessage()
 
         val newEngine = AgentEngine(context.applicationContext, projectId = AppConfigManager.activeProjectId)
         engine = newEngine
@@ -448,13 +460,82 @@ fun ChatScreen(
                             agentResponseText += event.text
                         }
 
+                        is AgentRunEvent.ToolCallStreaming -> {
+                            finishCurrentAgentText()
+                            val args = event.arguments
+                            val summary = when (event.name) {
+                                "write_file" -> {
+                                    val content = extractJsonField(args, "content").orEmpty()
+                                    val lineCount = content.lines().size
+                                    "Write File (+$lineCount lines)"
+                                }
+                                "edit_file" -> {
+                                    val search = extractJsonField(args, "search").orEmpty()
+                                    val replace = extractJsonField(args, "replace").orEmpty()
+                                    val searchLines = search.lines().size
+                                    val replaceLines = replace.lines().size
+                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
+                                }
+                                else -> event.name.readableToolName()
+                            }
+                            val step = ActivityStepItem(
+                                id = event.callId,
+                                callId = event.callId,
+                                type = event.name.toActivityStepType(),
+                                summary = summary,
+                                detail = event.arguments,
+                                result = "",
+                                arguments = event.arguments,
+                                running = true,
+                            )
+                            val activityId = runningActivityId
+                            if (activityId == null) {
+                                val activity = ActivityChatItem(steps = listOf(step), running = true)
+                                items += activity
+                                runningActivityId = activity.id
+                            } else {
+                                items.replaceActivityItem(activityId) { current ->
+                                    val idx = current.steps.indexOfFirst { it.callId == event.callId }
+                                    val updatedSteps = if (idx >= 0) {
+                                        current.steps.mapIndexed { i, s ->
+                                            if (i == idx) step else s
+                                        }
+                                    } else {
+                                        current.steps + step
+                                    }
+                                    current.copy(running = true, steps = updatedSteps)
+                                }
+                            }
+                        }
+
                         is AgentRunEvent.ToolCallRequested -> {
                             finishCurrentAgentText()
+                            val args = event.call.arguments
+                            val summary = when (event.call.name) {
+                                "write_file" -> {
+                                    val content = runCatching { JSONObject(args).optString("content") }.getOrNull()
+                                        ?: extractJsonField(args, "content").orEmpty()
+                                    val lineCount = content.lines().size
+                                    "Write File (+$lineCount lines)"
+                                }
+                                "edit_file" -> {
+                                    val search = runCatching { JSONObject(args).optString("search") }.getOrNull()
+                                        ?: extractJsonField(args, "search").orEmpty()
+                                    val replace = runCatching { JSONObject(args).optString("replace") }.getOrNull()
+                                        ?: extractJsonField(args, "replace").orEmpty()
+                                    val searchLines = search.lines().size
+                                    val replaceLines = replace.lines().size
+                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
+                                }
+                                else -> event.call.name.readableToolName()
+                            }
                             val step = ActivityStepItem(
+                                id = event.call.id,
                                 callId = event.call.id,
                                 type = event.call.name.toActivityStepType(),
-                                summary = event.call.name.readableToolName(),
+                                summary = summary,
                                 detail = event.call.arguments,
+                                result = "",
                                 arguments = event.call.arguments,
                                 running = true,
                             )
@@ -465,7 +546,15 @@ fun ChatScreen(
                                 runningActivityId = activity.id
                             } else {
                                 items.replaceActivityItem(activityId) { current ->
-                                    current.copy(running = true, steps = current.steps + step)
+                                    val idx = current.steps.indexOfFirst { it.callId == event.call.id }
+                                    val updatedSteps = if (idx >= 0) {
+                                        current.steps.mapIndexed { i, s ->
+                                            if (i == idx) step else s
+                                        }
+                                    } else {
+                                        current.steps + step
+                                    }
+                                    current.copy(running = true, steps = updatedSteps)
                                 }
                             }
                         }
@@ -622,7 +711,30 @@ fun ChatScreen(
         submitQuery(text)
     }
 
-    // Dynamic Orb State updates based on speaking / thinking states
+    fun submitVoiceQuery(text: String) {
+        if (text.isBlank()) return
+        userPartialText = text
+        agentResponseText = ""
+        submitQuery(text)
+    }
+
+    fun startVoiceSession() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            isCallModeActive = true
+            isCallMuted = false
+            ServiceManager.start(context.applicationContext)
+        } else {
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // ── LaunchedEffects / Observers follow sequentially ──
+    LaunchedEffect(partialSpeech) {
+        if (isCallModeActive && partialSpeech.isNotBlank()) {
+            userPartialText = partialSpeech
+        }
+    }
+
     LaunchedEffect(isCallModeActive, voiceSpeaking, runtimeState) {
         if (isCallModeActive) {
             orbState = when {
@@ -634,10 +746,23 @@ fun ChatScreen(
         }
     }
 
-    // Track if interruption was already handled to prevent double-fire
-    var wasInterrupted by remember { mutableStateOf(false) }
+    var isPermissionsAskedSet by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val hasMic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val hasStorage = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+        if (AppConfigManager.isOnboardingComplete
+            && !AppConfigManager.permissionsAsked
+            && (!hasMic || !hasStorage)
+        ) {
+            showPermissionsDialog = true
+            AppConfigManager.permissionsAsked = true
+        }
+    }
 
-    // Interruption / Cut-off loop checking user Voice Amplitude during agent playbacks or thinking
     LaunchedEffect(isCallModeActive, isCallMuted, userAmplitude) {
         if (isCallModeActive && !isCallMuted && userAmplitude > 0.15f && !wasInterrupted) {
             if (voiceSpeaking || runtimeState == AgentRuntimeState.Running) {
@@ -654,7 +779,6 @@ fun ChatScreen(
         }
     }
 
-    // Always-on speech processing loop with guarded re-listen
     var isRecognizerListening by remember { mutableStateOf(false) }
     LaunchedEffect(isCallModeActive, isCallMuted, listenTrigger) {
         if (isCallModeActive) {
@@ -706,32 +830,6 @@ fun ChatScreen(
         }
     }
 
-    fun submitVoiceQuery(text: String) {
-        if (text.isBlank()) return
-        userPartialText = text
-        agentResponseText = ""
-        submitQuery(text)
-    }
-
-    val audioPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            isCallModeActive = true
-            isCallMuted = false
-        }
-    }
-
-    fun startVoiceSession() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            isCallModeActive = true
-            isCallMuted = false
-            ServiceManager.start(context.applicationContext)
-        } else {
-            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
     LaunchedEffect(startVoiceTrigger) {
         if (startVoiceTrigger) {
             startVoiceSession()
@@ -765,6 +863,7 @@ fun ChatScreen(
                     },
                     onSelectConversation = { id ->
                         scope.launch {
+                            db.conversations().pruneEmptyExcept(id)
                             currentConversationId = id
                             drawerState.close()
                         }
@@ -783,17 +882,7 @@ fun ChatScreen(
                                     costUsd = 0.0
                                 )
                             )
-                            val greeting = "Hello! I am ${AppConfigManager.agentName}, your ${AppConfigManager.agentPersonality} assistant. I'm ready to help you with ${AppConfigManager.agentPurpose}."
-                            db.messages().insert(
-                                MessageEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    conversationId = newId,
-                                    role = "assistant",
-                                    content = greeting,
-                                    createdAt = System.currentTimeMillis(),
-                                    tokenCount = 0
-                                )
-                            )
+                            db.conversations().pruneEmptyExcept(newId)
                             currentConversationId = newId
                             drawerState.close()
                         }
@@ -869,6 +958,7 @@ fun ChatScreen(
                         if (items.isEmpty()) {
                             EmptyGreeting(modifier = Modifier.align(Alignment.Center))
                         } else {
+                            val lastAgentMessageId = items.lastOrNull { it is AgentChatItem }?.id
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
@@ -885,6 +975,7 @@ fun ChatScreen(
                                         is UserChatItem -> UserMessageBubble(item)
                                         is AgentChatItem -> AgentMessageCard(
                                             item = item,
+                                            showActionRow = (runtimeState == AgentRuntimeState.Idle && item.id == lastAgentMessageId),
                                             onReadAloud = { voiceManager.speak(item.text) },
                                             onCopy = {
                                                 val annotated = AnnotatedString(item.text)
@@ -946,6 +1037,22 @@ fun ChatScreen(
                                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                             }
                             permissionsLauncher.launch(permissions.toTypedArray())
+                            if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+                                try {
+                                    val intent = Intent(
+                                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    try {
+                                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        context.startActivity(intent)
+                                    } catch (ex: Exception) {}
+                                }
+                            } else if (android.os.Build.VERSION.SDK_INT < 30) {
+                                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            }
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
                                 && !android.provider.Settings.canDrawOverlays(context)) {
                                 val intent = Intent(
@@ -980,13 +1087,14 @@ fun ChatScreen(
 
 @Composable
 private fun EmptyGreeting(modifier: Modifier = Modifier) {
+    val name = AppConfigManager.ownerName.trim().ifBlank { "there" }
     Column(
         modifier = modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Hi Rushikesh,",
+            text = "Hello $name,",
             color = SoftWhite,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = 32.sp,
@@ -997,7 +1105,7 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
         )
         Text(
-            text = "what's the plan?",
+            text = "what's on your mind?",
             color = MutedGray,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = 32.sp,
@@ -1034,6 +1142,7 @@ private fun UserMessageBubble(item: UserChatItem) {
 @Composable
 private fun AgentMessageCard(
     item: AgentChatItem,
+    showActionRow: Boolean,
     onReadAloud: () -> Unit,
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
@@ -1044,13 +1153,6 @@ private fun AgentMessageCard(
             .padding(end = 32.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = "🐙 ClawDroid",
-            style = MaterialTheme.typography.labelLarge.copy(
-                color = EmberOrange,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
 
         if (item.text.isBlank() && item.streaming) {
             CustomProcessingLoader()
@@ -1061,7 +1163,7 @@ private fun AgentMessageCard(
             )
         }
 
-        if (!item.streaming && item.text.isNotBlank()) {
+        if (showActionRow && !item.streaming && item.text.isNotBlank()) {
             MessageActionRow(
                 text = item.text,
                 onReadAloud = onReadAloud,
@@ -1079,7 +1181,11 @@ private fun ActivityMessageCard(item: ActivityChatItem) {
     var previewFile by remember { mutableStateOf<FilePreview?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        InlineActivityTrail(steps = item.steps, running = item.running)
+        if (item.steps.size == 1) {
+            InlineActivityStep(step = item.steps[0])
+        } else {
+            InlineActivityTrail(steps = item.steps, running = item.running)
+        }
         if (previews.isNotEmpty()) {
             FilePreviewStrip(
                 previews = previews,
@@ -1102,6 +1208,7 @@ private fun InlineActivityTrail(
     val commandCount = steps.count { it.type == ActivityStepType.Command }
     val latest = steps.lastOrNull()
     val title = when {
+        steps.size > 1 -> "${steps.size} tools executed"
         commandCount > 0 -> "$commandCount command${if (commandCount == 1) "" else "s"}"
         latest != null -> latest.summary
         else -> "Preparing activity"
@@ -1128,7 +1235,7 @@ private fun InlineActivityTrail(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 )
                 Text(
-                    text = title,
+                    text = formatDiffDisplayText(title),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -1173,7 +1280,7 @@ private fun InlineActivityStep(step: ActivityStepItem) {
             Text(text = step.type.icon, style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "${step.summary}${if (step.running) "…" else ""}",
+                text = formatDiffDisplayText("${step.summary}${if (step.running) "…" else ""}"),
                 modifier = Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
@@ -1216,7 +1323,7 @@ private fun InlineActivityStep(step: ActivityStepItem) {
                                 Spacer(modifier = Modifier.height(2.dp))
                             }
                             Text(
-                                text = parsed.displayText,
+                                text = formatDiffDisplayText(parsed.displayText),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontFamily = FontFamily.Monospace,
@@ -1260,7 +1367,7 @@ private fun InlineActivityStep(step: ActivityStepItem) {
                             .padding(8.dp)
                     ) {
                         Text(
-                            text = parsed.outputText,
+                            text = formatDiffOutputText(parsed.outputText),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontFamily = FontFamily.Monospace,
@@ -1343,7 +1450,7 @@ private fun PremiumInputBar(
                 }
                 CompactIconButton(onClick = { attachmentPicker.launch("*/*") }) {
                     Icon(
-                        imageVector = Icons.Rounded.Close, // Using Close as a placeholder for add/plus
+                        imageVector = Icons.Rounded.Add,
                         contentDescription = "Attach file",
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1364,6 +1471,17 @@ private fun PremiumInputBar(
                         lineHeight = 21.sp,
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primaryContainer),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send,
+                        capitalization = KeyboardCapitalization.Sentences
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (value.isNotBlank()) {
+                                onSubmit()
+                            }
+                        }
+                    ),
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (value.isEmpty()) {
@@ -1393,9 +1511,8 @@ private fun PremiumInputBar(
                     }
                 } else {
                     Surface(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clickable(onClick = onSubmit),
+                        onClick = onSubmit,
+                        modifier = Modifier.size(42.dp),
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1745,7 +1862,8 @@ private fun PermissionsDialog(
                 text = "ClawDroid needs the following permissions to work properly:\n\n" +
                     "🎤 Microphone — for voice input and call mode\n" +
                     "🔔 Notifications — to keep you updated on background tasks\n" +
-                    "📱 Overlay — to show the agent status while you use other apps\n\n" +
+                    "📱 Overlay — to show the agent status while you use other apps\n" +
+                    "📂 Storage — to output and read files from Documents/ClawDroid\n\n" +
                     "These help the agent assist you even when the app is minimized.",
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1765,7 +1883,14 @@ private fun PermissionsDialog(
 
 private fun MutableList<ChatItem>.replaceAgentMessage(id: String, transform: (AgentChatItem) -> AgentChatItem) {
     val index = indexOfFirst { it.id == id }
-    if (index >= 0) this[index] = transform(this[index] as AgentChatItem)
+    if (index >= 0) {
+        val updated = transform(this[index] as AgentChatItem)
+        if (updated.text.isBlank() && !updated.streaming) {
+            removeAt(index)
+        } else {
+            this[index] = updated
+        }
+    }
 }
 
 private fun MutableList<ChatItem>.replaceActivityItem(id: String, transform: (ActivityChatItem) -> ActivityChatItem) {
@@ -1820,7 +1945,7 @@ private fun formatStepContent(step: ActivityStepItem): StepDetails {
 
     val isError = resultObj?.has("error") == true || step.isError
     val errorMessage = resultObj?.optString("error")?.takeIf { it.isNotBlank() }
-        ?: if (step.isError && step.result.isNotBlank() && !step.result.startsWith("{")) step.result else null
+        ?: if (step.isError && step.result?.isNotBlank() == true && step.result?.startsWith("{") != true) step.result else null
 
     val toolName = step.summary.lowercase().replace(" ", "_")
 
@@ -1943,38 +2068,56 @@ private fun formatStepContent(step: ActivityStepItem): StepDetails {
 
         toolName == "write_file" -> {
             title = "Write File Path:"
-            val path = argsObj?.optString("path") ?: ""
-            val content = argsObj?.optString("content") ?: ""
+            val path = argsObj?.optString("path") ?: extractJsonField(step.arguments, "path") ?: ""
+            val content = argsObj?.optString("content") ?: extractJsonField(step.arguments, "content") ?: ""
             copyText = path
-            displayText = path
+            
+            val lineCount = content.lines().size
+            displayText = "$path\n+$lineCount lines"
             
             outputText = when {
                 errorMessage != null -> "Error: $errorMessage"
-                resultObj != null -> {
-                    val bytes = resultObj.optLong("bytes", 0)
-                    "Successfully wrote $bytes bytes."
+                else -> {
+                    val previewLines = content.lines()
+                    val preview = previewLines.take(150).joinToString("\n")
+                    val isMore = if (previewLines.size > 150) "\n\n... [truncated, ${previewLines.size} lines total]" else ""
+                    "+$lineCount lines\n\n$preview$isMore"
                 }
-                step.running -> "Writing file..."
-                else -> content
             }
         }
 
         toolName == "edit_file" -> {
             title = "Edit File Path:"
-            val path = argsObj?.optString("path") ?: ""
-            val search = argsObj?.optString("search") ?: ""
-            val replace = argsObj?.optString("replace") ?: ""
+            val path = argsObj?.optString("path") ?: extractJsonField(step.arguments, "path") ?: ""
+            val search = argsObj?.optString("search") ?: extractJsonField(step.arguments, "search") ?: ""
+            val replace = argsObj?.optString("replace") ?: extractJsonField(step.arguments, "replace") ?: ""
             copyText = path
-            displayText = path
+            
+            val searchLines = search.lines().size
+            val replaceLines = replace.lines().size
+            displayText = "$path\n-$searchLines lines, +$replaceLines lines"
             
             outputText = when {
                 errorMessage != null -> "Error: $errorMessage"
-                resultObj != null -> {
-                    val replacements = resultObj.optInt("replacements", 0)
-                    "Made $replacements replacement(s)."
+                else -> {
+                    val searchPreviewLines = search.lines()
+                    val searchPreview = searchPreviewLines.take(150).joinToString("\n")
+                    val searchMore = if (searchPreviewLines.size > 150) "\n\n... [truncated, ${searchPreviewLines.size} lines total]" else ""
+                    
+                    val replacePreviewLines = replace.lines()
+                    val replacePreview = replacePreviewLines.take(150).joinToString("\n")
+                    val replaceMore = if (replacePreviewLines.size > 150) "\n\n... [truncated, ${replacePreviewLines.size} lines total]" else ""
+                    
+                    buildString {
+                        appendLine("-$searchLines lines, +$replaceLines lines")
+                        appendLine()
+                        appendLine("<<<< SEARCH")
+                        appendLine(searchPreview + searchMore)
+                        appendLine("==== REPLACE")
+                        appendLine(replacePreview + replaceMore)
+                        append(">>>>")
+                    }
                 }
-                step.running -> "Editing file...\nSearch:\n$search\n\nReplace:\n$replace"
-                else -> ""
             }
         }
 
@@ -2154,3 +2297,148 @@ private fun buildFilePreviews(
         )
     }
 }
+
+private fun extractJsonField(json: String, fieldName: String): String? {
+    val pattern = "\"$fieldName\"\\s*:\\s*\"".toRegex()
+    val match = pattern.find(json) ?: return null
+    val start = match.range.last + 1
+    
+    val sb = StringBuilder()
+    var escaped = false
+    var i = start
+    while (i < json.length) {
+        val c = json[i]
+        if (escaped) {
+            when (c) {
+                'n' -> sb.append('\n')
+                't' -> sb.append('\t')
+                'r' -> sb.append('\r')
+                '\\' -> sb.append('\\')
+                '"' -> sb.append('"')
+                else -> {
+                    sb.append('\\')
+                    sb.append(c)
+                }
+            }
+            escaped = false
+        } else if (c == '\\') {
+            escaped = true
+        } else if (c == '"') {
+            return sb.toString()
+        } else {
+            sb.append(c)
+        }
+        i++
+    }
+    return sb.toString()
+}
+
+@Composable
+private fun formatDiffDisplayText(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        val regex = """([+-]\d+\s+lines)""".toRegex()
+        var lastIndex = 0
+        regex.findAll(text).forEach { matchResult ->
+            val start = matchResult.range.first
+            val end = matchResult.range.last + 1
+            val matchText = matchResult.value
+            
+            if (start > lastIndex) {
+                append(text.substring(lastIndex, start))
+            }
+            
+            val color = if (matchText.startsWith("+")) {
+                com.clawdroid.app.ui.theme.DiffGreen
+            } else {
+                com.clawdroid.app.ui.theme.DiffRed
+            }
+            withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) {
+                append(matchText)
+            }
+            
+            lastIndex = end
+        }
+        if (lastIndex < text.length) {
+            append(text.substring(lastIndex))
+        }
+    }
+}
+
+@Composable
+private fun formatDiffOutputText(text: String): AnnotatedString {
+    val lines = text.split("\n")
+    return buildAnnotatedString {
+        var inSearchBlock = false
+        var inReplaceBlock = false
+        
+        lines.forEachIndexed { index, line ->
+            val isLast = index == lines.lastIndex
+            
+            when {
+                line.trim() == "<<<< SEARCH" -> {
+                    inSearchBlock = true
+                    inReplaceBlock = false
+                    withStyle(SpanStyle(color = com.clawdroid.app.ui.theme.DiffRed, fontWeight = FontWeight.Bold)) {
+                        append(line)
+                    }
+                }
+                line.trim() == "==== REPLACE" -> {
+                    inSearchBlock = false
+                    inReplaceBlock = true
+                    withStyle(SpanStyle(color = com.clawdroid.app.ui.theme.DiffGreen, fontWeight = FontWeight.Bold)) {
+                        append(line)
+                    }
+                }
+                line.trim() == ">>>>" -> {
+                    inSearchBlock = false
+                    inReplaceBlock = false
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)) {
+                        append(line)
+                    }
+                }
+                inSearchBlock -> {
+                    withStyle(SpanStyle(color = com.clawdroid.app.ui.theme.DiffRed)) {
+                        append(line)
+                    }
+                }
+                inReplaceBlock -> {
+                    withStyle(SpanStyle(color = com.clawdroid.app.ui.theme.DiffGreen)) {
+                        append(line)
+                    }
+                }
+                else -> {
+                    val regex = """([+-]\d+\s+lines)""".toRegex()
+                    var lastIndex = 0
+                    regex.findAll(line).forEach { matchResult ->
+                        val start = matchResult.range.first
+                        val end = matchResult.range.last + 1
+                        val matchText = matchResult.value
+                        
+                        if (start > lastIndex) {
+                            append(line.substring(lastIndex, start))
+                        }
+                        
+                        val color = if (matchText.startsWith("+")) {
+                            com.clawdroid.app.ui.theme.DiffGreen
+                        } else {
+                            com.clawdroid.app.ui.theme.DiffRed
+                        }
+                        withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) {
+                            append(matchText)
+                        }
+                        
+                        lastIndex = end
+                    }
+                    if (lastIndex < line.length) {
+                        append(line.substring(lastIndex))
+                    }
+                }
+            }
+            
+            if (!isLast) {
+                append("\n")
+            }
+        }
+    }
+}
+

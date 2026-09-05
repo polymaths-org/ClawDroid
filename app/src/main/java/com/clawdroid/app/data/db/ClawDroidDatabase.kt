@@ -168,8 +168,11 @@ interface ConversationDao {
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    @Query("SELECT * FROM conversations WHERE id = :id LIMIT 1")
-    suspend fun getById(id: String): ConversationEntity?
+    @Query("DELETE FROM conversations WHERE id != :currentId AND id NOT IN (SELECT DISTINCT conversationId FROM messages)")
+    suspend fun pruneEmptyExcept(currentId: String)
+
+    @Query("DELETE FROM conversations WHERE id NOT IN (SELECT DISTINCT conversationId FROM messages)")
+    suspend fun pruneAllEmpty()
 
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 1")
     suspend fun getMostRecent(): ConversationEntity?

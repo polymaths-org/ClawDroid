@@ -58,3 +58,6 @@ val UserVoiceBlue   = AstraPrimaryContainer
 val UserVoiceCyan   = AstraPrimary
 val AgentVoiceRed   = Color(0xFFB0A2F8)         // Soft lavender
 val AgentVoiceGold  = Color(0xFF8E7CFA)         // Muted deep purple
+
+val DiffGreen = Color(0xFF81C784)
+val DiffRed = Color(0xFFE57373)
