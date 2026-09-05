@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
+import com.clawdroid.app.ui.markdown.MarkdownText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -226,10 +227,7 @@ private fun AgentMessageCard(item: AgentChatItem) {
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
-        Text(
-            text = item.text.ifBlank { if (item.streaming) "Thinking…" else "" },
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        MarkdownText(markdown = item.text.ifBlank { if (item.streaming) "Thinking…" else "" })
     }
 }
 
