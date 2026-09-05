@@ -215,6 +215,24 @@ private fun ClawDroidApp(
     var selectedConfigFileType by remember { mutableStateOf(ConfigFileType.AGENTS) }
     var providerReturnScreen by remember { mutableStateOf(Screen.Settings) }
 
+    val backTarget = when (currentScreen) {
+        Screen.Settings, Screen.Terminal, Screen.SelfManage -> Screen.Chat
+        Screen.Provider -> providerReturnScreen
+        Screen.Audio, Screen.Notifications, Screen.Overlay, Screen.Agent,
+        Screen.Automations, Screen.Connections, Screen.Channels, Screen.Skills,
+        Screen.Mcp, Screen.Interpole, Screen.Themes, Screen.Permissions,
+        Screen.ConfigEditor -> Screen.Settings
+        else -> null
+    }
+    if (backTarget != null) {
+        androidx.activity.compose.BackHandler {
+            if (currentScreen == Screen.Provider) {
+                providerReturnScreen = Screen.Settings
+            }
+            currentScreen = backTarget
+        }
+    }
+
     AnimatedContent(
         targetState = currentScreen,
         transitionSpec = {
