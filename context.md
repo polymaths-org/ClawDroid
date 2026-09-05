@@ -74,10 +74,21 @@ ClawDroid consists of 45+ Kotlin files across 20+ packages. Here is the structur
 * **VoiceManager**: Handles speech state, markdown removal, filler phrase insertion, and controls the audio visualizer.
 * **AudioVisualizerOrb**: Implements an interactive Compose visualizer canvas (particle rings, gradients) reacting to microphone and speech amplitudes.
 
-### 6. User Interface (`ui/`)
+### 6. Android Control (`core/control/`)
+* **ScreenReaderService**: `AccessibilityService` that reads the UI tree, truncates it to JSON for the LLM, and dispatches gestures (tap, swipe, type) and global actions.
+* **ScreenCaptureManager**: Manages `MediaProjection` to provide screenshot fallback (base64 JPEG) when the accessibility tree is empty.
+* **AndroidControlTools**: Bridge exposing screen tools (`get_screen`, `tap`, `swipe`, `type_text`, `launch_app`) to the agent, returning JSON responses.
+
+### 7. User Interface (`ui/`)
 * **ChatScreen**: Standard conversation view with collapsible/expandable nested activity steps displaying terminal commands, web visits, and tool results.
 * **McpScreen**: A premium, card-based dashboard for MCP settings, displaying connection statuses, server switches, JSON configuration editors, and an inline bottom sheet for live logs.
 * **SidebarContent**: Telegram-style drawer showing Projects (grouped chats sharing a sandboxed sandbox folder), Chats, Settings, and Actions.
+
+### 8. Other Core Systems
+* **BootstrapManager**: Downloads Termux bootstrap (~80MB), extracts Linux environment.
+* **AppConfigManager**: SharedPreferences for API credentials and app settings.
+* **AutomationScheduler**: Cron-like scheduler via WorkManager.
+* **ClawDroidDatabase**: Room DB (conversations, projects, automations).
 
 ---
 
@@ -88,6 +99,30 @@ Database files are managed via Room in `ClawDroidDatabase.kt`. Key tables includ
 2. `messages`: ID, parent conversation (Foreign Key with `ON DELETE CASCADE`), role, content, timestamp, token count, and attachment metadata.
 3. `tool_calls`: ID, parent message, tool name, arguments, outputs, execution status, and execution duration.
 4. `projects`: Sandbox settings, root paths, and metadata.
+
+---
+
+## Implemented Feature Areas
+
+- Android Screen Control: AccessibilityService for reading UI trees and executing gestures, with MediaProjection fallback for screenshots. Integrated with agent tool schemas (`get_screen`, `tap`, etc.).
+- Voice chat: SpeechRecognizer STT → AgentEngine → TTS response with thinking phrases
+- Collapsible activity steps (3 levels: group → individual step → full output)
+- Sidebar navigation with Projects/Chats
+- Settings screen for API key configuration
+- Agent engine loop with tool execution
+- Terminal process management (PTY, input, output buffering)
+
+## What's Not Implemented / Future Plans
+
+- **Root-Only Bonus Features:** Bypass `FLAG_SECURE`, persistent accessibility service recovery, silent MediaProjection.
+- **Voice input / camera (post-MVP)**
+- **Connected Services / OAuth**
+- **Native Anthropic / Google API clients** (use OpenAI-compatible)
+- **Local LLM inference**
+- **Multi-user / cloud sync**
+- **End-to-end encryption**
+- **Widgets**
+- **EncryptedSharedPreferences** (currently plain SharedPreferences)
 
 ---
 
