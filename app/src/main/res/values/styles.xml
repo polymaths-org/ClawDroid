@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ClawDroid" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.ClawDroid" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">@android:color/holo_blue_light</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">#FF0A0A0A</item>
+        <item name="android:colorAccent">#FFFF4136</item>
     </style>
 </resources>
