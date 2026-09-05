@@ -754,15 +754,12 @@ fun ChatScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
+                modifier = Modifier.width(280.dp),
                 drawerContainerColor = DeepBlack.copy(alpha = 0.95f),
                 drawerContentColor = SoftWhite,
             ) {
                 SidebarContent(
                     activeConversationId = currentConversationId,
-                    onNavigateToSettings = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
                     onSelectConversation = { id ->
                         scope.launch {
                             db.conversations().pruneEmptyExcept(id)
@@ -790,6 +787,38 @@ fun ChatScreen(
                             AppConfigManager.activeConversationId = newId
                             drawerState.close()
                         }
+                    },
+                    onNavigateToSettings = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToAudio = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToAutomations = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToChannels = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToSkills = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToMcp = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToAgentConfig = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSettings()
+                    },
+                    onNavigateToTerminal = {
+                        scope.launch { drawerState.close() }
+                        Toast.makeText(context, "Terminal Screen coming soon!", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
