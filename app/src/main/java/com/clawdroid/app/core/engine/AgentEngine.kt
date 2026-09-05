@@ -2,10 +2,12 @@ package com.clawdroid.app.core.engine
 
 import android.content.Context
 import com.clawdroid.app.core.bootstrap.BootstrapManager
+import com.clawdroid.app.core.memory.MemoryManager
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.ContextBuilder
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.LlmApiClient
+import com.clawdroid.app.data.api.MessageBuilder
 import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.api.TokenUsage
 import com.clawdroid.app.data.api.ToolSchemaRegistry
@@ -30,12 +32,20 @@ sealed interface AgentRunEvent {
 
 class AgentEngine(
     private val context: Context,
+    private val projectId: String? = null,
     private val client: LlmApiClient = LlmApiClient(),
     private val steeringQueue: SteeringQueue = SteeringQueue(),
     private val toolExecutor: ToolExecutor = ToolExecutor,
     private val loopDetector: LoopDetector = LoopDetector(),
+    private val memoryManager: MemoryManager = MemoryManager(context),
 ) {
     private val stopRequested = AtomicBoolean(false)
+
+    init {
+        // Load persistent memory into the message builder on engine creation
+        val memory = memoryManager.readMemory()
+        MessageBuilder.setMemoryContext(memory)
+    }
 
     fun steer(message: String) {
         steeringQueue.offer(message)
@@ -45,7 +55,7 @@ class AgentEngine(
         stopRequested.set(true)
     }
 
-    fun run(prompt: String, maxTurns: Int = 12): Flow<AgentRunEvent> = channelFlow {
+    fun run(prompt: String, maxTurns: Int = 200): Flow<AgentRunEvent> = channelFlow {
         stopRequested.set(false)
         BootstrapManager.ensureBootstrapped(context) { }
 
@@ -54,13 +64,13 @@ class AgentEngine(
         val messageDao = db.messages()
         val toolCallDao = db.toolCalls()
 
-        // 1. Fetch or create active conversation
+        // 1. Fetch or create active conversation associated with this project
         var conversation = conversationDao.getMostRecent()
-        if (conversation == null) {
+        if (conversation == null || conversation.projectId != projectId) {
             val newId = UUID.randomUUID().toString()
             conversation = ConversationEntity(
                 id = newId,
-                projectId = null,
+                projectId = projectId,
                 title = "New Chat",
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
@@ -71,7 +81,7 @@ class AgentEngine(
         }
         val conversationId = conversation.id
 
-        val contextBuilder = ContextBuilder(conversationDao, messageDao, toolCallDao)
+        val contextBuilder = ContextBuilder(context, projectId, conversationDao, messageDao, toolCallDao)
         val compactionManager = CompactionManager(conversationDao, messageDao, client)
         val costTracker = CostTracker()
 
@@ -83,6 +93,7 @@ class AgentEngine(
         repeat(maxTurns) {
             if (stopRequested.get()) {
                 send(AgentRunEvent.Stopped("Stop requested"))
+                saveSummary(finalText.toString())
                 return@channelFlow
             }
 
@@ -153,7 +164,9 @@ class AgentEngine(
 
             // 8. Exit loop if no tool calls were generated
             if (toolCalls.isEmpty()) {
-                send(AgentRunEvent.Completed(finalText.toString().trim()))
+                val finalAnswer = finalText.toString().trim()
+                send(AgentRunEvent.Completed(finalAnswer))
+                saveSummary(finalAnswer)
                 return@channelFlow
             }
 
@@ -165,12 +178,14 @@ class AgentEngine(
                     is LoopCheckResult.Warn -> send(AgentRunEvent.LoopWarning(loopCheck.message))
                     is LoopCheckResult.Stop -> {
                         send(AgentRunEvent.Stopped(loopCheck.message))
+                        saveSummary(finalText.toString())
                         return@channelFlow
                     }
                 }
 
                 if (stopRequested.get()) {
                     send(AgentRunEvent.Stopped("Stop requested"))
+                    saveSummary(finalText.toString())
                     return@channelFlow
                 }
 
@@ -198,6 +213,17 @@ class AgentEngine(
             }
         }
 
+        val final = finalText.toString().trim()
         send(AgentRunEvent.Stopped("Reached max agent turns ($maxTurns)"))
+        saveSummary(final)
+    }
+
+    private fun saveSummary(text: String) {
+        if (text.isBlank()) return
+        val preview = text.take(500).replace("\n", " ").trim()
+        val summary = "Completed task. Summary: $preview"
+        memoryManager.appendSessionSummary(summary)
+        // Reload memory context for next run
+        MessageBuilder.setMemoryContext(memoryManager.readMemory())
     }
 }
