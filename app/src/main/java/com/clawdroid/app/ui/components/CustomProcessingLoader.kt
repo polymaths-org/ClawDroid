@@ -6,7 +6,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,12 +26,33 @@ import com.clawdroid.app.ui.theme.ActivePurple
 import com.clawdroid.app.ui.theme.AstraPrimary
 import com.clawdroid.app.ui.theme.MutedGray
 import com.clawdroid.app.ui.theme.SoftWhite
+import kotlinx.coroutines.delay
 
 @Composable
 fun CustomProcessingLoader(
     modifier: Modifier = Modifier,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
+    var phraseIndex by remember { mutableIntStateOf(0) }
+    val phrases = remember {
+        listOf(
+            "Reading the room before touching the machine" to "ClawDroid is mapping intent, constraints, and next actions",
+            "Good agents show their work" to "Planning the smallest useful step before running tools",
+            "Measure twice, execute once" to "Checking context so the next action is deliberate",
+            "The sandbox is awake" to "Preparing commands, files, and services for the task",
+            "Thinking in public, acting with receipts" to "Every action will appear as an inspectable step",
+            "Autonomy without opacity" to "Balancing speed with control and reversibility",
+            "Following the thread" to "Connecting your request to the current project state",
+            "Sharper context, cleaner action" to "Compressing the problem into an executable plan",
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(3200)
+            phraseIndex = (phraseIndex + 1) % phrases.size
+        }
+    }
 
     // Smooth continuous rotation
     val rotationAngle by infiniteTransition.animateFloat(
@@ -124,15 +149,15 @@ fun CustomProcessingLoader(
 
         Column(verticalArrangement = Arrangement.Center) {
             Text(
-                text = "Thinking…",
+                text = phrases[phraseIndex].first,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = SoftWhite,
-                    letterSpacing = 0.5.sp
+                    letterSpacing = 0.sp
                 )
             )
             Text(
-                text = "Analyzing query and planning actions",
+                text = phrases[phraseIndex].second,
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MutedGray.copy(alpha = 0.7f)
                 )

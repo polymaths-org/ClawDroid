@@ -3,6 +3,7 @@ package com.clawdroid.app.core.engine
 import android.content.Context
 import android.util.Log
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
@@ -17,6 +18,8 @@ import org.json.JSONObject
 
 class ConversationRunState(
     val conversationId: String,
+    val initialPrompt: String,
+    val displayPrompt: String = initialPrompt,
     val engine: AgentEngine,
     val isRunning: MutableStateFlow<Boolean> = MutableStateFlow(true),
     val agentResponseText: MutableStateFlow<String> = MutableStateFlow(""),
@@ -57,6 +60,8 @@ object AgentRunManager {
         mediaPath: String? = null,
         mediaMimeType: String? = null,
         toolsOverride: JSONArray? = null,
+        displayPrompt: String = prompt,
+        hidePromptInChat: Boolean = false,
     ) {
         synchronized(activeRuns) {
             if (activeRuns.value.containsKey(conversationId)) {
@@ -67,6 +72,7 @@ object AgentRunManager {
         
         val appCtx = context.applicationContext
         appContext = appCtx
+        AppConfigManager.syncToSandbox(appCtx)
         
         if (!AppConfigManager.ultraAgentEnabled) {
             ServiceManager.start(appCtx)
@@ -77,6 +83,8 @@ object AgentRunManager {
         
         val runState = ConversationRunState(
             conversationId = conversationId,
+            initialPrompt = prompt,
+            displayPrompt = displayPrompt,
             engine = engine
         )
         runState.runningAgentMessageId.value = initialMessage.id
@@ -85,6 +93,7 @@ object AgentRunManager {
         synchronized(activeRuns) {
             activeRuns.value = activeRuns.value + (conversationId to runState)
         }
+        NotificationHelper.sendTaskStarted(appCtx, displayPrompt)
         
         val job = appScope.launch {
             try {
@@ -95,6 +104,7 @@ object AgentRunManager {
                     mediaPath = mediaPath,
                     mediaMimeType = mediaMimeType,
                     toolsOverride = toolsOverride,
+                    hidePromptInChat = hidePromptInChat,
                 )
                     .collect { event ->
                         handleEvent(conversationId, event)
@@ -103,9 +113,12 @@ object AgentRunManager {
             } catch (e: Exception) {
                 Log.e(TAG, "Background run failed for $conversationId", e)
                 handleFailure(conversationId, e.message ?: "Run failed")
+                NotificationHelper.sendTaskFailed(appCtx, e.message ?: "Run failed")
                 events.emit(Pair(conversationId, AgentRunEvent.RunError(e.message ?: "Run failed")))
             } finally {
                 saveUnsavedStateToDb(appCtx, runState)
+                updateConversationTitleIfNeeded(appCtx, runState)
+                AppConfigManager.syncToSandbox(appCtx)
                 runState.isRunning.value = false
                 synchronized(activeRuns) {
                     activeRuns.value = activeRuns.value - conversationId
@@ -330,6 +343,7 @@ object AgentRunManager {
                 finishCurrentActivity(runState, currentItems)
                 runState.runningAgentMessageId.value = null
                 runState.runningActivityId.value = null
+                appContext?.let { NotificationHelper.sendTaskComplete(it, event.finalText) }
             }
 
             is AgentRunEvent.Stopped -> {
@@ -345,6 +359,7 @@ object AgentRunManager {
                 }
                 runState.runningAgentMessageId.value = null
                 runState.runningActivityId.value = null
+                appContext?.let { NotificationHelper.sendTaskFailed(it, "Stopped: ${event.reason}") }
             }
 
             is AgentRunEvent.RunError -> {
@@ -360,6 +375,7 @@ object AgentRunManager {
                 }
                 runState.runningAgentMessageId.value = null
                 runState.runningActivityId.value = null
+                appContext?.let { NotificationHelper.sendTaskFailed(it, event.message) }
             }
         }
         runState.activeChatItems.value = currentItems
@@ -385,6 +401,54 @@ object AgentRunManager {
         runState.runningAgentMessageId.value = null
         runState.runningActivityId.value = null
         runState.activeChatItems.value = currentItems
+    }
+
+    private suspend fun updateConversationTitleIfNeeded(context: Context, runState: ConversationRunState) {
+        try {
+            val db = ClawDroidDatabase.get(context)
+            val conversations = db.conversations()
+            val conversation = conversations.getById(runState.conversationId) ?: return
+            if (conversation.id.startsWith("whatsapp_chat_") || conversation.id.startsWith("sms_chat_")) return
+
+            val promptTitle = runState.displayPrompt.take(30) + if (runState.displayPrompt.length > 30) "..." else ""
+            val shouldRename = conversation.title in setOf("New Agent Chat", "New Chat", "Recovered Agent Chat") ||
+                conversation.title == promptTitle
+            if (!shouldRename) return
+
+            val title = buildConversationSubject(runState.displayPrompt, runState.agentResponseText.value)
+            conversations.update(
+                conversation.copy(
+                    title = title,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update generated chat title for ${runState.conversationId}", e)
+        }
+    }
+
+    private fun buildConversationSubject(prompt: String, result: String): String {
+        val source = listOf(prompt, result)
+            .joinToString(" ")
+            .replace(Regex("[^A-Za-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val stopWords = setOf(
+            "the", "and", "for", "with", "that", "this", "from", "into", "please", "can", "you",
+            "could", "would", "should", "make", "create", "build", "fix", "update", "improve",
+            "agent", "task", "done", "here", "there", "about", "after", "before", "using",
+        )
+        val words = source
+            .split(' ')
+            .map { it.trim() }
+            .filter { it.length > 2 && it.lowercase() !in stopWords }
+            .distinctBy { it.lowercase() }
+            .take(5)
+        val fallback = prompt.replace(Regex("\\s+"), " ").trim().take(42).ifBlank { "Agent Task" }
+        if (words.isEmpty()) return fallback
+        return words.joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { it.uppercaseChar() }
+        }.take(42)
     }
 
     private fun ensureAgentMessage(runState: ConversationRunState, items: MutableList<ChatItem>): String {

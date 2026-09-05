@@ -6,6 +6,9 @@ import com.clawdroid.app.BuildConfig
 import com.clawdroid.app.core.agent.AgentConfig
 import com.clawdroid.app.core.agent.AgentConfigLoader
 import com.clawdroid.app.core.agent.ChannelConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 object AppConfigManager {
     private const val PREFS = "clawdroid_config"
@@ -16,9 +19,12 @@ object AppConfigManager {
     private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
     private var prefs: SharedPreferences? = null
+    private val _appThemeFlow = MutableStateFlow("dark")
+    val appThemeFlow: StateFlow<String> = _appThemeFlow.asStateFlow()
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        _appThemeFlow.value = appTheme
     }
 
     private val p: SharedPreferences get() = prefs!!
@@ -51,6 +57,14 @@ object AppConfigManager {
 
     val isOnboardingComplete: Boolean
         get() = p.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+
+    var hasSeenHatching: Boolean
+        get() = p.getBoolean("has_seen_hatching", false)
+        set(value) = p.edit().putBoolean("has_seen_hatching", value).apply()
+
+    var hasCompletedPostHatchIntro: Boolean
+        get() = p.getBoolean("has_completed_post_hatch_intro", false)
+        set(value) = p.edit().putBoolean("has_completed_post_hatch_intro", value).apply()
 
     fun save(baseUrl: String, apiKey: String, model: String) {
         p.edit()
@@ -154,6 +168,73 @@ object AppConfigManager {
     var ultraAgentEnabled: Boolean
         get() = p.getBoolean(KEY_ULTRA_AGENT_ENABLED, false)
         set(value) = p.edit().putBoolean(KEY_ULTRA_AGENT_ENABLED, value).apply()
+
+    var agentBehaviorMode: String
+        get() = p.getString("agent_behavior_mode", "balanced") ?: "balanced"
+        set(value) = p.edit().putString("agent_behavior_mode", value).apply()
+
+    var approvalMode: String
+        get() = p.getString("approval_mode", "default") ?: "default"
+        set(value) = p.edit().putString("approval_mode", value).apply()
+
+    var appTheme: String
+        get() = p.getString("app_theme", "dark") ?: "dark"
+        set(value) {
+            p.edit().putString("app_theme", value).apply()
+            _appThemeFlow.value = value
+        }
+
+    var dynamicThinkingEnabled: Boolean
+        get() = p.getBoolean("dynamic_thinking_enabled", true)
+        set(value) = p.edit().putBoolean("dynamic_thinking_enabled", value).apply()
+
+    var promptEnhancementEnabled: Boolean
+        get() = p.getBoolean("prompt_enhancement_enabled", true)
+        set(value) = p.edit().putBoolean("prompt_enhancement_enabled", value).apply()
+
+    var emojiToneEnabled: Boolean
+        get() = p.getBoolean("emoji_tone_enabled", true)
+        set(value) = p.edit().putBoolean("emoji_tone_enabled", value).apply()
+
+    var mcpEnabled: Boolean
+        get() = p.getBoolean("mcp_enabled", true)
+        set(value) = p.edit().putBoolean("mcp_enabled", value).apply()
+
+    var mcpSandboxOnly: Boolean
+        get() = p.getBoolean("mcp_sandbox_only", true)
+        set(value) = p.edit().putBoolean("mcp_sandbox_only", value).apply()
+
+    var mcpServerList: String
+        get() = p.getString("mcp_server_list", "[]") ?: "[]"
+        set(value) = p.edit().putString("mcp_server_list", value).apply()
+
+    var mcpServers: String
+        get() = p.getString("mcp_servers", "") ?: ""
+        set(value) = p.edit().putString("mcp_servers", value).apply()
+
+    var skillStoreEnabled: Boolean
+        get() = p.getBoolean("skill_store_enabled", true)
+        set(value) = p.edit().putBoolean("skill_store_enabled", value).apply()
+
+    var agentsMd: String
+        get() = p.getString("agents_md", "") ?: ""
+        set(value) = p.edit().putString("agents_md", value).apply()
+
+    var soulMd: String
+        get() = p.getString("soul_md", "") ?: ""
+        set(value) = p.edit().putString("soul_md", value).apply()
+
+    var toolsMd: String
+        get() = p.getString("tools_md", "") ?: ""
+        set(value) = p.edit().putString("tools_md", value).apply()
+
+    var skillMd: String
+        get() = p.getString("skill_md", "") ?: ""
+        set(value) = p.edit().putString("skill_md", value).apply()
+
+    var claudeMd: String
+        get() = p.getString("claude_md", "") ?: ""
+        set(value) = p.edit().putString("claude_md", value).apply()
 
     // Skills & Channels Integration Configuration
     const val KEY_ACTIVE_PROJECT_ID = "active_project_id"

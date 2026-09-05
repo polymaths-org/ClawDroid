@@ -3,6 +3,7 @@ package com.clawdroid.app.core.assistant
 import android.content.Context
 import android.util.Log
 import com.clawdroid.app.core.assistant.overlay.AssistantOverlayCoordinator
+import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.AgentRunEvent
 import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.data.api.ToolSchemaRegistry
@@ -88,13 +89,23 @@ object AssistantInvocationRouter {
         }
         activeJob = job
 
+        val visiblePrompt = invocation.userText?.takeIf { it.isNotBlank() }
+            ?: "Wait for the user's instruction about this screen."
+        val executionPrompt = if (AppConfigManager.promptEnhancementEnabled) {
+            invocation.toSharedAgentPrompt()
+        } else {
+            visiblePrompt
+        }
+
         AgentRunManager.startRun(
             context = context.applicationContext,
             conversationId = conversationId,
-            prompt = invocation.toSharedAgentPrompt(),
+            prompt = executionPrompt,
             mediaPath = null,
             mediaMimeType = null,
             toolsOverride = ToolSchemaRegistry.overlayTools(),
+            displayPrompt = visiblePrompt,
+            hidePromptInChat = executionPrompt != visiblePrompt,
         )
     }
 
@@ -123,17 +134,21 @@ object AssistantInvocationRouter {
             }
             is AgentRunEvent.ToolCallRequested -> {
                 Log.i(TAG, "event ToolCallRequested id=$invocationId tool=${event.call.name} callId=${event.call.id}")
+                AssistantOverlayCoordinator.updateStatus(overlayStatusForTool(event.call.name))
+                AssistantOverlayCoordinator.recordAction(overlayActionForTool(event.call.name, event.call.arguments))
             }
             is AgentRunEvent.ToolCallStreaming -> {
                 Log.d(TAG, "event ToolCallStreaming id=$invocationId tool=${event.name} callId=${event.callId} argsLen=${event.arguments.length}")
-                AssistantOverlayCoordinator.updateStatus("Doing: ${event.name}")
+                AssistantOverlayCoordinator.updateStatus(overlayStatusForTool(event.name))
             }
             is AgentRunEvent.ToolOutputUpdated -> {
                 Log.d(TAG, "event ToolOutputUpdated id=$invocationId callId=${event.callId} len=${event.output.length}")
+                AssistantOverlayCoordinator.updateProgress(event.output)
             }
             is AgentRunEvent.ToolResultReceived -> {
                 Log.i(TAG, "event ToolResultReceived id=$invocationId callId=${event.result.callId} isError=${event.result.isError} len=${event.result.content.length}")
                 AssistantOverlayCoordinator.updateStatus("Thinking...")
+                AssistantOverlayCoordinator.recordAction(if (event.result.isError) "Tool returned an error" else "Tool finished")
             }
             is AgentRunEvent.SteeringApplied -> {
                 Log.i(TAG, "event SteeringApplied id=$invocationId len=${event.message.length}")
@@ -165,6 +180,61 @@ object AssistantInvocationRouter {
         }
     }
 
+    private fun overlayStatusForTool(name: String): String {
+        return when (name) {
+            "get_screen", "screenshot" -> "Capturing screen"
+            "open_app", "launch_app" -> "Opening app"
+            "tap", "tap_text", "tap_resource_id" -> "Clicking"
+            "swipe", "scroll" -> "Scrolling"
+            "type_text", "clear_text" -> "Typing"
+            "press_key", "press_back", "press_home", "press_recents" -> "Pressing key"
+            "perform_android_actions" -> "Acting on screen"
+            "send_message_in_current_chat" -> "Sending message"
+            "wait" -> "Waiting for UI"
+            "execute_command", "start_process" -> "Running command"
+            "read_file", "write_file", "edit_file" -> "Updating files"
+            else -> "Working"
+        }
+    }
+
+    private fun overlayActionForTool(name: String, arguments: String): String {
+        return when (name) {
+            "get_screen" -> "Capture screen tree"
+            "screenshot" -> "Capture screenshot"
+            "open_app", "launch_app" -> {
+                val pkg = runCatching { org.json.JSONObject(arguments).optString("package_name") }.getOrNull().orEmpty()
+                if (pkg.isBlank()) "Open app" else "Open $pkg"
+            }
+            "tap" -> "Click screen coordinates"
+            "tap_text" -> {
+                val label = runCatching { org.json.JSONObject(arguments).optString("label") }.getOrNull().orEmpty()
+                if (label.isBlank()) "Click text" else "Click \"$label\""
+            }
+            "tap_resource_id" -> "Click UI element"
+            "swipe" -> "Swipe screen"
+            "scroll" -> "Scroll screen"
+            "type_text" -> "Type into field"
+            "clear_text" -> "Clear field"
+            "press_back" -> "Press Back"
+            "press_home" -> "Press Home"
+            "press_recents" -> "Open Recents"
+            "perform_android_actions" -> {
+                val count = runCatching {
+                    org.json.JSONObject(arguments).optJSONArray("actions")?.length() ?: 0
+                }.getOrDefault(0)
+                if (count > 0) "Run $count screen actions" else "Run screen actions"
+            }
+            "send_message_in_current_chat" -> "Send chat message"
+            "wait" -> "Wait for UI"
+            "execute_command" -> "Run Linux command"
+            "start_process" -> "Start process"
+            "read_file" -> "Read file"
+            "write_file" -> "Write file"
+            "edit_file" -> "Edit file"
+            else -> name.split('_').joinToString(" ") { it.replaceFirstChar { c -> c.uppercaseChar() } }
+        }
+    }
+
     private fun AssistantInvocation.toSharedAgentPrompt(): String {
         val userInstruction = userText?.takeIf { it.isNotBlank() } ?: "Wait for the user's instruction about this screen."
         val packageHint = contextSnapshot?.sourcePackage ?: "unknown"
@@ -172,6 +242,8 @@ object AssistantInvocationRouter {
         return buildString {
             appendLine("You were opened as an Android assistant overlay on top of the user's current app.")
             appendLine("Use the same Android control tools and workflow you normally use in the ClawDroid app.")
+            appendLine("The floating ClawDroid widget stays visible while you work. It is your status UI, not the target app UI.")
+            appendLine("If the widget appears in screen captures, ignore it and do not tap it unless the user asks.")
             appendLine("Current app package: $packageHint")
             appendLine("Current app activity: $activityHint")
             appendLine("If the user asks to send a specific message in the current chat, use send_message_in_current_chat first.")

@@ -23,10 +23,22 @@ import com.clawdroid.app.core.service.ServiceManager
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.clawdroid.app.ui.chat.ChatScreen
+import com.clawdroid.app.ui.settings.AgentConfigScreen
+import com.clawdroid.app.ui.settings.AudioConfigScreen
+import com.clawdroid.app.ui.settings.AutomationsConfigScreen
+import com.clawdroid.app.ui.settings.ChannelsConfigScreen
+import com.clawdroid.app.ui.settings.ConfigEditorScreen
+import com.clawdroid.app.ui.settings.ConfigFileType
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.McpScreen
+import com.clawdroid.app.ui.settings.PermissionManagerScreen
+import com.clawdroid.app.ui.settings.SkillsConfigScreen
+import com.clawdroid.app.ui.settings.ThemeConfigScreen
 import com.clawdroid.app.ui.setup.SetupScreen
+import com.clawdroid.app.ui.setup.PostSetupScreen
+import com.clawdroid.app.ui.splash.HatchingScreen
 import com.clawdroid.app.ui.splash.SplashScreen
+import com.clawdroid.app.ui.terminal.TerminalScreen
 import com.clawdroid.app.ui.theme.ClawDroidTheme
 
 class MainActivity : ComponentActivity() {
@@ -73,6 +85,16 @@ class MainActivity : ComponentActivity() {
         handleDeepLink(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        NotificationHelper.setAppVisible(true)
+    }
+
+    override fun onStop() {
+        NotificationHelper.setAppVisible(false)
+        super.onStop()
+    }
+
     private fun handleDeepLink(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme == "clawdroid") {
@@ -105,7 +127,24 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Screen { Splash, Setup, Chat, Settings, Mcp }
+enum class Screen {
+    Splash,
+    Setup,
+    Hatching,
+    PostSetup,
+    Chat,
+    Settings,
+    Audio,
+    Agent,
+    Automations,
+    Channels,
+    Skills,
+    Mcp,
+    Themes,
+    Permissions,
+    ConfigEditor,
+    Terminal,
+}
 
 @Composable
 private fun ClawDroidApp(
@@ -115,10 +154,19 @@ private fun ClawDroidApp(
     var currentScreen by remember {
         mutableStateOf(
             if (MainActivity.isFreshLaunch) Screen.Splash else {
-                if (AppConfigManager.isOnboardingComplete) Screen.Chat else Screen.Setup
+                if (AppConfigManager.isOnboardingComplete) {
+                    when {
+                        !AppConfigManager.hasSeenHatching -> Screen.Hatching
+                        !AppConfigManager.hasCompletedPostHatchIntro -> Screen.PostSetup
+                        else -> Screen.Chat
+                    }
+                } else {
+                    Screen.Setup
+                }
             }
         )
     }
+    var selectedConfigFileType by remember { mutableStateOf(ConfigFileType.AGENTS) }
 
     AnimatedContent(
         targetState = currentScreen,
@@ -133,7 +181,11 @@ private fun ClawDroidApp(
                     onSplashComplete = {
                         MainActivity.isFreshLaunch = false
                         currentScreen = if (AppConfigManager.isOnboardingComplete) {
-                            Screen.Chat
+                            when {
+                                !AppConfigManager.hasSeenHatching -> Screen.Hatching
+                                !AppConfigManager.hasCompletedPostHatchIntro -> Screen.PostSetup
+                                else -> Screen.Chat
+                            }
                         } else {
                             Screen.Setup
                         }
@@ -143,22 +195,66 @@ private fun ClawDroidApp(
 
             Screen.Setup -> {
                 SetupScreen(
-                    onSetupComplete = { currentScreen = Screen.Chat },
+                    onSetupComplete = { currentScreen = Screen.Hatching },
                 )
             }
 
-            Screen.Settings -> {
-                SettingsScreen(onBack = { currentScreen = Screen.Chat })
+            Screen.Hatching -> {
+                HatchingScreen(onComplete = { currentScreen = Screen.PostSetup })
             }
 
-            Screen.Mcp -> {
-                McpScreen(onBack = { currentScreen = Screen.Chat })
+            Screen.PostSetup -> {
+                PostSetupScreen(onComplete = { currentScreen = Screen.Chat })
             }
+
+            Screen.Settings -> {
+                SettingsScreen(
+                    onBack = { currentScreen = Screen.Chat },
+                    onNavigateToAudio = { currentScreen = Screen.Audio },
+                    onNavigateToAutomations = { currentScreen = Screen.Automations },
+                    onNavigateToChannels = { currentScreen = Screen.Channels },
+                    onNavigateToSkills = { currentScreen = Screen.Skills },
+                    onNavigateToMcp = { currentScreen = Screen.Mcp },
+                    onNavigateToAgentConfig = { currentScreen = Screen.Agent },
+                    onNavigateToThemes = { currentScreen = Screen.Themes },
+                    onNavigateToPermissions = { currentScreen = Screen.Permissions },
+                    onNavigateToConfigEditor = {
+                        selectedConfigFileType = it
+                        currentScreen = Screen.ConfigEditor
+                    },
+                )
+            }
+
+            Screen.Audio -> AudioConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Agent -> AgentConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Automations -> AutomationsConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Channels -> ChannelsConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Skills -> SkillsConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Mcp -> {
+                McpScreen(onBack = { currentScreen = Screen.Settings })
+            }
+
+            Screen.Themes -> ThemeConfigScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.Permissions -> PermissionManagerScreen(onBack = { currentScreen = Screen.Settings })
+
+            Screen.ConfigEditor -> ConfigEditorScreen(
+                fileType = selectedConfigFileType,
+                onBack = { currentScreen = Screen.Settings },
+            )
+
+            Screen.Terminal -> TerminalScreen(onBack = { currentScreen = Screen.Chat })
 
             Screen.Chat -> {
                 ChatScreen(
                     onNavigateToSettings = { currentScreen = Screen.Settings },
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
+                    onNavigateToTerminal = { currentScreen = Screen.Terminal },
                     startVoiceTrigger = startVoiceTrigger,
                     onVoiceTriggerHandled = onVoiceTriggerHandled
                 )
