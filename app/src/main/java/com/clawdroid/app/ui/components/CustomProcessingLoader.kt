@@ -22,10 +22,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.clawdroid.app.ui.theme.ActivePurple
-import com.clawdroid.app.ui.theme.AstraPrimary
-import com.clawdroid.app.ui.theme.MutedGray
-import com.clawdroid.app.ui.theme.SoftWhite
 import kotlinx.coroutines.delay
 
 @Composable
@@ -33,6 +29,10 @@ fun CustomProcessingLoader(
     modifier: Modifier = Modifier,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "loader_anim")
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
     var phraseIndex by remember { mutableIntStateOf(0) }
     val phrases = remember {
         listOf(
@@ -104,8 +104,8 @@ fun CustomProcessingLoader(
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        ActivePurple.copy(alpha = 0.2f * glowPulse),
-                        AstraPrimary.copy(alpha = 0.05f * glowPulse),
+                        primary.copy(alpha = 0.2f * glowPulse),
+                        secondary.copy(alpha = 0.05f * glowPulse),
                         Color.Transparent
                     ),
                     center = center,
@@ -116,7 +116,7 @@ fun CustomProcessingLoader(
 
             // 2. Faint background circular track
             drawCircle(
-                color = ActivePurple.copy(alpha = 0.08f),
+                color = primary.copy(alpha = 0.08f),
                 radius = outerRadius,
                 style = Stroke(width = 3.dp.toPx())
             )
@@ -126,9 +126,9 @@ fun CustomProcessingLoader(
                 drawArc(
                     brush = Brush.sweepGradient(
                         colors = listOf(
-                            ActivePurple.copy(alpha = 0.1f),
-                            ActivePurple,
-                            ActivePurple.copy(alpha = 0.1f)
+                            primary.copy(alpha = 0.1f),
+                            primary,
+                            primary.copy(alpha = 0.1f)
                         ),
                         center = center
                     ),
@@ -141,7 +141,7 @@ fun CustomProcessingLoader(
 
             // 4. Soft breathing center indicator dot
             drawCircle(
-                color = ActivePurple,
+                color = primary,
                 radius = centerDotRadius.dp.toPx(),
                 center = center
             )
@@ -152,14 +152,14 @@ fun CustomProcessingLoader(
                 text = phrases[phraseIndex].first,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = FontWeight.SemiBold,
-                    color = SoftWhite,
+                    color = onSurface,
                     letterSpacing = 0.sp
                 )
             )
             Text(
                 text = phrases[phraseIndex].second,
                 style = MaterialTheme.typography.bodySmall.copy(
-                    color = MutedGray.copy(alpha = 0.7f)
+                    color = onVariant.copy(alpha = 0.7f)
                 )
             )
         }

@@ -1,7 +1,9 @@
 package com.clawdroid.app.core.control
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -9,6 +11,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object AndroidControlTools {
+
+    private const val TAG = "AndroidControlTools"
 
     private val screenControlToolNames = setOf(
         "get_screen", "tap", "tap_text", "tap_resource_id", "long_press", "swipe",
@@ -126,10 +130,45 @@ object AndroidControlTools {
         successResult("opened_notifications", service.openNotifications())
     }
 
-    fun launchApp(packageName: String): JSONObject = runToolSync {
-        val service = requireService() ?: return@runToolSync serviceNotRunning()
-        val ok = service.launchApp(packageName)
-        successResult("launched", ok).put("package_name", packageName)
+    fun launchApp(packageName: String, appContext: Context? = null): JSONObject = runToolSync {
+        Log.i(TAG, "launchApp package=$packageName appContext=$appContext")
+
+        // Method 1: AccessibilityService (has background start privileges)
+        val service = ScreenReaderService.instance
+        if (service != null) {
+            Log.i(TAG, "launchApp: trying accessibility service")
+            val ok = service.launchApp(packageName)
+            if (ok) {
+                Log.i(TAG, "launchApp: success via accessibility service")
+                return@runToolSync buildResult("launched", true, packageName, "accessibility_service")
+            }
+            Log.w(TAG, "launchApp: accessibility service launch returned false")
+        } else {
+            Log.w(TAG, "launchApp: ScreenReaderService.instance is null")
+        }
+
+        // Method 2: Application context (works if app is in foreground)
+        if (appContext != null) {
+            Log.i(TAG, "launchApp: trying application context")
+            try {
+                val intent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    setPackage(packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                }
+                appContext.startActivity(intent)
+                Log.i(TAG, "launchApp: success via application context")
+                return@runToolSync buildResult("launched", true, packageName, "app_context")
+            } catch (e: Exception) {
+                Log.w(TAG, "launchApp: application context threw: ${e.message}")
+            }
+        }
+
+        Log.e(TAG, "launchApp: all methods failed for $packageName")
+        errorResult(
+            "app_not_launched",
+            "Could not launch app '$packageName'. All methods failed.",
+        ).put("package_name", packageName)
     }
 
     suspend fun getInstalledApps(context: Context): JSONObject = withContext(Dispatchers.Default) {
@@ -362,6 +401,12 @@ object AndroidControlTools {
     private fun successResult(action: String, ok: Boolean): JSONObject = JSONObject()
         .put("success", ok)
         .put("action", action)
+
+    private fun buildResult(action: String, ok: Boolean, packageName: String, method: String): JSONObject = JSONObject()
+        .put("success", ok)
+        .put("action", action)
+        .put("package_name", packageName)
+        .put("method", method)
 
     private fun errorResult(error: String, message: String): JSONObject = JSONObject()
         .put("success", false)

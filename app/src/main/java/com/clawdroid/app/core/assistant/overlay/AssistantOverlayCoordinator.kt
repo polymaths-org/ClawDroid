@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.clawdroid.app.core.assistant.AssistantInvocation
 import com.clawdroid.app.core.assistant.AssistantInvocationRouter
 import com.clawdroid.app.core.assistant.AssistantMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
 object AssistantOverlayCoordinator {
@@ -118,11 +119,22 @@ object AssistantOverlayCoordinator {
         settleMs: Long,
         block: suspend () -> T,
     ): T {
-        Log.i(TAG, "withOverlayHidden bypassed reason=$reason keepVisible=${visible.value} settleMs=$settleMs currentId=${currentInvocation.value?.id}")
-        if (currentInvocation.value != null) {
-            visible.value = true
+        val wasVisible = visible.value
+        if (wasVisible) {
+            Log.i(TAG, "hiding overlay for reason=$reason settleMs=${settleMs}ms")
+            visible.value = false
+            delay(settleMs)
+        } else {
+            Log.d(TAG, "overlay already hidden, skipping hide for reason=$reason")
         }
-        return block()
+        return try {
+            block()
+        } finally {
+            if (wasVisible && currentInvocation.value != null) {
+                Log.i(TAG, "restoring overlay after reason=$reason")
+                visible.value = true
+            }
+        }
     }
 
     @Composable
@@ -168,7 +180,7 @@ object AssistantOverlayCoordinator {
                     runCatching {
                         context.stopService(Intent(context, OverlayWindowService::class.java))
                     }
-                }
+                },
             )
         }
     }
