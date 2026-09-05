@@ -38,12 +38,24 @@ object LocalPromptTools {
      * PocketPal-style tool compression. Raw file JSON with absolute
      * /data/user/0/... paths makes a 0.6B model copy JSON verbatim into chat
      * (see screenshots). Summarize to names-only so the model can answer.
+     * Also compresses get_screen UI trees and command output, which otherwise
+     * fill the 2K window with truncated mid-JSON garbage.
      */
     fun summarizeToolResult(raw: String): String {
         var s = raw.orEmpty()
-        // Common case: list_directory JSON with entries array.
         try {
             val obj = org.json.JSONObject(s)
+            if (obj.has("error")) {
+                val err = obj.optString("error").take(200)
+                val msg = obj.optString("message").take(300)
+                var out = if (msg.isNotEmpty()) "Error $err: $msg" else "Error: $err"
+                if (err.contains("File not found", ignoreCase = true) ||
+                    msg.contains("File not found", ignoreCase = true)
+                ) {
+                    out += " Filenames are case-sensitive. Call list_directory first."
+                }
+                return out.take(800)
+            }
             if (obj.has("entries")) {
                 val arr = obj.optJSONArray("entries")
                 if (arr != null) {
@@ -55,6 +67,32 @@ object LocalPromptTools {
                     if (names.isNotEmpty()) return "Files: " + names.joinToString(", ")
                 }
             }
+            if (obj.has("apps")) {
+                val arr = obj.optJSONArray("apps")
+                if (arr != null) {
+                    val names = buildList {
+                        for (i in 0 until arr.length().coerceAtMost(30)) {
+                            add(arr.optJSONObject(i)?.optString("name").orEmpty())
+                        }
+                    }.filter { it.isNotEmpty() }
+                    if (names.isNotEmpty()) return "Apps: " + names.joinToString(", ")
+                }
+            }
+            if (obj.has("output")) {
+                val code = obj.optInt("exit_code", 0)
+                val out = obj.optString("output").take(700)
+                return "exit $code: $out"
+            }
+            // get_screen tree / both / verification wrappers.
+            val tree = when {
+                obj.optJSONObject("data")?.has("nodes") == true -> obj.optJSONObject("data")
+                obj.optJSONObject("tree")?.has("nodes") == true -> obj.optJSONObject("tree")
+                obj.has("nodes") -> obj
+                obj.optJSONObject("verification")?.optJSONObject("tree")?.has("nodes") == true ->
+                    obj.optJSONObject("verification")?.optJSONObject("tree")
+                else -> null
+            }
+            if (tree != null) return summarizeScreenTree(tree).take(800)
             if (obj.has("content")) {
                 val c = obj.optString("content")
                 if (c.isNotEmpty()) return c.take(800)
@@ -63,6 +101,44 @@ object LocalPromptTools {
         s = s.replace("/data/user/0/com.clawdroid.app/files/home/", "")
             .replace("/data/data/com.clawdroid.app/files/home/", "")
         return s.take(800)
+    }
+
+    internal fun summarizeScreenTree(tree: org.json.JSONObject): String {
+        val pkg = tree.optString("package").takeIf { it.isNotEmpty() && it != "null" }
+        val nodes = tree.optJSONArray("nodes") ?: return "Empty screen."
+        val texts = mutableListOf<String>()
+        val clickables = mutableListOf<String>()
+        for (i in 0 until nodes.length()) {
+            if (texts.size >= 20 && clickables.size >= 10) break
+            val n = nodes.optJSONObject(i) ?: continue
+            val label = n.optString("text").ifBlank { n.optString("contentDescription") }.trim()
+            if (label.isEmpty() || label.length > 60) continue
+            if (n.optBoolean("isClickable", false)) {
+                if (clickables.size < 10 && label !in clickables) clickables.add(label)
+            } else {
+                if (texts.size < 20 && label !in texts) texts.add(label)
+            }
+        }
+        if (texts.isEmpty() && clickables.isEmpty()) return "Empty screen."
+        return buildString {
+            if (pkg != null) append("App $pkg. ")
+            if (texts.isNotEmpty()) append("Texts: ${texts.joinToString(" | ")}. ")
+            if (clickables.isNotEmpty()) append("Clickable: ${clickables.joinToString(" | ")}.")
+        }.trim()
+    }
+
+    fun stripRolePrefix(text: String): String {
+        return text.replace(
+            Regex("^(\\s*(Assistant|User|Tool result|System)\\s*:\\s*)+", RegexOption.IGNORE_CASE),
+            "",
+        ).trim()
+    }
+
+    fun isCompactionNoise(content: String): Boolean {
+        if (content.contains("[Compacted Summary]")) return true
+        if (content.contains("Previous conversation summary:")) return true
+        if (content.contains("highly efficient text summarization agent", ignoreCase = true)) return true
+        return false
     }
 
     fun duplicateReminder(toolName: String): String {
@@ -126,6 +202,9 @@ Otherwise reply with plain text only. Keep replies short."""
         return ",\"args\":\"${names.joinToString(",")}\""
     }
 
+    const val LOCAL_SYSTEM = "You are Nova, on-device Android agent. Answer briefly from Tool results. " +
+        "Filenames are case-sensitive (SYSTEM.md != system.md). List directory before reading when unsure."
+
     fun buildPrompt(
         messages: List<ChatMessage>,
         tools: JSONArray?,
@@ -133,10 +212,7 @@ Otherwise reply with plain text only. Keep replies short."""
         workingDir: String? = null,
     ): String {
         val sb = StringBuilder()
-        val systems = messages.filter { it.role == "system" }.mapNotNull { it.content }
-        if (systems.isNotEmpty()) {
-            sb.append(systems.joinToString("\n\n").take(MAX_SYSTEM_CHARS)).append("\n\n")
-        }
+        sb.append(LOCAL_SYSTEM).append("\n\n")
         val toolSpecs = renderTools(tools, allowlist)
         if (toolSpecs.isNotEmpty()) {
             sb.append(TOOL_PREAMBLE).append(toolSpecs).append(TOOL_SUFFIX).append("\n\n")
@@ -145,7 +221,10 @@ Otherwise reply with plain text only. Keep replies short."""
             sb.append("Working directory: $workingDir\n")
                 .append("For file tools use relative paths or paths under it.\n\n")
         }
-        for (m in messages.filter { it.role != "system" }.takeLast(MAX_HISTORY)) {
+        val history = messages.filter { it.role != "system" }
+            .filter { m -> !isCompactionNoise(m.content.orEmpty()) }
+            .takeLast(MAX_HISTORY)
+        for (m in history) {
             when (m.role) {
                 "user" -> sb.append("User: ").append(m.content.orEmpty().take(MAX_MSG_CHARS)).append('\n')
                 "assistant" -> {
@@ -154,7 +233,8 @@ Otherwise reply with plain text only. Keep replies short."""
                             sb.append("Assistant tool call: ${c.name} ${c.arguments.take(500)}\n")
                         }
                     } else {
-                        sb.append("Assistant: ").append(stripThinking(m.content.orEmpty()).take(MAX_MSG_CHARS)).append('\n')
+                        val clean = stripRolePrefix(stripThinking(m.content.orEmpty())).take(MAX_MSG_CHARS)
+                        if (clean.isNotEmpty()) sb.append("Assistant: ").append(clean).append('\n')
                     }
                 }
                 "tool" -> sb.append("Tool result: ").append(summarizeToolResult(m.content.orEmpty()).take(MAX_MSG_CHARS)).append('\n')

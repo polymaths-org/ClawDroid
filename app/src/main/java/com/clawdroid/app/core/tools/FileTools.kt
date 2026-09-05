@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
 
 object ReadFileTool {
     suspend fun execute(context: Context, path: String, startLine: Int?, endLine: Int?): JSONObject {
-        val file = resolveAgentPath(context, path)
+        val file = resolveAgentPath(context, path).let { resolveCaseInsensitive(it) ?: it }
         check(file.exists() && file.isFile) { "File not found: ${file.absolutePath}" }
         val lines = file.readLines()
         val from = ((startLine ?: 1) - 1).coerceAtLeast(0)
@@ -46,7 +46,7 @@ object WriteFileTool {
 
 object EditFileTool {
     suspend fun execute(context: Context, path: String, search: String, replace: String): JSONObject {
-        val file = resolveAgentPath(context, path)
+        val file = resolveAgentPath(context, path).let { resolveCaseInsensitive(it) ?: it }
         check(file.exists() && file.isFile) { "File not found: ${file.absolutePath}" }
         val original = file.readText()
         check(search in original) { "Search text was not found in ${file.absolutePath}" }
@@ -147,6 +147,14 @@ internal fun normalizeDataPath(rawPath: String, packageName: String, filesDirPat
     if (!rawPath.startsWith(alias)) return rawPath
     val filesDir = File(filesDirPath)
     return File(filesDir.parent, rawPath.removePrefix(alias)).absolutePath
+}
+
+/** Case-insensitive fallback: system.md vs SYSTEM.md on a case-sensitive FS. */
+internal fun resolveCaseInsensitive(file: File): File? {
+    if (file.exists()) return file
+    val parent = file.parentFile ?: return null
+    val siblings = parent.listFiles() ?: return null
+    return siblings.firstOrNull { it.name.equals(file.name, ignoreCase = true) }
 }
 
 private suspend fun resolveAgentPath(context: Context, rawPath: String): File {

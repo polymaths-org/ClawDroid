@@ -329,11 +329,14 @@ class AgentEngine(
                 costDelta = costDelta
             )
 
-            // 7. Check if compaction is needed
+            // 7. Check if compaction is needed (skipped for on-device: tiny ctx
+            // would compact every turn, and the local model can't summarize).
             val postTurnMessages = contextBuilder.buildContext(conversationId)
-            val decision = compactionManager.shouldCompact(postTurnMessages)
-            if (decision.shouldCompact) {
-                compactionManager.compact(conversationId)
+            if (!client.isLocal) {
+                val decision = compactionManager.shouldCompact(postTurnMessages)
+                if (decision.shouldCompact) {
+                    compactionManager.compact(conversationId)
+                }
             }
 
             // 8. Exit loop if no tool calls were generated

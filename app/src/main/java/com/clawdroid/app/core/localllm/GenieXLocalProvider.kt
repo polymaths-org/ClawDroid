@@ -137,7 +137,9 @@ class GenieXLocalProvider(
         val toolCall = parseToolCall(raw)
         val thinking = LocalPromptTools.extractThinking(raw)
         if (thinking.isNotEmpty()) Log.d(TAG, "thinking len=${thinking.length}")
-        val visible = LocalPromptTools.stripThinking(LocalPromptTools.stripToolBlock(raw)).trim()
+        val visible = LocalPromptTools.stripRolePrefix(
+            LocalPromptTools.stripThinking(LocalPromptTools.stripToolBlock(raw)),
+        ).trim()
         // If the turn is only a tool call, show no chat bubble; the tool step covers it.
         // If text accompanies the call, show only that text.
         if (toolCall == null) {
