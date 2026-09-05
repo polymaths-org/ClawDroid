@@ -1,6 +1,8 @@
 package com.clawdroid.app.ui.settings
 
 import android.widget.Toast
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -62,13 +64,77 @@ fun McpScreen(
             .requestEmail()
             .requestScopes(
                 Scope("https://www.googleapis.com/auth/gmail.modify"),
-                Scope("https://www.googleapis.com/auth/calendar")
+                Scope("https://www.googleapis.com/auth/calendar"),
+                Scope("https://www.googleapis.com/auth/drive.file"),
+                Scope("https://www.googleapis.com/auth/documents")
             )
             .build()
     }
     
     val googleSignInClient = remember {
         GoogleSignIn.getClient(context, googleSignInOptions)
+    }
+
+    // GitHub Connector State
+    var isGithubConnected by remember { mutableStateOf(com.clawdroid.app.core.service.GithubAuthManager.isConnected) }
+    var githubUsername by remember { mutableStateOf("") }
+    var githubConnectorEnabled by remember { mutableStateOf(AppConfigManager.githubConnectorEnabled) }
+
+    LaunchedEffect(isGithubConnected) {
+        if (isGithubConnected) {
+            githubUsername = com.clawdroid.app.core.service.GithubAuthManager.fetchUsername() ?: "Connected"
+        }
+    }
+
+    // Notion Connector State
+    var isNotionConnected by remember { mutableStateOf(com.clawdroid.app.core.service.NotionAuthManager.isConnected) }
+    var notionWorkspace by remember { mutableStateOf("") }
+    var notionConnectorEnabled by remember { mutableStateOf(AppConfigManager.notionConnectorEnabled) }
+
+    LaunchedEffect(isNotionConnected) {
+        if (isNotionConnected) {
+            notionWorkspace = com.clawdroid.app.core.service.NotionAuthManager.fetchWorkspaceName() ?: "Connected"
+        }
+    }
+
+    // Spotify Connector State
+    var isSpotifyConnected by remember { mutableStateOf(com.clawdroid.app.core.service.SpotifyAuthManager.isConnected) }
+    var spotifyUser by remember { mutableStateOf("") }
+    var spotifyConnectorEnabled by remember { mutableStateOf(AppConfigManager.spotifyConnectorEnabled) }
+
+    LaunchedEffect(isSpotifyConnected) {
+        if (isSpotifyConnected) {
+            spotifyUser = com.clawdroid.app.core.service.SpotifyAuthManager.fetchDisplayName() ?: "Connected"
+        }
+    }
+
+    // Reactive Lifecycle Observer to refresh connection states when user returns to foreground from OAuth browser
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isGoogleConnected = GoogleAuthManager.isGoogleConnected
+                googleEmail = AppConfigManager.googleAccountEmail
+                isGithubConnected = com.clawdroid.app.core.service.GithubAuthManager.isConnected
+                isNotionConnected = com.clawdroid.app.core.service.NotionAuthManager.isConnected
+                isSpotifyConnected = com.clawdroid.app.core.service.SpotifyAuthManager.isConnected
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            isGoogleConnected = GoogleAuthManager.isGoogleConnected
+            googleEmail = AppConfigManager.googleAccountEmail
+            isGithubConnected = com.clawdroid.app.core.service.GithubAuthManager.isConnected
+            isNotionConnected = com.clawdroid.app.core.service.NotionAuthManager.isConnected
+            isSpotifyConnected = com.clawdroid.app.core.service.SpotifyAuthManager.isConnected
+        }
     }
 
     val signInLauncher = rememberLauncherForActivityResult(
@@ -226,6 +292,81 @@ fun McpScreen(
                             isGoogleConnected = false
                             googleEmail = ""
                             Toast.makeText(context, "Google Account Disconnected", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+
+                // GitHub Connector Card
+                item {
+                    val githubClientId = com.clawdroid.app.BuildConfig.GITHUB_OAUTH_CLIENT_ID
+                    GithubConnectorCard(
+                        isConnected = isGithubConnected,
+                        username = githubUsername,
+                        connectorEnabled = githubConnectorEnabled,
+                        onConnectorToggle = { enabled ->
+                            AppConfigManager.githubConnectorEnabled = enabled
+                            githubConnectorEnabled = enabled
+                        },
+                        onConnect = {
+                            val authUrl = "https://github.com/login/oauth/authorize?client_id=$githubClientId&redirect_uri=clawdroid://github-auth&scope=repo%20read:user"
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                            context.startActivity(browserIntent)
+                        },
+                        onDisconnect = {
+                            com.clawdroid.app.core.service.GithubAuthManager.disconnect()
+                            isGithubConnected = false
+                            githubUsername = ""
+                            Toast.makeText(context, "GitHub Account Disconnected", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+
+                // Notion Connector Card
+                item {
+                    val notionClientId = com.clawdroid.app.BuildConfig.NOTION_OAUTH_CLIENT_ID
+                    NotionConnectorCard(
+                        isConnected = isNotionConnected,
+                        workspace = notionWorkspace,
+                        connectorEnabled = notionConnectorEnabled,
+                        onConnectorToggle = { enabled ->
+                            AppConfigManager.notionConnectorEnabled = enabled
+                            notionConnectorEnabled = enabled
+                        },
+                        onConnect = {
+                            val authUrl = "https://api.notion.com/v1/oauth/authorize?client_id=$notionClientId&response_type=code&owner=user&redirect_uri=clawdroid://notion-auth"
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                            context.startActivity(browserIntent)
+                        },
+                        onDisconnect = {
+                            com.clawdroid.app.core.service.NotionAuthManager.disconnect()
+                            isNotionConnected = false
+                            notionWorkspace = ""
+                            Toast.makeText(context, "Notion Account Disconnected", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+
+                // Spotify Connector Card
+                item {
+                    val spotifyClientId = com.clawdroid.app.BuildConfig.SPOTIFY_OAUTH_CLIENT_ID
+                    SpotifyConnectorCard(
+                        isConnected = isSpotifyConnected,
+                        username = spotifyUser,
+                        connectorEnabled = spotifyConnectorEnabled,
+                        onConnectorToggle = { enabled ->
+                            AppConfigManager.spotifyConnectorEnabled = enabled
+                            spotifyConnectorEnabled = enabled
+                        },
+                        onConnect = {
+                            val authUrl = "https://accounts.spotify.com/authorize?client_id=$spotifyClientId&response_type=code&redirect_uri=clawdroid://spotify-auth&scope=user-read-currently-playing%20playlist-read-private%20playlist-modify-private"
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                            context.startActivity(browserIntent)
+                        },
+                        onDisconnect = {
+                            com.clawdroid.app.core.service.SpotifyAuthManager.disconnect()
+                            isSpotifyConnected = false
+                            spotifyUser = ""
+                            Toast.makeText(context, "Spotify Account Disconnected", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -873,3 +1014,405 @@ data class McpServerItem(
     val args: List<String>,
     val env: Map<String, String>
 )
+
+@Composable
+private fun GithubConnectorCard(
+    isConnected: Boolean,
+    username: String,
+    connectorEnabled: Boolean,
+    onConnectorToggle: (Boolean) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            if (isConnected && connectorEnabled) Color(0xFF24292E).copy(alpha = 0.15f) else Color.DarkGray.copy(alpha = 0.3f),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Code,
+                        contentDescription = "GitHub Logo",
+                        tint = if (isConnected && connectorEnabled) SoftWhite else MutedGray,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "GitHub",
+                        color = SoftWhite,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isConnected) (if (username.isBlank() || username == "Connected") "Connected" else "@$username") else "Connect repositories & issues",
+                        color = if (isConnected) MutedGray else Color(0xFF808080),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (isConnected) {
+                    Switch(
+                        checked = connectorEnabled,
+                        onCheckedChange = onConnectorToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SoftWhite,
+                            checkedTrackColor = SoftWhite.copy(alpha = 0.4f),
+                            uncheckedThumbColor = MutedGray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.1f))
+                            .border(1.dp, Color.Red.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Offline",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            if (!isConnected) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24292E)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sign in with GitHub",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Disconnect Account",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotionConnectorCard(
+    isConnected: Boolean,
+    workspace: String,
+    connectorEnabled: Boolean,
+    onConnectorToggle: (Boolean) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            if (isConnected && connectorEnabled) Color.Black.copy(alpha = 0.15f) else Color.DarkGray.copy(alpha = 0.3f),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Description,
+                        contentDescription = "Notion Logo",
+                        tint = if (isConnected && connectorEnabled) SoftWhite else MutedGray,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Notion",
+                        color = SoftWhite,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isConnected) workspace else "Connect docs & databases",
+                        color = if (isConnected) MutedGray else Color(0xFF808080),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (isConnected) {
+                    Switch(
+                        checked = connectorEnabled,
+                        onCheckedChange = onConnectorToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SoftWhite,
+                            checkedTrackColor = SoftWhite.copy(alpha = 0.4f),
+                            uncheckedThumbColor = MutedGray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.1f))
+                            .border(1.dp, Color.Red.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Offline",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            if (!isConnected) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sign in with Notion",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Disconnect Account",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyConnectorCard(
+    isConnected: Boolean,
+    username: String,
+    connectorEnabled: Boolean,
+    onConnectorToggle: (Boolean) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Card(
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.95f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GlassBorderDim, shape)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(
+                            if (isConnected && connectorEnabled) Color(0xFF1DB954).copy(alpha = 0.15f) else Color.DarkGray.copy(alpha = 0.3f),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = "Spotify Logo",
+                        tint = if (isConnected && connectorEnabled) Color(0xFF1DB954) else MutedGray,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Spotify",
+                        color = SoftWhite,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isConnected) username else "Control playback & search music",
+                        color = if (isConnected) MutedGray else Color(0xFF1DB954),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (isConnected) {
+                    Switch(
+                        checked = connectorEnabled,
+                        onCheckedChange = onConnectorToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF1DB954),
+                            checkedTrackColor = Color(0xFF1DB954).copy(alpha = 0.4f),
+                            uncheckedThumbColor = MutedGray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.1f))
+                            .border(1.dp, Color.Red.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Offline",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            if (!isConnected) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sign in with Spotify",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Disconnect Account",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}

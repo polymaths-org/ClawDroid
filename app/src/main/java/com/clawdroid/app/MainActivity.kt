@@ -20,6 +20,8 @@ import com.clawdroid.app.core.automation.AutomationScheduler
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.service.ServiceManager
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.clawdroid.app.ui.chat.ChatScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.McpScreen
@@ -50,6 +52,8 @@ class MainActivity : ComponentActivity() {
             startVoiceSessionTrigger.value = true
         }
 
+        handleDeepLink(intent)
+
         setContent {
             ClawDroidTheme {
                 ClawDroidApp(
@@ -65,6 +69,38 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         if (intent.getBooleanExtra("START_VOICE_SESSION", false)) {
             startVoiceSessionTrigger.value = true
+        }
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "clawdroid") {
+            val code = uri.getQueryParameter("code")
+            if (code != null) {
+                lifecycleScope.launch {
+                    val host = uri.host
+                    val success = when (host) {
+                        "github-auth" -> com.clawdroid.app.core.service.GithubAuthManager.exchangeAuthCode(code)
+                        "notion-auth" -> com.clawdroid.app.core.service.NotionAuthManager.exchangeAuthCode(code)
+                        "spotify-auth" -> com.clawdroid.app.core.service.SpotifyAuthManager.exchangeAuthCode(code)
+                        else -> false
+                    }
+                    if (success) {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Connected to ${host?.replace("-auth", "")?.replaceFirstChar { it.uppercaseChar() }} successfully!",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Failed to exchange token for $host",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
         }
     }
 }

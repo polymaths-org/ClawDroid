@@ -12,6 +12,10 @@ val localProperties = Properties().apply {
     if (file.exists()) {
         file.inputStream().use(::load)
     }
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        envFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -33,10 +37,28 @@ android {
         val llmApiKey = localProperties.getProperty("LLM_API_KEY") ?: ""
         val llmProvider = localProperties.getProperty("LLM_PROVIDER") ?: "siliconflow"
 
+        val githubClientId = localProperties.getProperty("GITHUB_OAUTH_CLIENT_ID") ?: ""
+        val githubClientSecret = localProperties.getProperty("GITHUB_OAUTH_CLIENT_SECRET") ?: ""
+        val githubToken = localProperties.getProperty("GITHUB_OAUTH_TOKEN") 
+            ?: localProperties.getProperty("GITHUB_OAUTH_CLIENT_TOKEN") 
+            ?: ""
+        val notionClientId = localProperties.getProperty("NOTION_OAUTH_CLIENT_ID") ?: ""
+        val notionClientSecret = localProperties.getProperty("NOTION_OAUTH_CLIENT_SECRET") ?: ""
+        val spotifyClientId = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_ID") ?: ""
+        val spotifyClientSecret = localProperties.getProperty("SPOTIFY_OAUTH_CLIENT_SECRET") ?: ""
+
         buildConfigField("String", "LLM_BASE_URL", llmBaseUrl.asBuildConfigString())
         buildConfigField("String", "LLM_MODEL", llmModel.asBuildConfigString())
         buildConfigField("String", "LLM_API_KEY", llmApiKey.asBuildConfigString())
         buildConfigField("String", "LLM_PROVIDER", llmProvider.asBuildConfigString())
+
+        buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", githubClientId.asBuildConfigString())
+        buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", githubClientSecret.asBuildConfigString())
+        buildConfigField("String", "GITHUB_OAUTH_TOKEN", githubToken.asBuildConfigString())
+        buildConfigField("String", "NOTION_OAUTH_CLIENT_ID", notionClientId.asBuildConfigString())
+        buildConfigField("String", "NOTION_OAUTH_CLIENT_SECRET", notionClientSecret.asBuildConfigString())
+        buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_ID", spotifyClientId.asBuildConfigString())
+        buildConfigField("String", "SPOTIFY_OAUTH_CLIENT_SECRET", spotifyClientSecret.asBuildConfigString())
     }
 
     buildFeatures {
