@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.clawdroid.app.core.assistant.ClawVoiceInteractionSessionService"
+    android:recognitionService="com.clawdroid.app.core.assistant.voice.ClawRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLocalInteraction="true" />
