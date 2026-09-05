@@ -44,6 +44,7 @@ object AgentSmokeTester {
             when (event) {
                 is StreamEvent.TextDelta -> text.append(event.text)
                 is StreamEvent.ToolCallComplete -> calls += event.call
+                is StreamEvent.Usage -> Unit
                 is StreamEvent.Error -> error(event.message)
                 StreamEvent.Done -> Unit
             }
@@ -78,6 +79,7 @@ object AgentSmokeTester {
             when (event) {
                 is StreamEvent.TextDelta -> finalText.append(event.text)
                 is StreamEvent.ToolCallComplete -> Unit
+                is StreamEvent.Usage -> Unit
                 is StreamEvent.Error -> error(event.message)
                 StreamEvent.Done -> Unit
             }

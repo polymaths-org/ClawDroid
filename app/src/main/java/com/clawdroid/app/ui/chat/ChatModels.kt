@@ -25,10 +25,14 @@ data class ActivityChatItem(
 
 data class ActivityStepItem(
     val id: String = UUID.randomUUID().toString(),
+    val callId: String = "",
     val type: ActivityStepType,
     val summary: String,
     val detail: String,
+    val arguments: String = "",
+    val result: String? = null,
     val running: Boolean = false,
+    val isError: Boolean = false,
 )
 
 enum class ActivityStepType(val icon: String) {
