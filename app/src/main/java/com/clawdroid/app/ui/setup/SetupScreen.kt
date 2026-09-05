@@ -104,6 +104,7 @@ data class ProviderInfo(
 )
 
 private val providers = listOf(
+    ProviderInfo("siliconflow", "SiliconFlow", "🌸", "Access Kimi, Qwen, DeepSeek", "https://api.siliconflow.com/v1"),
     ProviderInfo("openrouter", "OpenRouter", "🌐", "Access 200+ models", "https://openrouter.ai/api/v1"),
     ProviderInfo("openai", "OpenAI", "🤖", "GPT-4o, o1, o3", "https://api.openai.com/v1"),
     ProviderInfo("groq", "Groq", "⚡", "Ultra-fast inference", "https://api.groq.com/openai/v1"),
@@ -118,6 +119,7 @@ private val providers = listOf(
 fun SetupScreen(
     onSetupComplete: () -> Unit,
 ) {
+    val context = LocalContext.current
     var step by remember { mutableIntStateOf(0) }
     if (step > 0) {
         BackHandler {
@@ -180,6 +182,7 @@ fun SetupScreen(
                         selectedProvider = provider
                         baseUrl = provider.defaultBaseUrl
                         model = when (provider.id) {
+                            "siliconflow" -> "moonshotai/Kimi-K2.6"
                             "openai" -> "gpt-4o"
                             "groq" -> "llama-3.3-70b-versatile"
                             "together" -> "meta-llama/Llama-3.3-70B-Instruct-Turbo"
@@ -243,6 +246,7 @@ fun SetupScreen(
                         AppConfigManager.agentPersonality = if (selectedPersonality == "Other") customPersonality.trim() else selectedPersonality
                         AppConfigManager.agentPurpose = if (selectedPurpose == "Other") customPurpose.trim() else selectedPurpose
                         AppConfigManager.agentVoiceProfile = selectedVoice
+                        AppConfigManager.syncToSandbox(context)
                         onSetupComplete()
                     },
                 )
