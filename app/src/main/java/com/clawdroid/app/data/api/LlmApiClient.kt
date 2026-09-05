@@ -1,6 +1,7 @@
 package com.clawdroid.app.data.api
 
 import com.clawdroid.app.BuildConfig
+import com.clawdroid.app.core.config.AppConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -45,9 +46,9 @@ sealed interface StreamEvent {
 }
 
 class LlmApiClient(
-    private val baseUrl: String = BuildConfig.LLM_BASE_URL.trimEnd('/'),
-    private val apiKey: String = BuildConfig.LLM_API_KEY,
-    private val model: String = BuildConfig.LLM_MODEL,
+    private val baseUrl: String = AppConfigManager.baseUrl,
+    private val apiKey: String = AppConfigManager.apiKey,
+    private val model: String = AppConfigManager.model,
 ) {
     fun streamChat(
         messages: List<ChatMessage>,
