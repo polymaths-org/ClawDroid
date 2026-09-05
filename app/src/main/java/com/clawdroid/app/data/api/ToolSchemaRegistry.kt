@@ -185,6 +185,73 @@ object ToolSchemaRegistry {
             })
         }
 
+        array.put(tool("get_screen", "Read the current Android screen UI tree, or screenshot if tree is empty.") {
+            required()
+        })
+        array.put(tool("tap", "Tap at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
+            putString("label", "Text or content description to tap.")
+            required("label")
+        })
+        array.put(tool("tap_resource_id", "Tap a UI element by Android resource id.") {
+            putString("id", "View resource id (e.g. com.app:id/button).")
+            required("id")
+        })
+        array.put(tool("long_press", "Long-press at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("swipe", "Swipe between two screen coordinates.") {
+            putNumber("x1", "Start X coordinate.")
+            putNumber("y1", "Start Y coordinate.")
+            putNumber("x2", "End X coordinate.")
+            putNumber("y2", "End Y coordinate.")
+            putInteger("duration_ms", "Swipe duration in milliseconds (default 400).")
+            required("x1", "y1", "x2", "y2")
+        })
+        array.put(tool("scroll", "Scroll the first scrollable UI element.") {
+            putString("direction", "Scroll direction: up, down, left, or right.")
+            required("direction")
+        })
+        array.put(tool("type_text", "Type text into the focused editable field.") {
+            putString("text", "Text to type.")
+            required("text")
+        })
+        array.put(tool("clear_text", "Clear text in the focused editable field.") {
+            required()
+        })
+        array.put(tool("press_back", "Press the Android Back button.") {
+            required()
+        })
+        array.put(tool("press_home", "Press the Android Home button.") {
+            required()
+        })
+        array.put(tool("press_recents", "Open the Android Recents screen.") {
+            required()
+        })
+        array.put(tool("open_notifications", "Open the notification shade.") {
+            required()
+        })
+        array.put(tool("launch_app", "Launch an installed app by package name.") {
+            putString("package_name", "Android package name (e.g. com.android.chrome).")
+            required("package_name")
+        })
+        array.put(tool("get_installed_apps", "List installed non-system apps.") {
+            required()
+        })
+        array.put(tool("screenshot", "Capture a screenshot as base64 JPEG.") {
+            required()
+        })
+        array.put(tool("wait", "Wait for UI to settle between actions (max 5000ms).") {
+            putInteger("ms", "Milliseconds to wait (default 500).")
+            required()
+        })
+
         return array
     }
 
@@ -224,6 +291,15 @@ object ToolSchemaRegistry {
                 name,
                 JSONObject()
                     .put("type", "integer")
+                    .put("description", description)
+            )
+        }
+
+        fun putNumber(name: String, description: String) {
+            properties.put(
+                name,
+                JSONObject()
+                    .put("type", "number")
                     .put("description", description)
             )
         }
