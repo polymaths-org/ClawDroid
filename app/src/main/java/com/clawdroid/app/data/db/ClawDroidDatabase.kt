@@ -66,6 +66,16 @@ data class MessageEntity(
     val tokenCount: Int,
 )
 
+data class MessageWithToolCalls(
+    @androidx.room.Embedded val message: MessageEntity,
+    @androidx.room.Relation(
+        parentColumn = "id",
+        entityColumn = "messageId"
+    )
+    val toolCalls: List<ToolCallEntity>
+)
+
+
 @Entity(
     tableName = "tool_calls",
     foreignKeys = [
@@ -139,6 +149,9 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE projectId = :projectId ORDER BY updatedAt DESC")
     fun observeForProject(projectId: String): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversations WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): ConversationEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(conversation: ConversationEntity)
 
@@ -154,11 +167,18 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeMessages(conversationId: String): Flow<List<MessageEntity>>
 
+    @androidx.room.Transaction
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    fun observeMessagesWithToolCalls(conversationId: String): Flow<List<MessageWithToolCalls>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(message: MessageEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(messages: List<MessageEntity>)
+
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteForConversation(conversationId: String)
