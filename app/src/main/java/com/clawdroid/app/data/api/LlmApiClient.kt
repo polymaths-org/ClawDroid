@@ -53,8 +53,21 @@ class LlmApiClient(
     private val baseUrl: String = AppConfigManager.baseUrl,
     private val apiKey: String = AppConfigManager.apiKey,
     private val model: String = AppConfigManager.model,
+    private val provider: String = AppConfigManager.provider,
 ) {
     fun streamChat(
+        messages: List<ChatMessage>,
+        tools: JSONArray? = null,
+        forcedToolName: String? = null,
+    ): Flow<StreamEvent> {
+        return if (isAnthropicProvider()) {
+            streamAnthropicChat(messages, tools, forcedToolName)
+        } else {
+            streamOpenAiChat(messages, tools, forcedToolName)
+        }
+    }
+
+    private fun streamOpenAiChat(
         messages: List<ChatMessage>,
         tools: JSONArray? = null,
         forcedToolName: String? = null,
@@ -186,6 +199,171 @@ class LlmApiClient(
         }
     }.flowOn(Dispatchers.IO)
 
+    private fun streamAnthropicChat(
+        messages: List<ChatMessage>,
+        tools: JSONArray? = null,
+        forcedToolName: String? = null,
+    ): Flow<StreamEvent> = flow {
+        Log.i("LlmApiClient", "streamAnthropicChat started. baseUrl=$baseUrl, model=$model, messages=${messages.size}")
+        check(apiKey.isNotBlank()) { "Missing Anthropic API key" }
+        check(model.isNotBlank()) { "Missing Anthropic model" }
+
+        val payload = JSONObject()
+            .put("model", model)
+            .put("max_tokens", 4096)
+            .put("stream", true)
+            .put("messages", messages.toAnthropicMessages())
+
+        val system = messages
+            .filter { it.role == "system" && !it.content.isNullOrBlank() }
+            .joinToString("\n\n") { it.content.orEmpty() }
+        if (system.isNotBlank()) {
+            payload.put("system", system)
+        }
+
+        val anthropicTools = tools?.toAnthropicTools()
+        if (anthropicTools != null && anthropicTools.length() > 0) {
+            payload.put("tools", anthropicTools)
+            if (!forcedToolName.isNullOrBlank()) {
+                payload.put(
+                    "tool_choice",
+                    JSONObject()
+                        .put("type", "tool")
+                        .put("name", forcedToolName),
+                )
+            }
+        }
+
+        val endpoint = "${baseUrl.trimEnd('/')}/messages"
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20_000
+            readTimeout = 120_000
+            doOutput = true
+            setRequestProperty("x-api-key", apiKey)
+            setRequestProperty("anthropic-version", "2023-06-01")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "text/event-stream")
+        }
+
+        connection.outputStream.use { output ->
+            output.write(payload.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        val code = connection.responseCode
+        Log.i("LlmApiClient", "Anthropic response code: $code")
+        if (code !in 200..299) {
+            val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            Log.e("LlmApiClient", "Anthropic HTTP error $code: $errorText")
+            emit(StreamEvent.Error("HTTP $code: $errorText"))
+            return@flow
+        }
+
+        val toolCalls = mutableMapOf<Int, ToolCallBuilder>()
+        var inputTokens = 0
+        var outputTokens = 0
+        var isDoneEmitted = false
+
+        try {
+            connection.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    if (!line.startsWith("data:")) return@forEach
+                    val data = line.removePrefix("data:").trim()
+                    if (data.isBlank()) return@forEach
+
+                    val event = runCatching { JSONObject(data) }.getOrNull()
+                        ?: return@forEach
+                    when (event.optString("type")) {
+                        "message_start" -> {
+                            val usage = event.optJSONObject("message")?.optJSONObject("usage")
+                            inputTokens = usage?.optInt("input_tokens", 0) ?: inputTokens
+                            outputTokens = usage?.optInt("output_tokens", 0) ?: outputTokens
+                        }
+                        "content_block_start" -> {
+                            val index = event.optInt("index", -1)
+                            val block = event.optJSONObject("content_block")
+                            if (index >= 0 && block?.optString("type") == "tool_use") {
+                                val builder = toolCalls.getOrPut(index) { ToolCallBuilder() }
+                                builder.append(
+                                    ToolCallDelta(
+                                        index = index,
+                                        id = block.optString("id"),
+                                        name = block.optString("name"),
+                                        argumentsDelta = "",
+                                    ),
+                                )
+                            }
+                        }
+                        "content_block_delta" -> {
+                            val index = event.optInt("index", -1)
+                            val delta = event.optJSONObject("delta") ?: return@forEach
+                            when (delta.optString("type")) {
+                                "text_delta" -> {
+                                    val text = delta.optString("text")
+                                    if (text.isNotEmpty()) emit(StreamEvent.TextDelta(text))
+                                }
+                                "input_json_delta" -> {
+                                    val builder = toolCalls.getOrPut(index) { ToolCallBuilder() }
+                                    builder.append(
+                                        ToolCallDelta(
+                                            index = index,
+                                            id = null,
+                                            name = null,
+                                            argumentsDelta = delta.optString("partial_json"),
+                                        ),
+                                    )
+                                    emit(
+                                        StreamEvent.ToolCallDeltaReceived(
+                                            index = index,
+                                            id = builder.getId().orEmpty(),
+                                            name = builder.getName().orEmpty(),
+                                            arguments = builder.getArguments(),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        "content_block_stop" -> {
+                            val index = event.optInt("index", -1)
+                            toolCalls.remove(index)?.buildOrNull()?.let { call ->
+                                emit(StreamEvent.ToolCallComplete(call))
+                            }
+                        }
+                        "message_delta" -> {
+                            val usage = event.optJSONObject("usage")
+                            outputTokens = usage?.optInt("output_tokens", outputTokens) ?: outputTokens
+                        }
+                        "error" -> {
+                            val error = event.optJSONObject("error")
+                            emit(StreamEvent.Error(error?.optString("message") ?: "Anthropic stream error"))
+                            isDoneEmitted = true
+                            return@useLines
+                        }
+                        "message_stop" -> {
+                            emit(StreamEvent.Usage(TokenUsage(inputTokens, outputTokens, 0)))
+                            emit(StreamEvent.Done)
+                            isDoneEmitted = true
+                            return@useLines
+                        }
+                    }
+                }
+            }
+        } finally {
+            if (!isDoneEmitted) {
+                toolCalls.values
+                    .mapNotNull { it.buildOrNull() }
+                    .forEach { emit(StreamEvent.ToolCallComplete(it)) }
+                emit(StreamEvent.Usage(TokenUsage(inputTokens, outputTokens, 0)))
+                emit(StreamEvent.Done)
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun isAnthropicProvider(): Boolean {
+        return provider.equals("anthropic", ignoreCase = true) ||
+            baseUrl.contains("api.anthropic.com", ignoreCase = true)
+    }
+
     private fun List<ChatMessage>.toJson(): JSONArray {
         val array = JSONArray()
         forEach { message ->
@@ -231,6 +409,92 @@ class LlmApiClient(
             array.put(json)
         }
         return array
+    }
+
+    private fun List<ChatMessage>.toAnthropicMessages(): JSONArray {
+        val array = JSONArray()
+        forEach { message ->
+            if (message.role == "system") return@forEach
+            val role = if (message.role == "assistant") "assistant" else "user"
+            val content = JSONArray()
+
+            if (message.role == "tool") {
+                content.put(
+                    JSONObject()
+                        .put("type", "tool_result")
+                        .put("tool_use_id", message.toolCallId.orEmpty())
+                        .put("content", message.content.orEmpty()),
+                )
+            } else {
+                message.content?.takeIf { it.isNotBlank() }?.let { text ->
+                    content.put(JSONObject().put("type", "text").put("text", text))
+                }
+
+                if (message.mediaPath != null && message.mediaMimeType != null && role == "user") {
+                    val file = java.io.File(message.mediaPath)
+                    if (file.exists() && file.isFile && message.mediaMimeType.startsWith("image/")) {
+                        val base64 = android.util.Base64.encodeToString(file.readBytes(), android.util.Base64.NO_WRAP)
+                        content.put(
+                            JSONObject()
+                                .put("type", "image")
+                                .put(
+                                    "source",
+                                    JSONObject()
+                                        .put("type", "base64")
+                                        .put("media_type", message.mediaMimeType)
+                                        .put("data", base64),
+                                ),
+                        )
+                    }
+                }
+
+                message.toolCalls.forEach { call ->
+                    content.put(
+                        JSONObject()
+                            .put("type", "tool_use")
+                            .put("id", call.id)
+                            .put("name", call.name)
+                            .put(
+                                "input",
+                                runCatching { JSONObject(call.arguments) }
+                                    .getOrElse { JSONObject().put("raw", call.arguments) },
+                            ),
+                    )
+                }
+            }
+
+            if (content.length() > 0) {
+                array.appendAnthropicMessage(role, content)
+            }
+        }
+        return array
+    }
+
+    private fun JSONArray.appendAnthropicMessage(role: String, content: JSONArray) {
+        val last = if (length() > 0) optJSONObject(length() - 1) else null
+        if (last != null && last.optString("role") == role) {
+            val existing = last.optJSONArray("content") ?: JSONArray()
+            for (i in 0 until content.length()) {
+                existing.put(content.get(i))
+            }
+            last.put("content", existing)
+        } else {
+            put(JSONObject().put("role", role).put("content", content))
+        }
+    }
+
+    private fun JSONArray.toAnthropicTools(): JSONArray {
+        val result = JSONArray()
+        for (i in 0 until length()) {
+            val function = optJSONObject(i)?.optJSONObject("function") ?: continue
+            result.put(
+                JSONObject()
+                    .put("name", function.optString("name"))
+                    .put("description", function.optString("description"))
+                    .put("input_schema", function.optJSONObject("parameters") ?: JSONObject().put("type", "object")),
+            )
+        }
+        return result
     }
 
     private fun List<CompletedToolCall>.toToolCallsJson(): JSONArray {

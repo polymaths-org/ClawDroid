@@ -22,17 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.Api
-import androidx.compose.material.icons.rounded.Autorenew
-import androidx.compose.material.icons.rounded.Cable
 import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,13 +91,6 @@ fun SidebarContent(
 
     val navItems = listOf(
         NavItem("Terminal", Icons.Rounded.Terminal, onNavigateToTerminal),
-        NavItem("Agent Config", Icons.Rounded.Tune, onNavigateToAgentConfig),
-        NavItem("Audio", Icons.Rounded.Album, onNavigateToAudio),
-        NavItem("Skills", Icons.Rounded.Extension, onNavigateToSkills),
-        NavItem("Channels", Icons.Rounded.Cable, onNavigateToChannels),
-        NavItem("MCP", Icons.Rounded.Api, onNavigateToMcp),
-        NavItem("Automations", Icons.Rounded.Autorenew, onNavigateToAutomations),
-        NavItem("Settings", Icons.Rounded.Settings, onNavigateToSettings),
     )
 
     Column(
@@ -222,6 +209,10 @@ fun SidebarContent(
             }
         }
 
+        Spacer(modifier = Modifier.height(Dimens.xl))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(modifier = Modifier.height(Dimens.sm))
+        NavRow(item = NavItem("Settings", Icons.Rounded.Settings, onNavigateToSettings))
         Spacer(modifier = Modifier.height(Dimens.xxl))
     }
 

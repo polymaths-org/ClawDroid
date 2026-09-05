@@ -65,7 +65,7 @@ object PermissionAwareToolExecutor {
                         reason = call.name,
                         settleMs = settleMs,
                     ) {
-                        Log.i(TAG, "execute allowed hidden-overlay tool=${call.name} settleMs=$settleMs")
+                        Log.i(TAG, "execute allowed visible-overlay tool=${call.name} settleMs=$settleMs")
                         ToolExecutor.execute(context, call, onProgress)
                     }
                 } else {
