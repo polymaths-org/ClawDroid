@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy - ClawDroid</title>
+  <meta name="description" content="Privacy Policy for the ClawDroid landing site and beta Android app." />
+  <meta name="theme-color" content="#0c1016" />
+  <link rel="icon" type="image/png" href="02EGGopen.png" />
+  <style>
+    :root {
+      --bg: #f4f5f1;
+      --surface: rgba(255,255,255,0.86);
+      --ink: #10141a;
+      --muted: #68707d;
+      --line: rgba(16,20,26,0.12);
+      --accent: #8bff68;
+      --shadow: 0 20px 50px rgba(16,20,26,0.08);
+      --radius: 24px;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      line-height: 1.65;
+      background: linear-gradient(180deg, #fbfcf8 0%, var(--bg) 100%);
+    }
+
+    a { color: inherit; }
+    .wrap { width: min(var(--max), calc(100% - 32px)); margin: 0 auto; }
+    .nav {
+      border-bottom: 1px solid var(--line);
+      background: rgba(244,245,241,0.86);
+      backdrop-filter: blur(18px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .nav-links a,
+    .back-link {
+      text-decoration: none;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.74);
+      font-weight: 800;
+      font-size: 0.92rem;
+    }
+
+    main { padding: 46px 0 56px; }
+    .hero {
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    h1, h2 {
+      margin: 0 0 14px;
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+    }
+
+    h1 { font-size: clamp(2.4rem, 8vw, 4.8rem); }
+    h2 { font-size: clamp(1.45rem, 4vw, 2.1rem); margin-top: 34px; }
+    p { margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+
+    .notice {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,93,108,0.22);
+      background: rgba(255,255,255,0.74);
+      font-weight: 700;
+    }
+
+    .content {
+      margin-top: 24px;
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow);
+    }
+
+    ul { padding-left: 1.2rem; }
+    li { margin: 0 0 10px; }
+    strong { font-weight: 900; }
+    footer { padding: 0 0 44px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .footer-links a { color: var(--muted); font-weight: 800; }
+
+    @media (max-width: 700px) {
+      .nav-inner { align-items: flex-start; flex-direction: column; }
+      .hero, .content { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="ClawDroid home">
+        <img src="02EGGopen.png" alt="" />
+        <span>ClawDroid</span>
+      </a>
+      <div class="nav-links">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="disclaimer.html">Disclaimer</a>
+        <a href="security.html">Security</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="eyebrow">Legal</span>
+      <h1>Privacy Policy</h1>
+      <p class="muted">Effective date: June 15, 2026</p>
+      <p>This Privacy Policy explains how the ClawDroid project handles information for the public landing page and the beta Android application.</p>
+      <p class="notice">This is a project privacy template for a beta release. It is not legal advice and should be reviewed by qualified counsel before production use.</p>
+    </section>
+
+    <section class="content">
+      <h2>Who We Are</h2>
+      <p>ClawDroid is an Android-native AI agent project developed by project maintainers, contributors, and Team Polymath. In this policy, "ClawDroid," "we," "us," and "our" refer to the project maintainers and contributors.</p>
+
+      <h2>Information The Landing Page May Process</h2>
+      <p>The landing page is intended to be a static website. We do not intentionally place advertising cookies or analytics trackers in this source. Depending on where the site is hosted, the hosting provider may process standard technical information such as IP address, browser type, request time, referring page, and error logs.</p>
+
+      <h2>Information The Beta App May Process</h2>
+      <p>ClawDroid is designed to perform agent tasks on Android. Depending on how you use and configure it, the app may process:</p>
+      <ul>
+        <li>Messages, prompts, instructions, and generated responses.</li>
+        <li>Conversation history, compacted summaries, project state, files, terminal output, command logs, and activity steps.</li>
+        <li>Settings such as selected model, base URL, approval mode, project preferences, and feature configuration.</li>
+        <li>API keys, OAuth tokens, or service credentials you choose to add. These should be stored securely by the app when supported.</li>
+        <li>Files, screen content, app state, notifications, browser content, and connected-service data that you ask the agent to inspect or operate on.</li>
+        <li>Crash, diagnostic, or technical information if you provide it while reporting an issue.</li>
+      </ul>
+
+      <h2>How Information Is Used</h2>
+      <p>Information is used to run the app, provide AI responses, execute requested tasks, store project continuity, debug failures, secure credentials, improve reliability, and support user-requested connected-service workflows.</p>
+
+      <h2>Third-Party Providers</h2>
+      <p>ClawDroid supports OpenAI-compatible model endpoints and may interact with connected services you configure. When you send a request to a model provider or connected service, the data needed for that request may be sent to that third party and handled under that provider's own terms and privacy policy. You are responsible for reviewing those provider policies before connecting accounts or sending sensitive data.</p>
+
+      <h2>Data Sharing</h2>
+      <p>We do not sell personal information from the landing page source. The beta app may share information only as needed to perform user-requested actions, such as sending prompts to a configured model provider, calling an OAuth-connected service, downloading from GitHub releases, or using infrastructure required to host the site or distribute the app.</p>
+
+      <h2>Local Storage And Retention</h2>
+      <p>App data may be stored locally on your device until you delete it, clear project history, revoke credentials, or uninstall the app. Third-party providers may retain data according to their own policies. Hosting logs, if any, are controlled by the hosting provider.</p>
+
+      <h2>Your Choices</h2>
+      <ul>
+        <li>Do not enter sensitive information unless you are comfortable with how your configured providers process it.</li>
+        <li>Use provider settings to manage API retention and training options where available.</li>
+        <li>Revoke connected-service permissions from the third-party service account settings.</li>
+        <li>Delete local app data, project data, and credentials from the app or Android system settings where available.</li>
+        <li>Stop using the app if you do not agree with this policy.</li>
+      </ul>
+
+      <h2>Security</h2>
+      <p>ClawDroid is built around sandboxing, transparency, and local control, but no software is perfectly secure. The app may run commands, process files, and interact with services at your direction. You are responsible for protecting your device, credentials, files, and accounts.</p>
+
+      <h2>Children</h2>
+      <p>ClawDroid is not intended for children under 13 or for anyone below the minimum age required by applicable law to use AI services, developer tools, or connected third-party services.</p>
+
+      <h2>Changes</h2>
+      <p>This policy may be updated as the project changes. The effective date above will be revised when material changes are made.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy or security concerns, open an issue or discussion on the official GitHub repository: <a href="https://github.com/Wraient/ClawDroid" target="_blank" rel="noopener noreferrer">github.com/Wraient/ClawDroid</a>.</p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Use</a>
+      <a href="disclaimer.html">Risk Disclaimer</a>
+      <a href="security.html">Security Notice</a>
+    </div>
+  </footer>
+</body>
+</html>

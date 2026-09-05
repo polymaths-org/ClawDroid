@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Use - ClawDroid</title>
+  <meta name="description" content="Terms of Use for the ClawDroid landing site and beta Android app." />
+  <meta name="theme-color" content="#0c1016" />
+  <link rel="icon" type="image/png" href="02EGGopen.png" />
+  <style>
+    :root {
+      --bg: #f4f5f1;
+      --surface: rgba(255,255,255,0.86);
+      --ink: #10141a;
+      --muted: #68707d;
+      --line: rgba(16,20,26,0.12);
+      --shadow: 0 20px 50px rgba(16,20,26,0.08);
+      --radius: 24px;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      line-height: 1.65;
+      background: linear-gradient(180deg, #fbfcf8 0%, var(--bg) 100%);
+    }
+
+    a { color: inherit; }
+    .wrap { width: min(var(--max), calc(100% - 32px)); margin: 0 auto; }
+    .nav {
+      border-bottom: 1px solid var(--line);
+      background: rgba(244,245,241,0.86);
+      backdrop-filter: blur(18px);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .nav-links a,
+    .back-link {
+      text-decoration: none;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.74);
+      font-weight: 800;
+      font-size: 0.92rem;
+    }
+
+    main { padding: 46px 0 56px; }
+    .hero {
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    h1, h2 {
+      margin: 0 0 14px;
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+    }
+
+    h1 { font-size: clamp(2.4rem, 8vw, 4.8rem); }
+    h2 { font-size: clamp(1.45rem, 4vw, 2.1rem); margin-top: 34px; }
+    p { margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+
+    .notice {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,93,108,0.22);
+      background: rgba(255,255,255,0.74);
+      font-weight: 700;
+    }
+
+    .content {
+      margin-top: 24px;
+      padding: 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow);
+    }
+
+    ul { padding-left: 1.2rem; }
+    li { margin: 0 0 10px; }
+    strong { font-weight: 900; }
+    footer { padding: 0 0 44px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .footer-links a { color: var(--muted); font-weight: 800; }
+
+    @media (max-width: 700px) {
+      .nav-inner { align-items: flex-start; flex-direction: column; }
+      .hero, .content { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="index.html" aria-label="ClawDroid home">
+        <img src="02EGGopen.png" alt="" />
+        <span>ClawDroid</span>
+      </a>
+      <div class="nav-links">
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="disclaimer.html">Disclaimer</a>
+        <a href="security.html">Security</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="eyebrow">Legal</span>
+      <h1>Terms of Use</h1>
+      <p class="muted">Effective date: June 15, 2026</p>
+      <p>These Terms of Use govern access to the ClawDroid landing page, beta Android app, downloads, source code references, and related project materials.</p>
+      <p class="notice">ClawDroid is beta software. By using it, you accept that you do so at your own risk.</p>
+    </section>
+
+    <section class="content">
+      <h2>Acceptance</h2>
+      <p>By visiting the website, downloading the APK, installing the app, connecting services, or using ClawDroid in any way, you agree to these Terms. If you do not agree, do not use ClawDroid.</p>
+
+      <h2>Beta Status</h2>
+      <p>ClawDroid is experimental beta software. It may contain bugs, security issues, incomplete features, incorrect AI output, compatibility problems, or behavior that changes without notice.</p>
+
+      <h2>Your Responsibility</h2>
+      <p>You are responsible for how you install, configure, and use ClawDroid. This includes your prompts, files, commands, API keys, connected accounts, device permissions, model providers, generated output, and any action the agent performs at your request or under your configuration.</p>
+
+      <h2>Agent Actions And Outputs</h2>
+      <p>ClawDroid may generate text, run commands, process files, interact with apps, operate connected services, and produce artifacts. AI output can be wrong, incomplete, unsafe, or unsuitable. You must review important actions and outputs before relying on them.</p>
+
+      <h2>Use At Your Own Risk</h2>
+      <p>To the fullest extent permitted by law, you use ClawDroid entirely at your own risk. The developers, maintainers, contributors, project team, and affiliated participants are not responsible for any loss, damage, data loss, account action, API cost, service charge, device problem, security incident, business interruption, reputational harm, legal issue, or other consequence connected to your use of ClawDroid.</p>
+
+      <h2>No Professional Advice</h2>
+      <p>ClawDroid and its outputs are not legal, financial, medical, security, tax, or other professional advice. Consult a qualified professional before making decisions in high-impact areas.</p>
+
+      <h2>Third-Party Services</h2>
+      <p>ClawDroid may use third-party model providers, hosting providers, GitHub releases, OAuth services, Android platform features, and other tools you configure. Those third parties are not controlled by the ClawDroid project. You are responsible for their terms, privacy policies, fees, limits, and account consequences.</p>
+
+      <h2>Acceptable Use</h2>
+      <p>You agree not to use ClawDroid to violate law, infringe rights, access systems without authorization, distribute malware, evade security controls, harass others, exfiltrate data, or perform harmful activity. You are responsible for obtaining permission before using ClawDroid with third-party accounts, data, apps, networks, or systems.</p>
+
+      <h2>Sideloading And Device Risk</h2>
+      <p>If you download or sideload an APK, you are responsible for verifying the source, understanding Android permissions, backing up important data, and deciding whether the app is appropriate for your device.</p>
+
+      <h2>No Warranty</h2>
+      <p>ClawDroid is provided "as is" and "as available" without warranties of any kind, express or implied. We do not guarantee that it will be secure, uninterrupted, accurate, reliable, lawful for your use case, compatible with your device, or free of harmful defects.</p>
+
+      <h2>Limitation Of Liability</h2>
+      <p>To the fullest extent permitted by law, the developers, maintainers, contributors, project team, and affiliated participants will not be liable for indirect, incidental, special, consequential, exemplary, punitive, or direct damages arising from or related to ClawDroid, even if advised that such damages are possible.</p>
+
+      <h2>Indemnity</h2>
+      <p>You agree to defend, indemnify, and hold harmless the developers, maintainers, contributors, project team, and affiliated participants from claims, damages, losses, liabilities, costs, and expenses arising from your use of ClawDroid, your content, your connected services, or your violation of these Terms.</p>
+
+      <h2>Open Source And Licenses</h2>
+      <p>Source code, dependencies, and releases may be governed by separate open-source licenses. If there is a conflict between these Terms and a mandatory open-source license for source code, that license controls for the covered code.</p>
+
+      <h2>Changes</h2>
+      <p>These Terms may be updated as the project evolves. Continued use after changes means you accept the updated Terms.</p>
+
+      <h2>Contact</h2>
+      <p>Questions may be raised through the official GitHub repository: <a href="https://github.com/Wraient/ClawDroid" target="_blank" rel="noopener noreferrer">github.com/Wraient/ClawDroid</a>.</p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="disclaimer.html">Risk Disclaimer</a>
+      <a href="security.html">Security Notice</a>
+    </div>
+  </footer>
+</body>
+</html>
