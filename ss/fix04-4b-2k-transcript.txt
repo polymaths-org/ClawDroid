@@ -1,0 +1,7 @@
+4B model (unsloth/Qwen3-4B-GGUF) at per-model 2K context, CPU, iQOO 15.
+GenieX log: context params: n_ctx=2048 ... n_gpu_layers=0 ... strict_cpu=true
+No LMK kill, no crash; process survived all rounds.
+
+tool_calls (newest first):
+read_file|{"end_line":10,"path":"SKILL.md","start_line":1}|content returned|completed
+read_file|{"end_line":500,"path":"./skills/SKILL.md","start_line":1}|File not found|error

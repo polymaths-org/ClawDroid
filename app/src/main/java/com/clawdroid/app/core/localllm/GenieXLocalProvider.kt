@@ -39,7 +39,7 @@ class GenieXLocalProvider(
     private val modelId: String = AppConfigManager.model
         .takeIf { it.isNotBlank() } ?: LocalLlmConfig.GGUF_MODEL_4B,
 ) : LlmProvider {
-    override val contextLimit: Int = LocalLlmConfig.LOCAL_CONTEXT_LIMIT
+    override val contextLimit: Int get() = LocalLlmConfig.nCtxFor(modelId)
     override val isLocal: Boolean = true
 
     private val loadLock = Mutex()
@@ -64,7 +64,7 @@ class GenieXLocalProvider(
                 .llmCreateInput(
                     LlmCreateInput(
                         model_path = paths.model_path,
-                        config = ModelConfig(nCtx = LocalLlmConfig.LOCAL_N_CTX).apply {
+                        config = ModelConfig(nCtx = LocalLlmConfig.nCtxFor(modelId)).apply {
                             nGpuLayers = 0
                         },
                         runtime_id = paths.runtime_id?.takeIf { r -> r.isNotBlank() } ?: opt.runtimeId,

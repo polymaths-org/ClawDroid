@@ -144,6 +144,13 @@ class LocalPromptToolsTest {
     }
 
     @Test
+    fun `per-model context gives 4B a smaller window`() {
+        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_4B))
+        assertEquals(4_096, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_06B))
+        assertEquals(4_096, LocalLlmConfig.nCtxFor("unknown-model"))
+    }
+
+    @Test
     fun `buildPrompt trims long history within budget`() {
         val msgs = mutableListOf(ChatMessage(role = "system", content = "sys"))
         repeat(30) { i ->

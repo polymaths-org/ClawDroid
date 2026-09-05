@@ -1,7 +1,7 @@
 package com.clawdroid.app.core.localllm
 
 /**
- * Single source of truth for on-device (Hexagon NPU) LLM versions.
+ * Single source of truth for on-device (GenieX llama_cpp, CPU) LLM versions.
  *
  * QAIRT/SDK/bundle mismatch is the most common failure mode — when upgrading
  * one, upgrade all three together and re-test on the iQOO 15 (SM8850).
@@ -29,8 +29,16 @@ object LocalLlmConfig {
     const val QAIRT_MODEL = "ai-hub-models/Qwen3-4B-Instruct-2507"
     const val RUNTIME_QAIRT = "qairt"
 
-    /** Local context window — NPU memory bandwidth is the bottleneck, keep prompts lean. */
-    const val LOCAL_CONTEXT_LIMIT = 4_096
-    const val LOCAL_N_CTX = 4_096
+    /** Cap per generation — full answers without runaway output on small models. */
     const val LOCAL_MAX_TOKENS = 2_048
+
+    /**
+     * Per-model context windows. The 4B weights (~2.5 GB, mmap disabled) plus
+     * a 4K KV cache exceed free RAM on a loaded phone and Android LMK-kills
+     * the app mid-generation; 2K keeps it alive. The 0.6B model keeps 4K.
+     */
+    const val N_CTX_4B = 2_048
+    const val N_CTX_06B = 4_096
+
+    fun nCtxFor(modelId: String): Int = if (modelId == GGUF_MODEL_4B) N_CTX_4B else N_CTX_06B
 }
