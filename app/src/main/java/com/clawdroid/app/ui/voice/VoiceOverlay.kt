@@ -183,7 +183,7 @@ fun VoiceOverlay(
                 // 3. Immersive Live Transcript Box
                 val scrollState = rememberScrollState()
                 LaunchedEffect(userPartialText, agentResponseText) {
-                    scrollState.animateScrollTo(scrollState.maxValue)
+                    scrollState.scrollTo(scrollState.maxValue)
                 }
 
                 ClawPanel(
@@ -363,7 +363,7 @@ private fun ProfessionalVoiceMeter(
     val colors = MaterialTheme.colorScheme
     val active = state != OrbState.Idle
     Canvas(modifier = modifier) {
-        val barCount = 42
+        val barCount = 28
         val gap = 5.dp.toPx()
         val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(2.dp.toPx())
         val centerY = size.height / 2f

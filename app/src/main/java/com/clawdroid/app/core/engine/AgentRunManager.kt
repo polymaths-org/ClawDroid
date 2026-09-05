@@ -11,9 +11,12 @@ import com.clawdroid.app.data.db.ConversationEntity
 import com.clawdroid.app.data.db.MessageEntity
 import com.clawdroid.app.ui.chat.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.buffer
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,12 +36,18 @@ class ConversationRunState(
 
 object AgentRunManager {
     private const val TAG = "AgentRunManager"
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private const val TEXT_FLUSH_INTERVAL_MS = 100L
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     val activeRuns = MutableStateFlow<Map<String, ConversationRunState>>(emptyMap())
     private var appContext: Context? = null
+    private val textFlushTimes = mutableMapOf<String, Long>()
+    private val pendingTexts = mutableMapOf<String, StringBuilder>()
 
-    val events = MutableSharedFlow<Pair<String, AgentRunEvent>>(extraBufferCapacity = 64)
+    val events = MutableSharedFlow<Pair<String, AgentRunEvent>>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
     fun getActiveEngine(conversationId: String?): AgentEngine? {
         if (conversationId == null) return null
@@ -108,15 +117,17 @@ object AgentRunManager {
                     toolsOverride = toolsOverride,
                     hidePromptInChat = hidePromptInChat,
                 )
+                    .buffer(Channel.UNLIMITED)
                     .collect { event ->
                         handleEvent(conversationId, event)
-                        events.emit(Pair(conversationId, event))
+                        events.tryEmit(Pair(conversationId, event))
                     }
+                flushPendingText(conversationId)
             } catch (e: Exception) {
                 Log.e(TAG, "Background run failed for $conversationId", e)
                 handleFailure(conversationId, e.message ?: "Run failed")
                 NotificationHelper.sendTaskFailed(appCtx, e.message ?: "Run failed")
-                events.emit(Pair(conversationId, AgentRunEvent.RunError(e.message ?: "Run failed")))
+                events.tryEmit(Pair(conversationId, AgentRunEvent.RunError(e.message ?: "Run failed")))
             } finally {
                 syncMemoryIfEnabled(appCtx, "pull")
                 saveUnsavedStateToDb(appCtx, runState)
@@ -125,6 +136,8 @@ object AgentRunManager {
                 runState.isRunning.value = false
                 synchronized(activeRuns) {
                     activeRuns.value = activeRuns.value - conversationId
+                    pendingTexts.remove(conversationId)
+                    textFlushTimes.remove(conversationId)
                 }
                 if (!AppConfigManager.ultraAgentEnabled && synchronized(activeRuns) { activeRuns.value.isEmpty() }) {
                     ServiceManager.stop(appCtx)
@@ -220,16 +233,14 @@ object AgentRunManager {
 
     private fun handleEvent(conversationId: String, event: AgentRunEvent) {
         val runState = synchronized(activeRuns) { activeRuns.value[conversationId] } ?: return
+        if (event is AgentRunEvent.TextDelta) {
+            appendStreamingText(conversationId, runState, event.text)
+            return
+        }
+        flushPendingText(conversationId)
         val currentItems = runState.activeChatItems.value.toMutableList()
         when (event) {
-            is AgentRunEvent.TextDelta -> {
-                finishCurrentActivity(runState, currentItems)
-                val messageId = ensureAgentMessage(runState, currentItems)
-                currentItems.replaceAgentMessage(messageId) { current ->
-                    current.copy(text = current.text + event.text, streaming = true)
-                }
-                runState.agentResponseText.value += event.text
-            }
+            is AgentRunEvent.TextDelta -> return
 
             is AgentRunEvent.ToolCallStreaming -> {
                 finishCurrentAgentText(runState, currentItems)
@@ -301,8 +312,7 @@ object AgentRunManager {
                         current.copy(
                             steps = current.steps.map { step ->
                                 if (step.callId == event.callId) {
-                                    val mockResult = JSONObject().put("output", event.output).toString()
-                                    step.copy(result = mockResult)
+                                    step.copy(result = event.output)
                                 } else {
                                     step
                                 }
@@ -395,6 +405,46 @@ object AgentRunManager {
                 runState.runningActivityId.value = null
                 appContext?.let { NotificationHelper.sendTaskFailed(it, event.message) }
             }
+        }
+        runState.activeChatItems.value = currentItems
+    }
+
+    private fun appendStreamingText(conversationId: String, runState: ConversationRunState, delta: String) {
+        runState.agentResponseText.value += delta
+        val pending = synchronized(activeRuns) {
+            pendingTexts.getOrPut(conversationId) { StringBuilder() }.append(delta)
+            pendingTexts[conversationId].toString()
+        }
+        val now = System.currentTimeMillis()
+        val lastFlush = synchronized(activeRuns) { textFlushTimes[conversationId] ?: 0L }
+        if (now - lastFlush < TEXT_FLUSH_INTERVAL_MS && pending.length < 4000) return
+        synchronized(activeRuns) {
+            textFlushTimes[conversationId] = now
+            pendingTexts[conversationId] = StringBuilder()
+        }
+        val currentItems = runState.activeChatItems.value.toMutableList()
+        finishCurrentActivity(runState, currentItems)
+        val messageId = ensureAgentMessage(runState, currentItems)
+        currentItems.replaceAgentMessage(messageId) { current ->
+            current.copy(text = current.text + pending, streaming = true)
+        }
+        runState.activeChatItems.value = currentItems
+    }
+
+    private fun flushPendingText(conversationId: String) {
+        val runState = synchronized(activeRuns) { activeRuns.value[conversationId] } ?: return
+        val pending = synchronized(activeRuns) {
+            val text = pendingTexts[conversationId]?.toString().orEmpty()
+            pendingTexts[conversationId] = StringBuilder()
+            textFlushTimes[conversationId] = System.currentTimeMillis()
+            text
+        }
+        if (pending.isEmpty()) return
+        val currentItems = runState.activeChatItems.value.toMutableList()
+        finishCurrentActivity(runState, currentItems)
+        val messageId = ensureAgentMessage(runState, currentItems)
+        currentItems.replaceAgentMessage(messageId) { current ->
+            current.copy(text = current.text + pending, streaming = true)
         }
         runState.activeChatItems.value = currentItems
     }

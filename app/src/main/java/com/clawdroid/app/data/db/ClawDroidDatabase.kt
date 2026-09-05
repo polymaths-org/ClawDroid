@@ -206,7 +206,7 @@ interface ProjectDao {
 
 @Dao
 interface ConversationDao {
-    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 100")
     fun observeConversations(): Flow<List<ConversationEntity>>
 
     @Query("SELECT * FROM conversations WHERE projectId = :projectId ORDER BY updatedAt DESC")
@@ -246,7 +246,7 @@ interface MessageDao {
     fun observeMessages(conversationId: String): Flow<List<MessageEntity>>
 
     @androidx.room.Transaction
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC LIMIT 300")
     fun observeMessagesWithToolCalls(conversationId: String): Flow<List<MessageWithToolCalls>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -278,6 +278,9 @@ interface ToolCallDao {
 
     @Query("SELECT * FROM tool_calls WHERE messageId = :messageId ORDER BY id ASC")
     suspend fun getForMessage(messageId: String): List<ToolCallEntity>
+
+    @Query("SELECT t.* FROM tool_calls t INNER JOIN messages m ON m.id = t.messageId WHERE m.conversationId = :conversationId ORDER BY t.id ASC")
+    suspend fun getForConversation(conversationId: String): List<ToolCallEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(toolCall: ToolCallEntity)

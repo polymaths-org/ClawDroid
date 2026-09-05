@@ -24,6 +24,7 @@ import com.clawdroid.app.core.notifications.NotificationHelper
 import com.clawdroid.app.core.reminders.ReminderManager
 import com.clawdroid.app.core.service.ServiceManager
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.clawdroid.app.ui.chat.ChatScreen
 import com.clawdroid.app.ui.settings.AgentConfigScreen
@@ -59,19 +60,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        NotificationHelper.ensureChannels(this)
-        AutomationScheduler.scheduleOrCancel(this)
-        if (AppConfigManager.heartbeatEnabled) {
-            AutomationScheduler.runNow(this)
-        }
-        ReminderManager.rescheduleAll(this)
-
-        // Start Foreground Service if Ultra Agent Mode is enabled
-        if (AppConfigManager.ultraAgentEnabled) {
-            ServiceManager.start(this)
-        }
-        if (AppConfigManager.wakeOnVoiceEnabled && AppConfigManager.wakeDetectionMode == "background") {
-            com.clawdroid.app.core.voice.WakeVoiceService.start(this)
+        val appContext = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { NotificationHelper.ensureChannels(appContext) }
+            runCatching { AutomationScheduler.scheduleOrCancel(appContext) }
+            if (AppConfigManager.heartbeatEnabled) {
+                runCatching { AutomationScheduler.runNow(appContext) }
+            }
+            runCatching { ReminderManager.rescheduleAll(appContext) }
+            if (AppConfigManager.ultraAgentEnabled) {
+                runCatching { ServiceManager.start(appContext) }
+            }
+            if (AppConfigManager.wakeOnVoiceEnabled && AppConfigManager.wakeDetectionMode == "background") {
+                runCatching { com.clawdroid.app.core.voice.WakeVoiceService.start(appContext) }
+            }
         }
         val handledAssistIntent = handleAssistOverlayIntent(intent)
         // Check launch intent for background voice trigger.

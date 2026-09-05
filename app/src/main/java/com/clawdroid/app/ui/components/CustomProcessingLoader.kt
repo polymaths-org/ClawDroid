@@ -92,16 +92,6 @@ fun CustomProcessingLoader(
         label = "glow"
     )
 
-    val sheenOffset by infiniteTransition.animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "quote_sheen"
-    )
-
     val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
@@ -139,10 +129,10 @@ fun CustomProcessingLoader(
                 .padding(6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            FifMascot(
-                modifier = Modifier.fillMaxSize(),
-                contentDescription = "Thinking mascot",
-                animation = MascotAnimation.Thinking,
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+                strokeWidth = 3.dp,
+                color = colors.primary,
             )
         }
 
@@ -192,21 +182,6 @@ fun CustomProcessingLoader(
                             lineHeight = 20.sp,
                             letterSpacing = 0.sp,
                         ),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        colors.primary.copy(alpha = 0.10f * glowPulse),
-                                        Color.Transparent,
-                                    ),
-                                    start = Offset(160f * sheenOffset, 0f),
-                                    end = Offset(160f * sheenOffset + 80f, 90f),
-                                )
-                            )
                     )
                 }
                 Text(

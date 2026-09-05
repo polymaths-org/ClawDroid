@@ -954,6 +954,13 @@ fun ChatScreen(
         }
     }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) {
+            focusManager.clearFocus()
+        }
+    }
+
     if (isCallModeActive) {
         BackHandler {
             isCallModeActive = false
@@ -971,40 +978,16 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(items.size) {
-        if (items.isNotEmpty()) listState.animateScrollToItem(items.size)
-    }
-
-    val density = LocalDensity.current
-    val imeInsets = WindowInsets.ime
-    val keyboardHeight by remember {
-        derivedStateOf {
-            imeInsets.getBottom(density)
+    LaunchedEffect(displayItems.size) {
+        if (displayItems.isEmpty()) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val visible = layoutInfo.visibleItemsInfo
+        val atBottom = visible.isEmpty() ||
+            visible.any { it.index >= (displayItems.size - 1) } ||
+            layoutInfo.totalItemsCount == 0
+        if (atBottom) {
+            listState.scrollToItem(displayItems.size - 1)
         }
-    }
-
-    val dynamicBottomPadding by remember {
-        derivedStateOf {
-            val kbHeightDp = with(density) { imeInsets.getBottom(density).toDp() }
-            val progress = (kbHeightDp.value / 250f).coerceIn(0f, 1f)
-            160.dp - (74.dp * progress)
-        }
-    }
-
-    LaunchedEffect(listState) {
-        androidx.compose.runtime.snapshotFlow { keyboardHeight }
-            .collect { height ->
-                if (items.isNotEmpty()) {
-                    val layoutInfo = listState.layoutInfo
-                    val visibleItems = layoutInfo.visibleItemsInfo
-                    if (visibleItems.isNotEmpty()) {
-                        val isAtBottom = visibleItems.any { it.index >= items.size }
-                        if (isAtBottom) {
-                            listState.scrollToItem(items.size)
-                        }
-                    }
-                }
-            }
     }
 
     val skin = currentClawSkin()
@@ -1095,7 +1078,7 @@ fun ChatScreen(
             }
         },
     ) {
-        ClawSkinBackground {
+        ClawSkinBackground(showAmbient = false) {
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = {
@@ -1172,14 +1155,14 @@ fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = paddingValues.calculateTopPadding()),
+                        .padding(top = paddingValues.calculateTopPadding())
+                        .navigationBarsPadding()
+                        .imePadding(),
                 ) {
                 if (displayItems.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .navigationBarsPadding()
-                            .imePadding()
                             .padding(bottom = 86.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1189,16 +1172,14 @@ fun ChatScreen(
                     val lastAgentMessageId = displayItems.lastOrNull { it is AgentChatItem }?.id
                     LazyColumn(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .navigationBarsPadding()
-                            .imePadding(),
+                            .fillMaxSize(),
                         state = listState,
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
                             top = 16.dp,
-                            bottom = dynamicBottomPadding,
+                            bottom = 120.dp,
                         ),
                     ) {
                         items(displayItems, key = { it.id }) { item ->
@@ -1247,8 +1228,6 @@ fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .imePadding()
                 ) {
                     PremiumInputBar(
                         value = input,
@@ -1363,10 +1342,8 @@ fun ChatScreen(
                         .padding(bottom = 96.dp)
                 ) {
                     errorMessage?.let { msg ->
-                        val providerError = msg.contains("provider", ignoreCase = true) ||
-                            msg.contains("HTTP ", ignoreCase = true) ||
-                            msg.contains("context window", ignoreCase = true) ||
-                            msg.contains("API key", ignoreCase = true)
+                        val errorUi = remember(msg) { formatAgentError(msg) }
+                        var detailsExpanded by remember(msg) { mutableStateOf(false) }
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1386,13 +1363,27 @@ fun ChatScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = msg,
+                                        text = errorUi.shortMessage,
                                         color = Color.White,
                                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
-                                if (providerError) {
+                                if (errorUi.details != null) {
+                                    Text(
+                                        text = if (detailsExpanded) errorUi.details else "Show details",
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = if (detailsExpanded) FontFamily.Monospace else FontFamily.Default,
+                                        ),
+                                        maxLines = if (detailsExpanded) 6 else 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { detailsExpanded = !detailsExpanded },
+                                    )
+                                }
+                                if (errorUi.isProviderError) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         TextButton(
                                             onClick = { continueLastPromptInNewChat() },
@@ -1415,13 +1406,8 @@ fun ChatScreen(
 
                 LaunchedEffect(errorMessage) {
                     if (errorMessage != null) {
-                        val providerError = errorMessage?.let { msg ->
-                            msg.contains("provider", ignoreCase = true) ||
-                                msg.contains("HTTP ", ignoreCase = true) ||
-                                msg.contains("context window", ignoreCase = true) ||
-                                msg.contains("API key", ignoreCase = true)
-                        } == true
-                        if (!providerError) {
+                        val isProvider = formatAgentError(errorMessage!!).isProviderError
+                        if (!isProvider) {
                             delay(4000)
                             errorMessage = null
                         }
@@ -1561,6 +1547,9 @@ private fun ReferenceChatTopBar(
                 1.dp,
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
             ),
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .padding(horizontal = 8.dp),
         ) {
             Row(
                 modifier = Modifier
@@ -1579,13 +1568,16 @@ private fun ReferenceChatTopBar(
                     ),
                 )
                 Text(
-                    text = model.substringAfterLast('/').take(18),
+                    text = model.substringAfterLast('/').take(28),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 11.sp,
                         lineHeight = 14.sp,
                         letterSpacing = 0.sp,
                     ),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 160.dp),
                 )
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -1951,7 +1943,21 @@ private fun ChatMarkdownContent(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
     useStableTableRenderer: Boolean = false,
+    streaming: Boolean = false,
 ) {
+    if (streaming) {
+        Text(
+            text = text,
+            modifier = modifier,
+            color = color,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                letterSpacing = 0.sp,
+            ),
+        )
+        return
+    }
     val hasTable = text.lineSequence().any { line ->
         val trimmed = line.trim()
         trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.count { it == '|' } >= 2
@@ -1982,12 +1988,6 @@ private fun AgentMessageCard(
     onRegenerate: () -> Unit,
 ) {
     val skin = currentClawSkin()
-    val alpha = remember(item.id) { Animatable(0f) }
-    val offsetY = remember(item.id) { Animatable(12f) }
-    LaunchedEffect(item.id) {
-        launch { alpha.animateTo(1f, tween(260, easing = FastOutSlowInEasing)) }
-        offsetY.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
-    }
 
     Column(
         modifier = Modifier
@@ -2002,33 +2002,52 @@ private fun AgentMessageCard(
             if (skin == ClawSkin.ClawMagic) {
                 AgentIdentityTag()
             }
-            val contentModifier = Modifier.graphicsLayer {
-                this.alpha = alpha.value
-                translationY = offsetY.value
-            }
+            val contentModifier = Modifier
             if (skin.isHud() || skin == ClawSkin.LiquidGlass) {
                 ClawPanel(
                     modifier = contentModifier.fillMaxWidth(),
                     cornerRadius = if (skin.isHud()) 12.dp else 20.dp,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     emphasis = 0.15f,
+                    enableShadow = false,
                 ) {
-                    SelectionContainer {
+                    if (item.streaming) {
                         ChatMarkdownContent(
                             text = item.text,
                             color = MaterialTheme.colorScheme.onSurface,
-                            useStableTableRenderer = item.streaming,
+                            useStableTableRenderer = false,
+                            streaming = true,
                         )
+                    } else {
+                        SelectionContainer {
+                            ChatMarkdownContent(
+                                text = item.text,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                useStableTableRenderer = false,
+                                streaming = false,
+                            )
+                        }
                     }
                 }
             } else {
-                SelectionContainer {
+                if (item.streaming) {
                     ChatMarkdownContent(
                         text = item.text,
                         modifier = contentModifier,
                         color = MaterialTheme.colorScheme.onSurface,
-                        useStableTableRenderer = item.streaming,
+                        useStableTableRenderer = false,
+                        streaming = true,
                     )
+                } else {
+                    SelectionContainer {
+                        ChatMarkdownContent(
+                            text = item.text,
+                            modifier = contentModifier,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            useStableTableRenderer = false,
+                            streaming = false,
+                        )
+                    }
                 }
             }
             Text(
@@ -2106,6 +2125,7 @@ private fun InlineActivityTrail(
             cornerRadius = if (skin.isHud()) 10.dp else 14.dp,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             emphasis = if (running) 0.35f else 0.10f,
+            enableShadow = false,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -2135,6 +2155,7 @@ private fun InlineActivityTrail(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                enableShadow = false,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     steps.takeLast(4).forEach { step -> InlineActivityStep(step) }
@@ -2155,6 +2176,7 @@ private fun InlineActivityStep(step: ActivityStepItem) {
         cornerRadius = if (skin.isHud()) 8.dp else 10.dp,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 11.dp),
         emphasis = if (step.running) 0.30f else 0f,
+        enableShadow = false,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2286,7 +2308,6 @@ private fun ReferenceInputBar(
     selectedMediaMimeType: String?,
     onMediaSelected: (Uri?, String?, String?) -> Unit,
     onAttach: () -> Unit,
-    showCommandButton: Boolean,
     onCommandMenu: () -> Unit,
 ) {
     Box(
@@ -2369,15 +2390,13 @@ private fun ReferenceInputBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    AnimatedVisibility(visible = showCommandButton) {
-                        CompactIconButton(onClick = onCommandMenu) {
-                            Icon(
-                                imageVector = Icons.Rounded.Menu,
-                                contentDescription = "Command menu",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
-                                modifier = Modifier.size(21.dp),
-                            )
-                        }
+                    CompactIconButton(onClick = onCommandMenu) {
+                        Icon(
+                            imageVector = Icons.Rounded.Menu,
+                            contentDescription = "Command menu",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+                            modifier = Modifier.size(21.dp),
+                        )
                     }
                     CompactIconButton(onClick = onAttach) {
                         Icon(
@@ -2451,7 +2470,6 @@ private fun PremiumInputBar(
             }
         },
     )
-    val showCommandButton = value.isEmpty()
     fun selectCommand(command: String) {
         if (command == "/orchestrate") {
             orchestrationDialogVisible = true
@@ -2477,7 +2495,7 @@ private fun PremiumInputBar(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             AnimatedVisibility(
-                visible = commandMenuVisible && showCommandButton,
+                visible = commandMenuVisible,
                 modifier = Modifier.padding(horizontal = 16.dp),
             ) {
                 CommandMenu(
@@ -2498,7 +2516,6 @@ private fun PremiumInputBar(
                 selectedMediaMimeType = selectedMediaMimeType,
                 onMediaSelected = onMediaSelected,
                 onAttach = { attachmentPicker.launch("*/*") },
-                showCommandButton = showCommandButton,
                 onCommandMenu = { commandMenuVisible = !commandMenuVisible },
             )
         }
@@ -2512,7 +2529,7 @@ private fun PremiumInputBar(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AnimatedVisibility(visible = commandMenuVisible && showCommandButton) {
+        AnimatedVisibility(visible = commandMenuVisible) {
             CommandMenu(
                 onCommandSelected = { command ->
                     selectCommand(command)
@@ -2539,15 +2556,13 @@ private fun PremiumInputBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    AnimatedVisibility(visible = showCommandButton) {
-                        CompactIconButton(onClick = { commandMenuVisible = !commandMenuVisible }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Menu,
-                                contentDescription = "Command menu",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    CompactIconButton(onClick = { commandMenuVisible = !commandMenuVisible }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Menu,
+                            contentDescription = "Command menu",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     CompactIconButton(onClick = { attachmentPicker.launch("*/*") }) {
                         Icon(
@@ -2557,15 +2572,13 @@ private fun PremiumInputBar(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    AnimatedVisibility(visible = value.isEmpty() && state == AgentRuntimeState.Idle) {
-                        CompactIconButton(onClick = onVoiceInput) {
-                            Icon(
-                                imageVector = Icons.Rounded.Mic,
-                                contentDescription = "Voice input",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    CompactIconButton(onClick = onVoiceInput) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = "Voice input",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     BasicTextField(
                         value = value,
@@ -2607,16 +2620,20 @@ private fun PremiumInputBar(
                         },
                     )
                     if (state == AgentRuntimeState.Running) {
-                        Button(
+                        Surface(
                             onClick = onStop,
-                            shape = RoundedCornerShape(999.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.background,
-                            ),
+                            modifier = Modifier.size(if (skin.isHud()) 44.dp else 42.dp),
+                            shape = if (skin.isHud()) RoundedCornerShape(10.dp) else CircleShape,
+                            color = MaterialTheme.colorScheme.error,
+                            contentColor = Color.White,
                         ) {
-                            Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Stop,
+                                    contentDescription = "Stop",
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     } else {
                         Surface(
@@ -3794,14 +3811,27 @@ private fun copyUriToCache(context: Context, uri: Uri): java.io.File? {
 @Composable
 private fun rememberBitmapFromUri(context: Context, uri: Uri?): androidx.compose.ui.graphics.ImageBitmap? {
     if (uri == null) return null
-    return remember(uri) {
-        runCatching {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                val bmp = android.graphics.BitmapFactory.decodeStream(stream)
-                bmp?.asImageBitmap()
-            }
-        }.getOrNull()
+    var bitmap by remember(uri) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(uri) {
+        bitmap = withContext(Dispatchers.IO) {
+            runCatching {
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    android.graphics.BitmapFactory.decodeStream(stream, null, options)
+                }
+                var sampleSize = 1
+                val maxDim = 1024
+                while (options.outWidth / sampleSize > maxDim || options.outHeight / sampleSize > maxDim) {
+                    sampleSize *= 2
+                }
+                val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    android.graphics.BitmapFactory.decodeStream(stream, null, decodeOptions)?.asImageBitmap()
+                }
+            }.getOrNull()
+        }
     }
+    return bitmap
 }
 
 @Composable

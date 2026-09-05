@@ -15,6 +15,7 @@ import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.api.TokenUsage
 import com.clawdroid.app.data.api.ToolSchemaRegistry
 import com.clawdroid.app.data.api.internalUserPrompt
+import com.clawdroid.app.core.config.OpenCodeZen
 import com.clawdroid.app.data.db.ClawDroidDatabase
 import com.clawdroid.app.data.db.ConversationEntity
 import kotlinx.coroutines.CancellationException
@@ -258,6 +259,7 @@ class AgentEngine(
                 client.streamChat(
                     messages = messages,
                     tools = toolsArray,
+                    openCodeSessionId = OpenCodeZen.sessionIdForConversation(conversationId),
                 ).collect { event ->
                     when (event) {
                         is StreamEvent.TextDelta -> {

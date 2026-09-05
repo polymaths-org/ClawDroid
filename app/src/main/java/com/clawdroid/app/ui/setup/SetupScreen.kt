@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,6 +73,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.config.OpenCodeZen
 import com.clawdroid.app.core.voice.PiperEngine
 import com.clawdroid.app.core.voice.TtsEngineState
 import com.clawdroid.app.ui.components.GlassButton
@@ -106,6 +109,7 @@ data class ProviderInfo(
 )
 
 private val providers = listOf(
+    ProviderInfo("opencode_zen", "OpenCode Zen", "🐙", "One key for all Zen models, free models included", "https://opencode.ai/zen/v1", "big-pickle"),
     ProviderInfo("anthropic", "Anthropic", "◐", "Claude via native Messages API", "https://api.anthropic.com/v1", "claude-sonnet-4-5", "Native"),
     ProviderInfo("openai", "OpenAI", "◎", "GPT and reasoning models", "https://api.openai.com/v1", "gpt-4o"),
     ProviderInfo("gemini", "Google Gemini", "◆", "Gemini through OpenAI-compatible API", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash"),
@@ -273,6 +277,8 @@ private fun OwnerIntroductionStep(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -459,11 +465,21 @@ private fun ConfigurationStep(
     onNext: () -> Unit,
 ) {
     var showKey by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var zenModels by remember(provider.id) { mutableStateOf<List<String>>(emptyList()) }
+    var zenModelsLoading by remember(provider.id) { mutableStateOf(false) }
+    var zenModelsError by remember(provider.id) { mutableStateOf<String?>(null) }
+    var zenExpanded by remember(provider.id) { mutableStateOf(false) }
+    var zenProbeRunning by remember(provider.id) { mutableStateOf(false) }
+    var zenProbe by remember(provider.id) { mutableStateOf<OpenCodeZen.ChatProbe?>(null) }
+    val isZenSetup = provider.id == "opencode_zen"
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -523,7 +539,156 @@ private fun ConfigurationStep(
                     value = model,
                     onValueChange = onModelChange,
                     placeholder = "Model name or ID",
+                    trailingIcon = if (model != provider.defaultModel) {
+                        {
+                            Text(
+                                text = "Reset",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EmberOrange,
+                                modifier = Modifier
+                                    .clickable { onModelChange(provider.defaultModel) }
+                                    .padding(8.dp),
+                            )
+                        }
+                    } else null,
                 )
+
+                if (isZenSetup) {
+                    GlassButton(
+                        onClick = {
+                            zenModelsLoading = true
+                            zenModelsError = null
+                            scope.launch {
+                                try {
+                                    zenModels = OpenCodeZen.fetchModels(baseUrl.ifBlank { OpenCodeZen.BASE_URL }, apiKey)
+                                    if (zenModels.isNotEmpty() && model.isBlank()) {
+                                        onModelChange(zenModels.first())
+                                    }
+                                    zenExpanded = zenModels.isNotEmpty()
+                                } catch (t: Throwable) {
+                                    zenModelsError = t.message ?: "Failed to load models"
+                                } finally {
+                                    zenModelsLoading = false
+                                }
+                            }
+                        },
+                        enabled = !zenModelsLoading,
+                    ) {
+                        Text(
+                            if (zenModelsLoading) "Loading models…" else "Load Zen models",
+                            fontWeight = FontWeight.SemiBold,
+                            color = SoftWhite,
+                        )
+                    }
+                    if (zenModelsError != null) {
+                        Text(
+                            text = zenModelsError.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FireRed,
+                        )
+                    }
+                    GlassButton(
+                        onClick = {
+                            zenProbeRunning = true
+                            zenProbe = null
+                            scope.launch {
+                                try {
+                                    zenProbe = OpenCodeZen.testChat(
+                                        baseUrl.ifBlank { OpenCodeZen.BASE_URL },
+                                        apiKey,
+                                        model.ifBlank { OpenCodeZen.DEFAULT_MODEL },
+                                    )
+                                } finally {
+                                    zenProbeRunning = false
+                                }
+                            }
+                        },
+                        enabled = !zenProbeRunning && baseUrl.isNotBlank() && model.isNotBlank() &&
+                            (!provider.needsApiKey || apiKey.isNotBlank()),
+                    ) {
+                        Text(
+                            if (zenProbeRunning) "Testing…" else "Test connection",
+                            fontWeight = FontWeight.SemiBold,
+                            color = SoftWhite,
+                        )
+                    }
+                    zenProbe?.let { probe ->
+                        Text(
+                            text = if (probe.ok) {
+                                "Connected — model replied: ${probe.reply}"
+                            } else {
+                                "Connection failed (${probe.error}). " +
+                                    "Check the key and model, or try ${OpenCodeZen.DEFAULT_MODEL}."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (probe.ok) EmberOrange else FireRed,
+                        )
+                    }
+                    if (zenModels.isNotEmpty()) {
+                        val freeModels = zenModels.filter { OpenCodeZen.isFree(it) }
+                        val paidModels = zenModels.filterNot { OpenCodeZen.isFree(it) }
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Free models",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = EmberOrange,
+                            )
+                            freeModels.forEach { zenModel ->
+                                val isSelected = zenModel == model
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) GlassFillStrong else GlassFill)
+                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(10.dp))
+                                        .clickable { onModelChange(zenModel) }
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = zenModel,
+                                        color = SoftWhite,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (isSelected) {
+                                        Text("✓", color = EmberOrange, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            if (paidModels.isNotEmpty()) {
+                                Text(
+                                    "All models",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = EmberOrange,
+                                )
+                                paidModels.take(60).forEach { zenModel ->
+                                    val isSelected = zenModel == model
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (isSelected) GlassFillStrong else GlassFill)
+                                            .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(10.dp))
+                                            .clickable { onModelChange(zenModel) }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = zenModel,
+                                            color = SoftWhite,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        if (isSelected) {
+                                            Text("✓", color = EmberOrange, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Text(
                     text = "Type the model name manually or use the default.",
@@ -655,7 +820,7 @@ private fun AgentCustomizationStep(
                         ) {
                             Text(
                                 text = when (personality) {
-                                    "Cyberpunk" -> "🕶 Cyberpunk"
+                                    "Cyberpunk" -> "✦ Cyberpunk"
                                     "Sysadmin" -> "⚙️ Sysadmin"
                                     "Helpful" -> "🤝 Helpful"
                                     "Analytical" -> "🔬 Analytical"

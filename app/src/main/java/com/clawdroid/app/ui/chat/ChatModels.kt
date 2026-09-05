@@ -66,3 +66,30 @@ enum class AgentRuntimeState {
     Idle,
     Running,
 }
+
+data class AgentErrorUi(
+    val shortMessage: String,
+    val details: String?,
+    val isProviderError: Boolean,
+)
+
+fun formatAgentError(raw: String): AgentErrorUi {
+    val lower = raw.lowercase()
+    val isProviderError = "provider" in lower || "http " in lower ||
+        "context window" in lower || "api key" in lower ||
+        "timeout" in lower || "network" in lower || "connection" in lower
+    val short = when {
+        Regex("http\\s+5\\d\\d").containsMatchIn(raw) || "internal server error" in lower ->
+            "The model service had a problem. Try again in a moment."
+        Regex("http\\s+401|http\\s+403").containsMatchIn(raw) || "api key" in lower || "unauthorized" in lower ->
+            "Your API key was rejected. Check it in Settings > Provider."
+        "context window" in lower || Regex("http\\s+400").containsMatchIn(raw) ->
+            "This conversation is too long for the model. Continue in a new chat."
+        "timeout" in lower || "network" in lower || "connection" in lower || "unreachable" in lower ->
+            "Could not reach the model service. Check your connection and retry."
+        else -> raw.lineSequence().firstOrNull().orEmpty().trim().take(140)
+            .ifBlank { "Something went wrong. Try again." }
+    }
+    val details = raw.takeIf { it.trim() != short.trim() && it.isNotBlank() }
+    return AgentErrorUi(shortMessage = short, details = details, isProviderError = isProviderError)
+}

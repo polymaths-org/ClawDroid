@@ -19,13 +19,23 @@ object AppContainer {
     fun init(context: Context) {
         _context = context.applicationContext
         AppConfigManager.init(context)
-        _db = ClawDroidDatabase.get(context)
-        _processManager = ProcessManagerProvider.get(context)
     }
 
     val context: Context get() = _context!!
-    val db: ClawDroidDatabase get() = _db!!
-    val processManager: ProcessManager get() = _processManager!!
+    val db: ClawDroidDatabase
+        get() {
+            if (_db == null) {
+                _db = ClawDroidDatabase.get(_context!!)
+            }
+            return _db!!
+        }
+    val processManager: ProcessManager
+        get() {
+            if (_processManager == null) {
+                _processManager = ProcessManagerProvider.get(_context!!)
+            }
+            return _processManager!!
+        }
 
     fun createAgentEngine(projectId: String? = null): AgentEngine {
         return AgentEngine(_context!!, projectId = projectId)
