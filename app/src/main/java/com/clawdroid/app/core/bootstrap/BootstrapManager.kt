@@ -34,6 +34,8 @@ object BootstrapManager {
     ): BootstrapResult = withContext(Dispatchers.IO) {
         val env = EnvironmentSetup.build(context)
         createBaseDirectories(context, env)
+        runCatching { SharedFolderManager.ensureSharedFolders() }
+            .onFailure { Log.w(TAG, "Unable to create shared folders", it) }
 
         val bash = File(env.prefix, "bin/bash")
         if (!bash.exists()) {
