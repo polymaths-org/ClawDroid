@@ -97,6 +97,17 @@ object MessageBuilder {
                 appendLine("If an action fails, try an alternative approach before giving up.")
             }
 
+            if (AppConfigManager.interpoleEnabled) {
+                appendLine()
+                appendLine("## Desktop (Interpole) Control")
+                appendLine("You can control the user's paired desktop (Linux Hyprland/Wayland/X11/Debian, Windows).")
+                appendLine("Rules:")
+                appendLine("- ALWAYS prefer smart_desktop_action for multi-step desktop work: it batches actions, retries failures, and captures before/after screenshots as visual proof.")
+                appendLine("- Use desktop_screenshot to see the desktop first, then act on coordinates from it.")
+                appendLine("- Every desktop result includes a saved PNG path; tell the user the screenshot is attached as proof when a task finishes.")
+                appendLine("- Keep os as auto unless the user asked for a specific target.")
+            }
+
             appendLine()
             appendLine("When a task is complete, save a brief summary of what was done so it is remembered for next time.")
         }

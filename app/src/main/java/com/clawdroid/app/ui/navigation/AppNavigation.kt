@@ -18,6 +18,7 @@ import com.clawdroid.app.ui.settings.ChannelsConfigScreen
 import com.clawdroid.app.ui.settings.ConfigEditorScreen
 import com.clawdroid.app.ui.settings.ConfigFileType
 import com.clawdroid.app.ui.settings.McpConfigScreen
+import com.clawdroid.app.ui.settings.InterpoleConfigScreen
 import com.clawdroid.app.ui.settings.SettingsScreen
 import com.clawdroid.app.ui.settings.SkillsScreen
 import com.clawdroid.app.ui.settings.WorkspaceFilesScreen
@@ -109,6 +110,7 @@ fun AppNavHost(
                 onNavigateToChannels = { navController.navigate(NavRoutes.SettingsChannels.route) },
                 onNavigateToSkills = { navController.navigate(NavRoutes.SettingsSkills.route) },
                 onNavigateToMcp = { navController.navigate(NavRoutes.SettingsMCP.route) },
+                onNavigateToInterpole = { navController.navigate(NavRoutes.SettingsInterpole.route) },
                 onNavigateToAgentConfig = { navController.navigate(NavRoutes.SettingsAgent.route) },
                 onNavigateToTerminal = { navController.navigate(NavRoutes.Terminal.route) },
                 startVoiceTrigger = startVoiceTrigger,
@@ -155,6 +157,10 @@ fun AppNavHost(
 
         composable(NavRoutes.SettingsMCP.route) {
             McpConfigScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(NavRoutes.SettingsInterpole.route) {
+            InterpoleConfigScreen(onBack = { navController.popBackStack() })
         }
 
         composable(NavRoutes.ConfigEditor.route) { backStackEntry ->

@@ -372,6 +372,27 @@ object AppConfigManager {
         get() = p.getBoolean("spotify_connector_enabled", true)
         set(value) = p.edit().putBoolean("spotify_connector_enabled", value).apply()
 
+    // Interpole desktop control (Task 6: Hyprland easy mode or disabled)
+    var interpoleEnabled: Boolean
+        get() = p.getBoolean("interpole_enabled", false)
+        set(value) = p.edit().putBoolean("interpole_enabled", value).apply()
+
+    var interpoleHyprlandEnabled: Boolean
+        get() = p.getBoolean("interpole_hyprland_enabled", true)
+        set(value) = p.edit().putBoolean("interpole_hyprland_enabled", value).apply()
+
+    var interpoleHost: String
+        get() = p.getString("interpole_host", "") ?: ""
+        set(value) = p.edit().putString("interpole_host", value).apply()
+
+    var interpolePort: Int
+        get() = p.getInt("interpole_port", 24832)
+        set(value) = p.edit().putInt("interpole_port", value).apply()
+
+    var desktopOsTarget: String
+        get() = p.getString("desktop_os_target", "auto") ?: "auto"
+        set(value) = p.edit().putString("desktop_os_target", value).apply()
+
     fun syncToSandbox(context: Context) {
         val channelsList = mutableListOf<ChannelConfig>()
         channelsList.add(ChannelConfig(type = "whatsapp", enabled = whatsappEnabled, config = mapOf("phone" to whatsappAllowedContacts)))

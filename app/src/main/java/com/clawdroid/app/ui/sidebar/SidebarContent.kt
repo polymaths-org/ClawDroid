@@ -82,6 +82,7 @@ fun SidebarContent(
     onNavigateToChannels: () -> Unit,
     onNavigateToSkills: () -> Unit,
     onNavigateToMcp: () -> Unit,
+    onNavigateToInterpole: () -> Unit = {},
     onNavigateToAgentConfig: () -> Unit,
     onNavigateToTerminal: () -> Unit,
 ) {
@@ -102,6 +103,7 @@ fun SidebarContent(
         NavItem("Skills", Icons.Rounded.Extension, onNavigateToSkills),
         NavItem("Channels", Icons.Rounded.Cable, onNavigateToChannels),
         NavItem("MCP", Icons.Rounded.Api, onNavigateToMcp),
+        NavItem("Interpole", Icons.Rounded.Cable, onNavigateToInterpole),
         NavItem("Automations", Icons.Rounded.Autorenew, onNavigateToAutomations),
         NavItem("Settings", Icons.Rounded.Settings, onNavigateToSettings),
     )

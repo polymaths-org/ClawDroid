@@ -1005,3 +1005,111 @@ private fun configSliderColors() = SliderDefaults.colors(
     activeTrackColor = EmberOrange,
     inactiveTrackColor = GlassBorderDim,
 )
+
+@Composable
+fun InterpoleConfigScreen(onBack: () -> Unit) {
+    var enabled by remember { mutableStateOf(AppConfigManager.interpoleEnabled) }
+    var hyprlandEasy by remember { mutableStateOf(AppConfigManager.interpoleHyprlandEnabled) }
+    var host by remember { mutableStateOf(AppConfigManager.interpoleHost) }
+    var portText by remember { mutableStateOf(AppConfigManager.interpolePort.toString()) }
+    var osTarget by remember { mutableStateOf(AppConfigManager.desktopOsTarget) }
+
+    ConfigScaffold("Interpole Desktop", onBack) {
+        InfoCard(
+            title = "Interpole + Hyprland",
+            body = "Interpole controls your paired desktop. Turn it OFF to disable all desktop input. Turn Hyprland easy-mode ON for smooth Arch Hyprland demo (hyprctl + ydotool + grim), OFF for generic Wayland/X11.",
+        )
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Master Switch")
+                ConfigSwitch(
+                    "Enable Interpole",
+                    "When OFF, every desktop action is blocked with interpole_disabled. This is the kill-switch.",
+                    enabled,
+                ) { enabled = it }
+
+                AnimatedVisibility(visible = enabled) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ConfigSwitch(
+                            "Hyprland easy-mode",
+                            "ON: hyprctl dispatch + ydotool/wtype + grim (Arch Hyprland demo). OFF: generic wtype/ydotool/xdotool, no hyprctl.",
+                            hyprlandEasy,
+                        ) { hyprlandEasy = it }
+                    }
+                }
+            }
+        }
+
+        if (enabled) {
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionTitle("Connection")
+                    GlassTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        placeholder = "Desktop host, e.g. 192.168.1.50 (empty = USB/ADB)",
+                    )
+                    GlassTextField(
+                        value = portText,
+                        onValueChange = { portText = it.filter { c -> c.isDigit() }.take(5) },
+                        placeholder = "Port (default 24832)",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Text(
+                        if (hyprlandEasy) {
+                            "Effective backend: HYPRLAND_EASY — hyprctl + ydotool + grim."
+                        } else {
+                            "Effective backend: GENERIC — no hyprctl calls."
+                        },
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionTitle("Desktop OS target")
+                    val targets = listOf(
+                        "auto" to "Auto — Hyprland easy-mode when ON, generic Wayland otherwise.",
+                        "hyprland" to "Hyprland — hyprctl + ydotool + grim (Arch demo).",
+                        "wayland" to "Wayland generic — wtype/ydotool, no hyprctl.",
+                        "x11" to "X11 — xdotool + scrot/import.",
+                        "debian" to "Debian — grim → scrot → import fallback chain.",
+                        "windows" to "Windows — PowerShell input + screenshot.",
+                    )
+                    targets.forEach { (value, description) ->
+                        ConfigChoice(
+                            label = value.replaceFirstChar { it.titlecase() },
+                            description = description,
+                            selected = osTarget == value,
+                        ) { osTarget = value }
+                    }
+                }
+            }
+
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionTitle("Arch Hyprland setup (run on desktop)")
+                    DetailRow("Packages", "ydotool, wtype, grim, slurp, wl-clipboard, socat")
+                    DetailRow("Daemon", "ydotoold (user or system service)")
+                    DetailRow("Verify", "hyprctl version && grim -h | head -3")
+                    Text(
+                        "sudo pacman -S --needed ydotool wtype grim slurp wl-clipboard socat",
+                        color = MutedGray,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+
+        SaveConfigButton {
+            AppConfigManager.interpoleEnabled = enabled
+            AppConfigManager.interpoleHyprlandEnabled = hyprlandEasy
+            AppConfigManager.interpoleHost = host.trim()
+            AppConfigManager.interpolePort = portText.toIntOrNull()?.coerceIn(1, 65535) ?: 24832
+            AppConfigManager.desktopOsTarget = osTarget
+        }
+    }
+}
