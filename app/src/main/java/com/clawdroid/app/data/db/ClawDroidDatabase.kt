@@ -71,6 +71,8 @@ data class MessageEntity(
     val createdAt: Long,
     val tokenCount: Int,
     val toolCallId: String? = null, // For role="tool": the tool_call_id this result responds to
+    val mediaPath: String? = null,
+    val mediaMimeType: String? = null,
 )
 
 data class MessageWithToolCalls(
@@ -266,7 +268,7 @@ interface SettingsDao {
         AutomationEntity::class,
         SettingsEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class ClawDroidDatabase : RoomDatabase() {

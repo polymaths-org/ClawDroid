@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -95,8 +96,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -120,6 +124,7 @@ import androidx.core.content.ContextCompat
 import com.clawdroid.app.core.config.AppConfigManager
 import com.clawdroid.app.core.engine.AgentEngine
 import com.clawdroid.app.core.engine.AgentRunEvent
+import com.clawdroid.app.core.engine.AgentRunManager
 import com.clawdroid.app.core.service.ServiceManager
 import com.clawdroid.app.core.voice.SpeechRecognizerClient
 import com.clawdroid.app.core.voice.VoiceManager
@@ -165,107 +170,49 @@ fun ChatScreen(
 
     // Database Setup
     val db = remember { ClawDroidDatabase.get(context) }
-    var currentConversationId by remember { mutableStateOf<String?>(null) }
+    var currentConversationId by remember { mutableStateOf<String?>(AppConfigManager.activeConversationId) }
 
-    LaunchedEffect(Unit) {
-        db.conversations().pruneAllEmpty()
-    }
-
-    // Pick latest conversation on start
-    val allConversations by db.conversations().observeConversations().collectAsState(initial = null)
-    LaunchedEffect(allConversations) {
-        if (currentConversationId == null && allConversations != null) {
-            val latest = allConversations?.firstOrNull()
-            if (latest != null) {
-                currentConversationId = latest.id
-            } else {
-                val newId = UUID.randomUUID().toString()
-                db.conversations().upsert(
-                    ConversationEntity(
-                        id = newId,
-                        projectId = null,
-                        title = "New Agent Chat",
-                        createdAt = System.currentTimeMillis(),
-                        updatedAt = System.currentTimeMillis(),
-                        status = "idle",
-                        costUsd = 0.0
-                    )
-                )
-                currentConversationId = newId
-            }
-        }
-    }
-
-    LaunchedEffect(currentConversationId) {
-        currentConversationId?.let { convId ->
-            val conv = db.conversations().getById(convId)
-            AppConfigManager.activeProjectId = conv?.projectId
-        }
-    }
-
-    // Chronological Visual Items
+    // Visual / Chat Items
     val items = remember { mutableStateListOf<ChatItem>() }
-    LaunchedEffect(currentConversationId) {
-        val convId = currentConversationId ?: return@LaunchedEffect
-        items.clear()
-        val messages = db.messages().getAll(convId)
-        for (msg in messages) {
-            if (msg.role == "user") {
-                if (!msg.content.startsWith("Previous conversation summary:")) {
-                    items += UserChatItem(id = msg.id, text = msg.content)
-                }
-            } else if (msg.role == "assistant") {
-                if (!msg.content.startsWith("[Compacted Summary]")) {
-                    val toolCalls = db.toolCalls().getForMessage(msg.id)
-                    if (toolCalls.isNotEmpty()) {
-                        val steps = toolCalls.map { t ->
-                            val summary = when (t.toolName) {
-                                "write_file" -> {
-                                    val content = runCatching { JSONObject(t.arguments).optString("content") }.getOrNull()
-                                        ?: extractJsonField(t.arguments, "content").orEmpty()
-                                    val lineCount = content.lines().size
-                                    "Write File (+$lineCount lines)"
-                                }
-                                "edit_file" -> {
-                                    val search = runCatching { JSONObject(t.arguments).optString("search") }.getOrNull()
-                                        ?: extractJsonField(t.arguments, "search").orEmpty()
-                                    val replace = runCatching { JSONObject(t.arguments).optString("replace") }.getOrNull()
-                                        ?: extractJsonField(t.arguments, "replace").orEmpty()
-                                    val searchLines = search.lines().size
-                                    val replaceLines = replace.lines().size
-                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
-                                }
-                                else -> t.toolName.readableToolName()
-                            }
-                            ActivityStepItem(
-                                id = t.id,
-                                callId = t.id,
-                                type = t.toolName.toActivityStepType(),
-                                summary = summary,
-                                detail = t.result ?: t.arguments,
-                                result = t.result ?: "",
-                                arguments = t.arguments,
-                                running = t.status == "running",
-                                isError = t.status == "failed" || runCatching {
-                                    val obj = JSONObject(t.result ?: "")
-                                    obj.optInt("exit_code", 0) != 0 || obj.has("error")
-                                }.getOrDefault(false)
-                            )
-                        }
-                        items += ActivityChatItem(steps = steps, running = steps.any { it.running })
-                    }
-                    items += AgentChatItem(id = msg.id, text = msg.content, streaming = false)
+    var input by remember { mutableStateOf("") }
+    var selectedMediaUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedMediaMimeType by remember { mutableStateOf<String?>(null) }
+    var selectedMediaName by remember { mutableStateOf<String?>(null) }
+    var voiceOverlayText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Run Manager States
+    val activeRunsState by AgentRunManager.activeRuns.collectAsState()
+    val currentRunState = activeRunsState[currentConversationId]
+
+    val isAgentRunning by remember(currentConversationId, currentRunState) {
+        currentRunState?.isRunning ?: kotlinx.coroutines.flow.MutableStateFlow(false)
+    }.collectAsState()
+
+    val activeChatItems by remember(currentConversationId, currentRunState) {
+        currentRunState?.activeChatItems ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList())
+    }.collectAsState()
+
+    val agentResponseText by remember(currentConversationId, currentRunState) {
+        currentRunState?.agentResponseText ?: kotlinx.coroutines.flow.MutableStateFlow("")
+    }.collectAsState()
+
+    val runtimeState = if (isAgentRunning) AgentRuntimeState.Running else AgentRuntimeState.Idle
+    val engine = remember(currentConversationId, isAgentRunning, currentRunState) {
+        currentRunState?.engine
+    }
+    val displayItems by remember(activeChatItems) {
+        derivedStateOf {
+            val activeOnly = activeChatItems.filter { item ->
+                when (item) {
+                    is AgentChatItem -> item.streaming
+                    is ActivityChatItem -> item.running
+                    else -> true
                 }
             }
+            items + activeOnly
         }
     }
-
-    var input by remember { mutableStateOf("") }
-    var runtimeState by remember { mutableStateOf(AgentRuntimeState.Idle) }
-    var engine by remember { mutableStateOf<AgentEngine?>(null) }
-    var runJob by remember { mutableStateOf<Job?>(null) }
-    var runningAgentMessageId by remember { mutableStateOf<String?>(null) }
-    var runningActivityId by remember { mutableStateOf<String?>(null) }
 
     // Voice & Call states
     val voiceManager = remember { VoiceManager(context.applicationContext) }
@@ -276,8 +223,8 @@ fun ChatScreen(
 
     // Real-time transcript components
     var userPartialText by remember { mutableStateOf("") }
-    var agentResponseText by remember { mutableStateOf("") }
     var listenTrigger by remember { mutableStateOf(0) }
+    var isRecognizerListening by remember { mutableStateOf(false) }
 
     val voiceSpeaking by voiceManager.isSpeaking.collectAsState()
     val partialSpeech by voiceRecognizer.partialResult.collectAsState()
@@ -367,52 +314,18 @@ fun ChatScreen(
         }
     }
 
-    fun ensureAgentMessage(): String {
-        val existingId = runningAgentMessageId
-        if (existingId != null) return existingId
-        val message = AgentChatItem(text = "", streaming = true)
-        items += message
-        runningAgentMessageId = message.id
-        return message.id
-    }
-
-    fun finishCurrentAgentText() {
-        runningAgentMessageId?.let { id ->
-            items.replaceAgentMessage(id) { it.copy(streaming = false) }
-        }
-        runningAgentMessageId = null
-    }
-
-    fun finishCurrentActivity() {
-        runningActivityId?.let { id ->
-            items.replaceActivityItem(id) { it.copy(running = false, steps = it.steps.markAllComplete()) }
-        }
-        runningActivityId = null
-    }
-
     fun stopCurrentRun(reason: String = "Stopped") {
-        engine?.stop()
-        runJob?.cancel()
-        runningAgentMessageId?.let { id ->
-            items.replaceAgentMessage(id) { current ->
-                current.copy(text = current.text.ifBlank { reason }, streaming = false)
-            }
-        }
-        runningActivityId?.let { id ->
-            items.replaceActivityItem(id) { current ->
-                current.copy(running = false, steps = current.steps.markLastComplete(reason))
-            }
-        }
-        runtimeState = AgentRuntimeState.Idle
-        runningAgentMessageId = null
-        runningActivityId = null
+        AgentRunManager.stopRun(currentConversationId)
         listenTrigger++
     }
 
-    fun submitQuery(text: String) {
+    fun submitQuery(text: String, mediaPath: String? = null, mediaMimeType: String? = null) {
         val convId = currentConversationId ?: return
 
         val userMsgId = UUID.randomUUID().toString()
+        // Add to items immediately with the same ID to prevent key change / flickering
+        items += UserChatItem(id = userMsgId, text = text, mediaPath = mediaPath, mediaMimeType = mediaMimeType)
+
         scope.launch {
             db.messages().insert(
                 MessageEntity(
@@ -421,7 +334,9 @@ fun ChatScreen(
                     role = "user",
                     content = text,
                     createdAt = System.currentTimeMillis(),
-                    tokenCount = 0
+                    tokenCount = 0,
+                    mediaPath = mediaPath,
+                    mediaMimeType = mediaMimeType
                 )
             )
             val conv = db.conversations().getById(convId)
@@ -435,291 +350,66 @@ fun ChatScreen(
             } else if (conv != null) {
                 db.conversations().update(conv.copy(updatedAt = System.currentTimeMillis()))
             }
+            // Start the run after database insert finishes so context is built correctly
+            AgentRunManager.startRun(context.applicationContext, convId, text, mediaPath, mediaMimeType)
         }
-
-        items += UserChatItem(id = userMsgId, text = text)
-
-        runningAgentMessageId = null
-        runningActivityId = null
-        runtimeState = AgentRuntimeState.Running
-        orbState = OrbState.Thinking
-        ensureAgentMessage()
-
-        val newEngine = AgentEngine(context.applicationContext, projectId = AppConfigManager.activeProjectId)
-        engine = newEngine
 
         if (isCallModeActive) {
             voiceManager.speakThinkingPhrase()
-        }
-
-        runJob = scope.launch {
-            runCatching {
-                newEngine.run(text, maxTurns = AppConfigManager.maxAgentTurns).collect { event ->
-                    when (event) {
-                        is AgentRunEvent.TextDelta -> {
-                            finishCurrentActivity()
-                            val messageId = ensureAgentMessage()
-                            items.replaceAgentMessage(messageId) { current ->
-                                current.copy(text = current.text + event.text, streaming = true)
-                            }
-                            agentResponseText += event.text
-                        }
-
-                        is AgentRunEvent.ToolCallStreaming -> {
-                            finishCurrentAgentText()
-                            val args = event.arguments
-                            val summary = when (event.name) {
-                                "write_file" -> {
-                                    val content = extractJsonField(args, "content").orEmpty()
-                                    val lineCount = content.lines().size
-                                    "Write File (+$lineCount lines)"
-                                }
-                                "edit_file" -> {
-                                    val search = extractJsonField(args, "search").orEmpty()
-                                    val replace = extractJsonField(args, "replace").orEmpty()
-                                    val searchLines = search.lines().size
-                                    val replaceLines = replace.lines().size
-                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
-                                }
-                                else -> event.name.readableToolName()
-                            }
-                            val step = ActivityStepItem(
-                                id = event.callId,
-                                callId = event.callId,
-                                type = event.name.toActivityStepType(),
-                                summary = summary,
-                                detail = event.arguments,
-                                result = "",
-                                arguments = event.arguments,
-                                running = true,
-                            )
-                            val activityId = runningActivityId
-                            if (activityId == null) {
-                                val activity = ActivityChatItem(steps = listOf(step), running = true)
-                                items += activity
-                                runningActivityId = activity.id
-                            } else {
-                                items.replaceActivityItem(activityId) { current ->
-                                    val idx = current.steps.indexOfFirst { it.callId == event.callId }
-                                    val updatedSteps = if (idx >= 0) {
-                                        current.steps.mapIndexed { i, s ->
-                                            if (i == idx) step else s
-                                        }
-                                    } else {
-                                        current.steps + step
-                                    }
-                                    current.copy(running = true, steps = updatedSteps)
-                                }
-                            }
-                        }
-
-                        is AgentRunEvent.ToolCallRequested -> {
-                            finishCurrentAgentText()
-                            val args = event.call.arguments
-                            val summary = when (event.call.name) {
-                                "write_file" -> {
-                                    val content = runCatching { JSONObject(args).optString("content") }.getOrNull()
-                                        ?: extractJsonField(args, "content").orEmpty()
-                                    val lineCount = content.lines().size
-                                    "Write File (+$lineCount lines)"
-                                }
-                                "edit_file" -> {
-                                    val search = runCatching { JSONObject(args).optString("search") }.getOrNull()
-                                        ?: extractJsonField(args, "search").orEmpty()
-                                    val replace = runCatching { JSONObject(args).optString("replace") }.getOrNull()
-                                        ?: extractJsonField(args, "replace").orEmpty()
-                                    val searchLines = search.lines().size
-                                    val replaceLines = replace.lines().size
-                                    "Edit File (-$searchLines lines, +$replaceLines lines)"
-                                }
-                                else -> event.call.name.readableToolName()
-                            }
-                            val step = ActivityStepItem(
-                                id = event.call.id,
-                                callId = event.call.id,
-                                type = event.call.name.toActivityStepType(),
-                                summary = summary,
-                                detail = event.call.arguments,
-                                result = "",
-                                arguments = event.call.arguments,
-                                running = true,
-                            )
-                            val activityId = runningActivityId
-                            if (activityId == null) {
-                                val activity = ActivityChatItem(steps = listOf(step), running = true)
-                                items += activity
-                                runningActivityId = activity.id
-                            } else {
-                                items.replaceActivityItem(activityId) { current ->
-                                    val idx = current.steps.indexOfFirst { it.callId == event.call.id }
-                                    val updatedSteps = if (idx >= 0) {
-                                        current.steps.mapIndexed { i, s ->
-                                            if (i == idx) step else s
-                                        }
-                                    } else {
-                                        current.steps + step
-                                    }
-                                    current.copy(running = true, steps = updatedSteps)
-                                }
-                            }
-                        }
-
-                        is AgentRunEvent.ToolOutputUpdated -> {
-                            runningActivityId?.let { id ->
-                                items.replaceActivityItem(id) { current ->
-                                    current.copy(
-                                        steps = current.steps.map { step ->
-                                            if (step.callId == event.callId) {
-                                                val mockResult = JSONObject().put("output", event.output).toString()
-                                                step.copy(result = mockResult)
-                                            } else {
-                                                step
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        is AgentRunEvent.ToolResultReceived -> {
-                            val isError = event.result.isError || runCatching {
-                                val obj = JSONObject(event.result.content)
-                                obj.optInt("exit_code", 0) != 0 || obj.has("error")
-                            }.getOrDefault(false)
-
-                            runningActivityId?.let { id ->
-                                items.replaceActivityItem(id) { current ->
-                                    current.copy(running = true, steps = current.steps.markLastComplete(event.result.content, isError = isError))
-                                }
-                            }
-                        }
-
-                        is AgentRunEvent.SteeringApplied -> {
-                            val activity = ActivityChatItem(
-                                steps = listOf(
-                                    ActivityStepItem(
-                                        type = ActivityStepType.Service,
-                                        summary = "Applied steering",
-                                        detail = event.message,
-                                    )
-                                ),
-                                running = false,
-                            )
-                            items += activity
-                        }
-
-                        is AgentRunEvent.LoopWarning -> {
-                            val activity = ActivityChatItem(
-                                steps = listOf(
-                                    ActivityStepItem(
-                                        type = ActivityStepType.Service,
-                                        summary = "Loop warning",
-                                        detail = event.message,
-                                    )
-                                ),
-                                running = false,
-                            )
-                            items += activity
-                        }
-
-                        is AgentRunEvent.Completed -> {
-                            runningAgentMessageId?.let { id ->
-                                items.replaceAgentMessage(id) { current ->
-                                    current.copy(text = current.text.ifBlank { event.finalText }, streaming = false)
-                                }
-                            }
-                            finishCurrentActivity()
-                            runtimeState = AgentRuntimeState.Idle
-                            runningAgentMessageId = null
-                            runningActivityId = null
-
-                            processSimulatedSystemCommand(event.finalText)
-
-                            if (isCallModeActive) {
-                                voiceManager.speakWithNaturalBreaks(event.finalText) {
-                                    scope.launch {
-                                        userPartialText = ""
-                                        agentResponseText = ""
-                                        listenTrigger++
-                                    }
-                                }
-                            } else {
-                                userPartialText = ""
-                                agentResponseText = ""
-                            }
-                        }
-
-                        is AgentRunEvent.Stopped -> {
-                            runningAgentMessageId?.let { id ->
-                                items.replaceAgentMessage(id) { current ->
-                                    current.copy(text = current.text.ifBlank { "Stopped: ${event.reason}" }, streaming = false)
-                                }
-                            }
-                            runningActivityId?.let { id ->
-                                items.replaceActivityItem(id) { current ->
-                                    current.copy(running = false, steps = current.steps.markLastComplete(event.reason))
-                                }
-                            }
-                            runtimeState = AgentRuntimeState.Idle
-                            runningAgentMessageId = null
-                            runningActivityId = null
-                            listenTrigger++
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                val messageId = runningAgentMessageId
-                if (messageId != null) {
-                    items.replaceAgentMessage(messageId) { current ->
-                        current.copy(
-                            text = current.text.ifBlank { "Error: ${error.message ?: error::class.java.simpleName}" },
-                            streaming = false,
-                        )
-                    }
-                }
-                runningActivityId?.let { id ->
-                    items.replaceActivityItem(id) { current ->
-                        current.copy(running = false, steps = current.steps.markLastComplete(error.message ?: "Run failed", isError = true))
-                    }
-                }
-                runtimeState = AgentRuntimeState.Idle
-                runningAgentMessageId = null
-                runningActivityId = null
-                listenTrigger++
-            }
         }
     }
 
     fun submit() {
         val text = input.trim()
-        if (text.isEmpty()) return
+        val mediaUri = selectedMediaUri
+        val mediaMime = selectedMediaMimeType
+
+        if (text.isEmpty() && mediaUri == null) return
         input = ""
+        selectedMediaUri = null
+        selectedMediaMimeType = null
+        selectedMediaName = null
+
+        var cachedPath: String? = null
+        if (mediaUri != null) {
+            val cachedFile = copyUriToCache(context, mediaUri)
+            if (cachedFile != null) {
+                cachedPath = cachedFile.absolutePath
+            }
+        }
 
         if (runtimeState == AgentRuntimeState.Running) {
             engine?.steer(text)
+            val steerMsgId = UUID.randomUUID().toString()
+            items += UserChatItem(id = steerMsgId, text = text, mediaPath = cachedPath, mediaMimeType = mediaMime)
             scope.launch {
                 db.messages().insert(
                     MessageEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = steerMsgId,
                         conversationId = currentConversationId ?: "",
                         role = "user",
                         content = text,
                         createdAt = System.currentTimeMillis(),
-                        tokenCount = 0
+                        tokenCount = 0,
+                        mediaPath = cachedPath,
+                        mediaMimeType = mediaMime
                     )
                 )
             }
-            items += UserChatItem(text = text)
             return
         }
 
-        submitQuery(text)
+        submitQuery(text, cachedPath, mediaMime)
     }
 
     fun submitVoiceQuery(text: String) {
         if (text.isBlank()) return
         userPartialText = text
-        agentResponseText = ""
+        voiceOverlayText = ""
+        selectedMediaUri = null
+        selectedMediaMimeType = null
+        selectedMediaName = null
+        AgentRunManager.setAgentResponseText(currentConversationId, "")
         submitQuery(text)
     }
 
@@ -727,6 +417,8 @@ fun ChatScreen(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             isCallModeActive = true
             isCallMuted = false
+            voiceOverlayText = ""
+            userPartialText = ""
             ServiceManager.start(context.applicationContext)
         } else {
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -734,6 +426,175 @@ fun ChatScreen(
     }
 
     // ── LaunchedEffects / Observers follow sequentially ──
+    LaunchedEffect(Unit) {
+        db.conversations().pruneAllEmpty()
+    }
+
+    // Pick latest conversation on start
+    val allConversations by db.conversations().observeConversations().collectAsState(initial = null)
+    LaunchedEffect(allConversations) {
+        if (currentConversationId == null && allConversations != null) {
+            val latest = allConversations?.firstOrNull()
+            if (latest != null) {
+                currentConversationId = latest.id
+                AppConfigManager.activeConversationId = latest.id
+            } else {
+                val newId = UUID.randomUUID().toString()
+                db.conversations().upsert(
+                    ConversationEntity(
+                        id = newId,
+                        projectId = null,
+                        title = "New Agent Chat",
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        status = "idle",
+                        costUsd = 0.0
+                    )
+                )
+                currentConversationId = newId
+                AppConfigManager.activeConversationId = newId
+            }
+        }
+    }
+
+    LaunchedEffect(currentConversationId) {
+        currentConversationId?.let { convId ->
+            val conv = db.conversations().getById(convId)
+            AppConfigManager.activeProjectId = conv?.projectId
+        }
+    }
+
+    LaunchedEffect(currentConversationId) {
+        items.clear()
+        userPartialText = ""
+        input = ""
+        selectedMediaUri = null
+        selectedMediaMimeType = null
+        selectedMediaName = null
+        voiceOverlayText = ""
+        errorMessage = null
+        val convId = currentConversationId ?: return@LaunchedEffect
+        db.messages().observeMessagesWithToolCalls(convId).collect { messagesWithTools ->
+            val list = mutableListOf<ChatItem>()
+            for (msgWithTools in messagesWithTools) {
+                val msg = msgWithTools.message
+                val toolCalls = msgWithTools.toolCalls
+                if (msg.role == "user") {
+                    if (!msg.content.startsWith("Previous conversation summary:")) {
+                        list += UserChatItem(
+                            id = msg.id,
+                            text = msg.content,
+                            mediaPath = msg.mediaPath,
+                            mediaMimeType = msg.mediaMimeType
+                        )
+                    }
+                } else if (msg.role == "assistant") {
+                    if (!msg.content.startsWith("[Compacted Summary]")) {
+                        // Chronological: text content first (if any)
+                        if (msg.content.isNotBlank()) {
+                            list += AgentChatItem(id = msg.id, text = msg.content, streaming = false)
+                        }
+                        
+                        // Tool calls second
+                        if (toolCalls.isNotEmpty()) {
+                            val steps = toolCalls.map { t ->
+                                val summary = when (t.toolName) {
+                                    "write_file" -> {
+                                        val content = runCatching { JSONObject(t.arguments).optString("content") }.getOrNull()
+                                            ?: extractJsonField(t.arguments, "content").orEmpty()
+                                        val lineCount = content.lines().size
+                                        "Write File (+$lineCount lines)"
+                                    }
+                                    "edit_file" -> {
+                                        val search = runCatching { JSONObject(t.arguments).optString("search") }.getOrNull()
+                                            ?: extractJsonField(t.arguments, "search").orEmpty()
+                                        val replace = runCatching { JSONObject(t.arguments).optString("replace") }.getOrNull()
+                                            ?: extractJsonField(t.arguments, "replace").orEmpty()
+                                        val searchLines = search.lines().size
+                                        val replaceLines = replace.lines().size
+                                        "Edit File (-$searchLines lines, +$replaceLines lines)"
+                                    }
+                                    else -> t.toolName.readableToolName()
+                                }
+                                ActivityStepItem(
+                                    id = t.id,
+                                    callId = t.id,
+                                    type = t.toolName.toActivityStepType(),
+                                    summary = summary,
+                                    detail = t.result ?: t.arguments,
+                                    result = t.result ?: "",
+                                    arguments = t.arguments,
+                                    running = t.status == "running",
+                                    isError = t.status == "failed" || runCatching {
+                                        val obj = JSONObject(t.result ?: "")
+                                        obj.optInt("exit_code", 0) != 0 || obj.has("error")
+                                    }.getOrDefault(false)
+                                )
+                            }
+                            
+                            // Visual Grouping: If the last item is an ActivityChatItem, merge steps
+                            val lastItem = list.lastOrNull()
+                            if (lastItem is ActivityChatItem) {
+                                val mergedSteps = lastItem.steps + steps
+                                list[list.size - 1] = lastItem.copy(
+                                    steps = mergedSteps,
+                                    running = lastItem.running || steps.any { it.running }
+                                )
+                            } else {
+                                list += ActivityChatItem(steps = steps, running = steps.any { it.running })
+                            }
+                        }
+                    }
+                }
+            }
+            items.clear()
+            items.addAll(list)
+        }
+    }
+
+    LaunchedEffect(isAgentRunning) {
+        if (isAgentRunning) {
+            orbState = OrbState.Thinking
+        } else if (orbState == OrbState.Thinking) {
+            orbState = OrbState.Idle
+        }
+    }
+
+    LaunchedEffect(agentResponseText, isAgentRunning) {
+        if (isAgentRunning) {
+            voiceOverlayText = agentResponseText
+        } else if (agentResponseText.isNotBlank()) {
+            voiceOverlayText = agentResponseText
+        }
+    }
+
+    LaunchedEffect(currentConversationId) {
+        val convId = currentConversationId ?: return@LaunchedEffect
+        AgentRunManager.events.collect { (eventConvId, event) ->
+            if (eventConvId == convId) {
+                when (event) {
+                    is AgentRunEvent.Completed -> {
+                        processSimulatedSystemCommand(event.finalText)
+                        if (isCallModeActive) {
+                            voiceManager.speakWithNaturalBreaks(event.finalText) {
+                                scope.launch {
+                                    userPartialText = ""
+                                    listenTrigger++
+                                }
+                            }
+                        } else {
+                            userPartialText = ""
+                        }
+                    }
+                    is AgentRunEvent.RunError -> {
+                        errorMessage = event.message
+                    }
+                    else -> {}
+                }
+            }
+        }
+    }
+
     LaunchedEffect(partialSpeech) {
         if (isCallModeActive && partialSpeech.isNotBlank()) {
             userPartialText = partialSpeech
@@ -751,7 +612,6 @@ fun ChatScreen(
         }
     }
 
-    var isPermissionsAskedSet by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val hasMic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val hasStorage = if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -774,7 +634,7 @@ fun ChatScreen(
                 wasInterrupted = true
                 voiceManager.stop()
                 stopCurrentRun("Interrupted by user speech")
-                agentResponseText = "Listening..."
+                AgentRunManager.setAgentResponseText(currentConversationId, "Listening...")
                 scope.launch {
                     delay(1000)
                     wasInterrupted = false
@@ -784,7 +644,6 @@ fun ChatScreen(
         }
     }
 
-    var isRecognizerListening by remember { mutableStateOf(false) }
     LaunchedEffect(isCallModeActive, isCallMuted, listenTrigger) {
         if (isCallModeActive) {
             if (isCallMuted) {
@@ -908,6 +767,7 @@ fun ChatScreen(
                         scope.launch {
                             db.conversations().pruneEmptyExcept(id)
                             currentConversationId = id
+                            AppConfigManager.activeConversationId = id
                             drawerState.close()
                         }
                     },
@@ -927,6 +787,7 @@ fun ChatScreen(
                             )
                             db.conversations().pruneEmptyExcept(newId)
                             currentConversationId = newId
+                            AppConfigManager.activeConversationId = newId
                             drawerState.close()
                         }
                     }
@@ -986,7 +847,7 @@ fun ChatScreen(
                     .background(DeepBlack)
                     .padding(top = paddingValues.calculateTopPadding()),
             ) {
-                if (items.isEmpty()) {
+                if (displayItems.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -998,7 +859,7 @@ fun ChatScreen(
                         EmptyGreeting()
                     }
                 } else {
-                    val lastAgentMessageId = items.lastOrNull { it is AgentChatItem }?.id
+                    val lastAgentMessageId = displayItems.lastOrNull { it is AgentChatItem }?.id
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1013,7 +874,7 @@ fun ChatScreen(
                             bottom = dynamicBottomPadding,
                         ),
                     ) {
-                        items(items, key = { it.id }) { item ->
+                        items(displayItems, key = { it.id }) { item ->
                             when (item) {
                                 is UserChatItem -> UserMessageBubble(item)
                                 is AgentChatItem -> AgentMessageCard(
@@ -1068,6 +929,14 @@ fun ChatScreen(
                         state = runtimeState,
                         onSubmit = ::submit,
                         onStop = { stopCurrentRun() },
+                        selectedMediaUri = selectedMediaUri,
+                        selectedMediaName = selectedMediaName,
+                        selectedMediaMimeType = selectedMediaMimeType,
+                        onMediaSelected = { uri, name, mime ->
+                            selectedMediaUri = uri
+                            selectedMediaName = name
+                            selectedMediaMimeType = mime
+                        }
                     )
                 }
             
@@ -1125,12 +994,57 @@ fun ChatScreen(
                     isMuted = isCallMuted,
                     onMuteToggle = { isCallMuted = !isCallMuted },
                     userPartialText = userPartialText,
-                    agentResponseText = agentResponseText,
+                    agentResponseText = voiceOverlayText,
                     onBack = {
                         isCallModeActive = false
                         voiceManager.stop()
                     }
                 )
+
+                AnimatedVisibility(
+                    visible = errorMessage != null,
+                    enter = fadeIn(tween(300)) + expandVertically(),
+                    exit = fadeOut(tween(300)) + shrinkVertically(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 96.dp)
+                ) {
+                    errorMessage?.let { msg ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFE53935))
+                                .border(1.5.dp, Color(0xFFB71C1C), RoundedCornerShape(12.dp))
+                                .clickable { errorMessage = null }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Error",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = msg,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                LaunchedEffect(errorMessage) {
+                    if (errorMessage != null) {
+                        delay(4000)
+                        errorMessage = null
+                    }
+                }
             }
         }
     }
@@ -1172,20 +1086,73 @@ private fun EmptyGreeting(modifier: Modifier = Modifier) {
 @Composable
 private fun UserMessageBubble(item: UserChatItem) {
     val shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val context = LocalContext.current
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth(0.82f)
                 .clip(shape)
                 .background(GlassFillMedium, shape)
                 .border(1.dp, GlassBorderDim, shape)
                 .padding(14.dp, 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = item.text,
-                color = SoftWhite,
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            if (item.mediaPath != null && item.mediaMimeType != null) {
+                val mediaFile = java.io.File(item.mediaPath)
+                if (mediaFile.exists() && mediaFile.isFile) {
+                    val isImage = item.mediaMimeType.startsWith("image/")
+                    val uri = Uri.fromFile(mediaFile)
+                    val bitmap = rememberBitmapFromUri(context, uri)
+
+                    if (isImage && bitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bitmap,
+                            contentDescription = "User attachment",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = when {
+                                    item.mediaMimeType.startsWith("video/") -> "🎥"
+                                    item.mediaMimeType.startsWith("audio/") -> "🎵"
+                                    item.mediaMimeType.startsWith("text/") -> "📄"
+                                    else -> "📁"
+                                },
+                                fontSize = 20.sp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = mediaFile.name,
+                                color = SoftWhite,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+            if (item.text.isNotBlank()) {
+                Text(
+                    text = item.text,
+                    color = SoftWhite,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
         }
     }
 }
@@ -1440,11 +1407,21 @@ private fun PremiumInputBar(
     state: AgentRuntimeState,
     onSubmit: () -> Unit,
     onStop: () -> Unit,
+    selectedMediaUri: Uri?,
+    selectedMediaName: String?,
+    selectedMediaMimeType: String?,
+    onMediaSelected: (Uri?, String?, String?) -> Unit,
 ) {
     var commandMenuVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val attachmentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
-        onResult = { /* Attachment handling will be wired into message state later. */ },
+        onResult = { uri ->
+            if (uri != null) {
+                val (name, mime) = getUriMetadata(context, uri)
+                onMediaSelected(uri, name, mime)
+            }
+        },
     )
     val showCommandButton = value.isEmpty()
 
@@ -1476,94 +1453,104 @@ private fun PremiumInputBar(
                             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
                         ),
                     ),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = RoundedCornerShape(28.dp),
                 ),
-            shape = RoundedCornerShape(999.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
             shadowElevation = 8.dp,
         ) {
-            Row(
-                modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                AnimatedVisibility(visible = showCommandButton) {
-                    CompactIconButton(onClick = { commandMenuVisible = !commandMenuVisible }) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                if (selectedMediaUri != null) {
+                    AttachmentPreviewRow(
+                        uri = selectedMediaUri,
+                        name = selectedMediaName ?: "File",
+                        mimeType = selectedMediaMimeType,
+                        onClear = { onMediaSelected(null, null, null) }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    AnimatedVisibility(visible = showCommandButton) {
+                        CompactIconButton(onClick = { commandMenuVisible = !commandMenuVisible }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Menu,
+                                contentDescription = "Command menu",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    CompactIconButton(onClick = { attachmentPicker.launch("*/*") }) {
                         Icon(
-                            imageVector = Icons.Rounded.Menu,
-                            contentDescription = "Command menu",
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Attach file",
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-                CompactIconButton(onClick = { attachmentPicker.launch("*/*") }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = "Attach file",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                BasicTextField(
-                    value = value,
-                    onValueChange = {
-                        commandMenuVisible = false
-                        onValueChange(it)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 34.dp, max = 112.dp),
-                    textStyle = TextStyle(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 15.sp,
-                        lineHeight = 21.sp,
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primaryContainer),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Send,
-                        capitalization = KeyboardCapitalization.Sentences
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (value.isNotBlank()) {
-                                onSubmit()
-                            }
-                        }
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (value.isEmpty()) {
-                                Text(
-                                    text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Message ClawDroid...",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f),
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-                                )
-                            }
-                            innerTextField()
-                        }
-                    },
-                )
-                if (state == AgentRuntimeState.Running) {
-                    Button(
-                        onClick = onStop,
-                        shape = RoundedCornerShape(999.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.background,
+                    BasicTextField(
+                        value = value,
+                        onValueChange = {
+                            commandMenuVisible = false
+                            onValueChange(it)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 34.dp, max = 112.dp),
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 15.sp,
+                            lineHeight = 21.sp,
                         ),
-                    ) {
-                        Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Stop", fontSize = 13.sp)
-                    }
-                } else {
-                    Surface(
-                        onClick = onSubmit,
-                        modifier = Modifier.size(42.dp),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primaryContainer),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Send,
+                            capitalization = KeyboardCapitalization.Sentences
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (value.isNotBlank() || selectedMediaUri != null) {
+                                    onSubmit()
+                                }
+                            }
+                        ),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (value.isEmpty()) {
+                                    Text(
+                                        text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Message ClawDroid...",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    if (state == AgentRuntimeState.Running) {
+                        Button(
+                            onClick = onStop,
+                            shape = RoundedCornerShape(999.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.background,
+                            ),
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Stop", fontSize = 13.sp)
+                        }
+                    } else {
+                        Surface(
+                            onClick = onSubmit,
+                            modifier = Modifier.size(42.dp),
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1580,6 +1567,8 @@ private fun PremiumInputBar(
             }
         }
     }
+}
+
 }
 
 @Composable
@@ -2488,6 +2477,139 @@ private fun formatDiffOutputText(text: String): AnnotatedString {
             
             if (!isLast) {
                 append("\n")
+            }
+        }
+    }
+}
+
+private fun getUriMetadata(context: Context, uri: Uri): Pair<String?, String?> {
+    val contentResolver = context.contentResolver
+    val mimeType = contentResolver.getType(uri)
+    var name: String? = null
+    if (uri.scheme == "content") {
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    name = cursor.getString(nameIndex)
+                }
+            }
+        }
+    }
+    if (name == null) {
+        name = uri.path?.substringAfterLast('/')
+    }
+    return Pair(name, mimeType)
+}
+
+private fun copyUriToCache(context: Context, uri: Uri): java.io.File? {
+    return try {
+        val extension = context.contentResolver.getType(uri)?.substringAfterLast('/') ?: "bin"
+        val cacheFile = java.io.File(context.cacheDir, "attached_media_${System.currentTimeMillis()}.$extension")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            cacheFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        cacheFile
+    } catch (e: Exception) {
+        android.util.Log.e("ChatScreen", "Failed to copy URI to cache", e)
+        null
+    }
+}
+
+@Composable
+private fun rememberBitmapFromUri(context: Context, uri: Uri?): androidx.compose.ui.graphics.ImageBitmap? {
+    if (uri == null) return null
+    return remember(uri) {
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                bmp?.asImageBitmap()
+            }
+        }.getOrNull()
+    }
+}
+
+@Composable
+private fun AttachmentPreviewRow(
+    uri: Uri,
+    name: String,
+    mimeType: String?,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, GlassBorderDim, RoundedCornerShape(12.dp))
+        ) {
+            val isImage = mimeType?.startsWith("image/") == true
+            val bitmap = rememberBitmapFromUri(context, uri)
+            
+            if (isImage && bitmap != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = bitmap,
+                    contentDescription = "Attachment preview",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                mimeType?.startsWith("video/") == true -> "🎥"
+                                mimeType?.startsWith("audio/") == true -> "🎵"
+                                mimeType?.startsWith("text/") == true -> "📄"
+                                else -> "📁"
+                            },
+                            fontSize = 24.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SoftWhite,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(20.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    .clickable { onClear() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Remove attachment",
+                    tint = Color.White,
+                    modifier = Modifier.size(12.dp)
+                )
             }
         }
     }
