@@ -1,5 +1,7 @@
 package com.clawdroid.app.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -354,8 +355,8 @@ private fun UserMessageBubble(item: UserChatItem) {
         ) {
             Text(
                 text = item.text,
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 19.sp, lineHeight = 30.sp),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
             )
         }
     }
@@ -488,13 +489,29 @@ private fun PremiumInputBar(
     onSubmit: () -> Unit,
     onStop: () -> Unit,
 ) {
+    var commandMenuVisible by remember { mutableStateOf(false) }
+    val attachmentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { /* Attachment handling will be wired into message state later. */ },
+    )
+    val showCommandButton = value.isEmpty()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        AnimatedVisibility(visible = commandMenuVisible && showCommandButton) {
+            CommandMenu(
+                onCommandSelected = { command ->
+                    onValueChange(command)
+                    commandMenuVisible = false
+                },
+            )
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -502,9 +519,9 @@ private fun PremiumInputBar(
                     width = 1.dp,
                     brush = Brush.horizontalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
                         ),
                     ),
                     shape = RoundedCornerShape(999.dp),
@@ -513,37 +530,44 @@ private fun PremiumInputBar(
             color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
-            shadowElevation = 10.dp,
+            shadowElevation = 8.dp,
         ) {
             Row(
-                modifier = Modifier.padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                IconButton(onClick = { }, modifier = Modifier.size(42.dp)) {
-                    Icon(
-                        imageVector = Icons.Rounded.Menu,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                AnimatedVisibility(visible = showCommandButton) {
+                    CompactIconButton(onClick = { commandMenuVisible = !commandMenuVisible }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Menu,
+                            contentDescription = "Command menu",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-                IconButton(onClick = { }, modifier = Modifier.size(42.dp)) {
+                CompactIconButton(onClick = { attachmentPicker.launch("*/*") }) {
                     Icon(
                         imageVector = Icons.Rounded.AddCircleOutline,
-                        contentDescription = "Add attachment",
+                        contentDescription = "Attach file",
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 BasicTextField(
                     value = value,
-                    onValueChange = onValueChange,
+                    onValueChange = {
+                        commandMenuVisible = false
+                        onValueChange(it)
+                    },
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 42.dp, max = 120.dp),
+                        .heightIn(min = 34.dp, max = 112.dp),
                     textStyle = TextStyle(
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 17.sp,
-                        lineHeight = 24.sp,
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp,
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primaryContainer),
                     decorationBox = { innerTextField ->
@@ -551,8 +575,8 @@ private fun PremiumInputBar(
                             if (value.isEmpty()) {
                                 Text(
                                     text = if (state == AgentRuntimeState.Running) "Steer ClawDroid..." else "Message ClawDroid...",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                                 )
                             }
                             innerTextField()
@@ -563,19 +587,20 @@ private fun PremiumInputBar(
                     Button(
                         onClick = onStop,
                         shape = RoundedCornerShape(999.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.background,
                         ),
                     ) {
-                        Icon(imageVector = Icons.Rounded.Stop, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Stop")
+                        Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Stop", fontSize = 13.sp)
                     }
                 } else {
                     Surface(
                         modifier = Modifier
-                            .size(50.dp)
+                            .size(42.dp)
                             .clickable(onClick = onSubmit),
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -585,19 +610,78 @@ private fun PremiumInputBar(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.Send,
                                 contentDescription = "Send",
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CommandMenu(onCommandSelected: (String) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+        shadowElevation = 6.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CommandMenuItem("/help", "Show available commands", onCommandSelected)
+            CommandMenuItem("/clear", "Start a fresh chat", onCommandSelected)
+            CommandMenuItem("/runtime", "Check Linux runtime", onCommandSelected)
+        }
+    }
+}
+
+@Composable
+private fun CommandMenuItem(
+    command: String,
+    description: String,
+    onCommandSelected: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(999.dp))
+            .clickable { onCommandSelected(command) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text(
-            text = "ClawDroid AI can make mistakes. Verify important information.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f),
-            style = MaterialTheme.typography.labelMedium,
-            textAlign = TextAlign.Center,
+            text = command,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
         )
+        Text(
+            text = description,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
+@Composable
+private fun CompactIconButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
