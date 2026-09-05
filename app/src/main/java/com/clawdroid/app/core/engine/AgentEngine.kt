@@ -2,6 +2,7 @@ package com.clawdroid.app.core.engine
 
 import android.content.Context
 import com.clawdroid.app.core.bootstrap.BootstrapManager
+import com.clawdroid.app.core.memory.MemoryManager
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.LlmApiClient
@@ -25,12 +26,20 @@ sealed interface AgentRunEvent {
 
 class AgentEngine(
     private val context: Context,
+    private val projectId: String? = null,
     private val client: LlmApiClient = LlmApiClient(),
     private val steeringQueue: SteeringQueue = SteeringQueue(),
     private val toolExecutor: ToolExecutor = ToolExecutor,
     private val loopDetector: LoopDetector = LoopDetector(),
+    private val memoryManager: MemoryManager = MemoryManager(context),
 ) {
     private val stopRequested = AtomicBoolean(false)
+
+    init {
+        // Load persistent memory into the message builder on engine creation
+        val memory = memoryManager.readMemory()
+        MessageBuilder.setMemoryContext(memory)
+    }
 
     fun steer(message: String) {
         steeringQueue.offer(message)
@@ -40,15 +49,16 @@ class AgentEngine(
         stopRequested.set(true)
     }
 
-    fun run(prompt: String, maxTurns: Int = 12): Flow<AgentRunEvent> = flow {
+    fun run(prompt: String, maxTurns: Int = 200): Flow<AgentRunEvent> = flow {
         stopRequested.set(false)
         BootstrapManager.ensureBootstrapped(context) { }
-        var messages = MessageBuilder.forUserPrompt(prompt)
+        var messages = MessageBuilder.forUserPrompt(context, projectId, prompt)
         val finalText = StringBuilder()
 
         repeat(maxTurns) {
             if (stopRequested.get()) {
                 emit(AgentRunEvent.Stopped("Stop requested"))
+                saveSummary(finalText.toString())
                 return@flow
             }
 
@@ -72,7 +82,9 @@ class AgentEngine(
             }
 
             if (toolCalls.isEmpty()) {
-                emit(AgentRunEvent.Completed(finalText.toString().trim()))
+                val finalAnswer = finalText.toString().trim()
+                emit(AgentRunEvent.Completed(finalAnswer))
+                saveSummary(finalAnswer)
                 return@flow
             }
 
@@ -91,12 +103,14 @@ class AgentEngine(
                     is LoopCheckResult.Warn -> emit(AgentRunEvent.LoopWarning(loopCheck.message))
                     is LoopCheckResult.Stop -> {
                         emit(AgentRunEvent.Stopped(loopCheck.message))
+                        saveSummary(finalText.toString())
                         return@flow
                     }
                 }
 
                 if (stopRequested.get()) {
                     emit(AgentRunEvent.Stopped("Stop requested"))
+                    saveSummary(finalText.toString())
                     return@flow
                 }
 
@@ -117,6 +131,17 @@ class AgentEngine(
             }
         }
 
+        val final = finalText.toString().trim()
         emit(AgentRunEvent.Stopped("Reached max agent turns ($maxTurns)"))
+        saveSummary(final)
+    }
+
+    private fun saveSummary(text: String) {
+        if (text.isBlank()) return
+        val preview = text.take(500).replace("\n", " ").trim()
+        val summary = "Completed task. Summary: $preview"
+        memoryManager.appendSessionSummary(summary)
+        // Reload memory context for next run
+        MessageBuilder.setMemoryContext(memoryManager.readMemory())
     }
 }
