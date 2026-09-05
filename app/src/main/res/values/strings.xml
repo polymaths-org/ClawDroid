@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ClawDroid</string>
+    <string name="accessibility_service_label">ClawDroid Screen Control</string>
+    <string name="accessibility_service_description">Allows ClawDroid to read the screen UI and perform taps, swipes, and typing to complete tasks on your behalf.</string>
 </resources>

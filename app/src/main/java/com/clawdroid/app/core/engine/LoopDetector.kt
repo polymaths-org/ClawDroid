@@ -1,5 +1,6 @@
 package com.clawdroid.app.core.engine
 
+import com.clawdroid.app.core.control.AndroidControlTools
 import com.clawdroid.app.data.api.CompletedToolCall
 
 sealed interface LoopCheckResult {
@@ -16,14 +17,15 @@ class LoopDetector(
 
     fun record(call: CompletedToolCall): LoopCheckResult {
         val signature = call.signature()
+        val hardCap = if (AndroidControlTools.isScreenControlTool(call.name)) 50 else hardStopAfterIdenticalCalls
         recentCalls.addLast(signature)
-        while (recentCalls.size > hardStopAfterIdenticalCalls) {
+        while (recentCalls.size > hardCap) {
             recentCalls.removeFirst()
         }
 
         val identicalCount = recentCalls.count { it == signature }
         return when {
-            identicalCount >= hardStopAfterIdenticalCalls -> LoopCheckResult.Stop(
+            identicalCount >= hardCap -> LoopCheckResult.Stop(
                 "The agent attempted the same tool call $identicalCount times. Stopping to avoid an infinite loop."
             )
 
