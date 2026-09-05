@@ -87,14 +87,38 @@ object AppConfigManager {
         get() = p.getFloat(KEY_TTS_SPEED, 1.0f)
         set(value) = p.edit().putFloat(KEY_TTS_SPEED, value).apply()
 
+    const val KEY_REALTIME_VOICE_ENABLED = "realtime_voice_enabled"
+    const val KEY_REALTIME_VOICE_MODEL = "realtime_voice_model"
+    const val KEY_REALTIME_VOICE_VOICE = "realtime_voice_voice"
+
+    var realtimeVoiceEnabled: Boolean
+        get() = p.getBoolean(KEY_REALTIME_VOICE_ENABLED, false)
+        set(value) = p.edit().putBoolean(KEY_REALTIME_VOICE_ENABLED, value).apply()
+
+    var realtimeVoiceModel: String
+        get() = p.getString(KEY_REALTIME_VOICE_MODEL, "gpt-realtime-2") ?: "gpt-realtime-2"
+        set(value) = p.edit().putString(KEY_REALTIME_VOICE_MODEL, value).apply()
+
+    var realtimeVoiceVoice: String
+        get() = p.getString(KEY_REALTIME_VOICE_VOICE, "marin") ?: "marin"
+        set(value) = p.edit().putString(KEY_REALTIME_VOICE_VOICE, value).apply()
+
     // Cloud TTS API keys
     const val KEY_OPENAI_TTS_API_KEY = "openai_tts_api_key"
+    const val KEY_OPENAI_REALTIME_API_KEY = "openai_realtime_api_key"
     const val KEY_ELEVENLABS_API_KEY = "elevenlabs_api_key"
     const val KEY_DEEPGRAM_API_KEY = "deepgram_api_key"
 
     var openaiTtsApiKey: String
         get() = p.getString(KEY_OPENAI_TTS_API_KEY, "") ?: ""
         set(value) = p.edit().putString(KEY_OPENAI_TTS_API_KEY, value).apply()
+
+    var openaiRealtimeApiKey: String
+        get() = p.getString(KEY_OPENAI_REALTIME_API_KEY, "")
+            ?.takeIf { it.isNotBlank() }
+            ?: BuildConfig.OPENAI_REALTIME_API_KEY.takeIf { it.isNotBlank() }
+            ?: ""
+        set(value) = p.edit().putString(KEY_OPENAI_REALTIME_API_KEY, value).apply()
 
     var elevenlabsApiKey: String
         get() = p.getString(KEY_ELEVENLABS_API_KEY, "") ?: ""
@@ -278,4 +302,3 @@ object AppConfigManager {
         AgentConfigLoader.save(context, config)
     }
 }
-

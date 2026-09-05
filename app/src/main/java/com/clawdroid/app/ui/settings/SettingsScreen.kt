@@ -133,6 +133,11 @@ private val openaiVoices = listOf(
     "shimmer" to "Shimmer (Female / Clear)",
 )
 
+private val realtimeVoices = listOf(
+    "marin" to "Marin",
+    "cedar" to "Cedar",
+)
+
 // ── Main Screen ─────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -155,8 +160,12 @@ fun SettingsScreen(
     var ttsEngine by remember { mutableStateOf(AppConfigManager.ttsEngine) }
     var ttsVoice by remember { mutableStateOf(AppConfigManager.ttsVoice) }
     var ttsSpeed by remember { mutableStateOf(AppConfigManager.ttsSpeed) }
+    var realtimeVoiceEnabled by remember { mutableStateOf(AppConfigManager.realtimeVoiceEnabled) }
+    var realtimeVoiceModel by remember { mutableStateOf(AppConfigManager.realtimeVoiceModel) }
+    var realtimeVoiceVoice by remember { mutableStateOf(AppConfigManager.realtimeVoiceVoice) }
 
     var openaiTtsApiKey by remember { mutableStateOf(AppConfigManager.openaiTtsApiKey) }
+    var openaiRealtimeApiKey by remember { mutableStateOf(AppConfigManager.openaiRealtimeApiKey) }
     var elevenlabsApiKey by remember { mutableStateOf(AppConfigManager.elevenlabsApiKey) }
     var deepgramApiKey by remember { mutableStateOf(AppConfigManager.deepgramApiKey) }
 
@@ -194,7 +203,11 @@ fun SettingsScreen(
         AppConfigManager.ttsEngine = ttsEngine
         AppConfigManager.ttsVoice = ttsVoice.trim()
         AppConfigManager.ttsSpeed = ttsSpeed
+        AppConfigManager.realtimeVoiceEnabled = realtimeVoiceEnabled
+        AppConfigManager.realtimeVoiceModel = realtimeVoiceModel.trim().ifBlank { "gpt-realtime-2" }
+        AppConfigManager.realtimeVoiceVoice = realtimeVoiceVoice.trim().ifBlank { "marin" }
         AppConfigManager.openaiTtsApiKey = openaiTtsApiKey.trim()
+        AppConfigManager.openaiRealtimeApiKey = openaiRealtimeApiKey.trim()
         AppConfigManager.elevenlabsApiKey = elevenlabsApiKey.trim()
         AppConfigManager.deepgramApiKey = deepgramApiKey.trim()
         AppConfigManager.ultraAgentEnabled = isUltraAgentEnabled
@@ -400,6 +413,88 @@ fun SettingsScreen(
 
             GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Realtime Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                            Text(
+                                text = "Use OpenAI Realtime for live call sessions when native WebRTC transport is available.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MutedGray,
+                            )
+                        }
+                        Switch(
+                            checked = realtimeVoiceEnabled,
+                            onCheckedChange = {
+                                realtimeVoiceEnabled = it
+                                saved = false
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = SoftWhite,
+                                checkedTrackColor = EmberOrange,
+                            ),
+                        )
+                    }
+
+                    AnimatedVisibility(visible = realtimeVoiceEnabled) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Realtime API Key", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                            Text(
+                                text = "Uses OPENAI_REALTIME_API_KEY from .env unless you enter a key here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MutedGray,
+                            )
+                            GlassTextField(
+                                value = openaiRealtimeApiKey,
+                                onValueChange = { openaiRealtimeApiKey = it; saved = false },
+                                placeholder = "sk-... (leave blank to use .env)",
+                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            )
+
+                            Text("Realtime Model", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                            GlassTextField(
+                                value = realtimeVoiceModel,
+                                onValueChange = { realtimeVoiceModel = it; saved = false },
+                                placeholder = "gpt-realtime-2",
+                            )
+
+                            Text("Realtime Voice", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
+                            realtimeVoices.forEach { (id, label) ->
+                                val isSelected = realtimeVoiceVoice == id
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isSelected) GlassFillStrong else GlassFill)
+                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(12.dp))
+                                        .clickable { realtimeVoiceVoice = id; saved = false }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = SoftWhite,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.weight(1f),
+                                        fontSize = 13.sp,
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CheckCircle,
+                                            contentDescription = null,
+                                            tint = EmberOrange,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text("TTS Engine", style = MaterialTheme.typography.labelLarge, color = EmberOrange)
 
                     ttsEngineOptions.forEach { option ->
