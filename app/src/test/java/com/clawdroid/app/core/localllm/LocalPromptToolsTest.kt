@@ -360,4 +360,19 @@ class LocalPromptToolsTest {
             assertTrue(LocalPromptTools.localAllowlist(m, p).size <= LocalPromptTools.MAX_TOOLS)
         }
     }
+
+    @Test
+    fun `screen summary marks tappable labels distinctly`() {
+        val tree = JSONObject()
+            .put("package", "com.t3tools.t3code")
+            .put("nodes", JSONArray()
+                .put(JSONObject().put("text", "Open settings").put("contentDescription", "")
+                    .put("className", "android.widget.Button").put("isClickable", true))
+                .put(JSONObject().put("text", "Search threads").put("contentDescription", "")
+                    .put("className", "android.widget.TextView").put("isClickable", false)))
+        val out = LocalPromptTools.summarizeScreenTree(tree)
+        assertTrue(out.contains("Tappable"))
+        assertTrue(out.contains("Open settings"))
+        assertTrue(out.contains("NOT tappable"))
+    }
 }

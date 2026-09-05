@@ -7,6 +7,7 @@ import com.geniex.sdk.ModelManagerWrapper
 import com.geniex.sdk.bean.HubSource
 import com.geniex.sdk.bean.ModelPaths
 import com.geniex.sdk.bean.ModelPullInput
+import com.geniex.sdk.bean.ModelType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -122,10 +123,14 @@ object LocalModelManager {
         withContext(Dispatchers.IO) {
             ensureInit(context)
             val paths = runCatching { ModelManagerWrapper.getPaths(modelId) }.getOrNull()
-            val s = if (paths?.model_path.isNullOrBlank()) {
-                LocalModelStatus.NotDownloaded
-            } else {
+            val s = if (!paths?.model_path.isNullOrBlank()) {
                 LocalModelStatus.Ready
+            } else if (downloadedGgufFile(context, modelId) != null) {
+                // Weights are on disk but the SDK registry lost track (stale
+                // metadata, interrupted finalize). Loadable via disk fallback.
+                LocalModelStatus.Ready
+            } else {
+                LocalModelStatus.NotDownloaded
             }
             _status.update { it + (modelId to s) }
             s
@@ -136,7 +141,38 @@ object LocalModelManager {
             ensureInit(context)
             runCatching { ModelManagerWrapper.getPaths(modelId) }.getOrNull()
                 .takeIf { !it?.model_path.isNullOrBlank() }
+                ?: diskFallbackPaths(context, modelId)
         }
+
+    /**
+     * The SDK registry sometimes reports "not found in local cache" for
+     * weights that are fully on disk (missing geniex.json after an
+     * interrupted finalize). Scan the model dir so those stay switchable
+     * without a multi-GB re-download. Files under 50 MB are treated as
+     * partial stubs, never as ready.
+     */
+    fun downloadedGgufFile(context: Context, modelId: String): java.io.File? {
+        val dir = java.io.File(context.filesDir, "geniex/models/$modelId")
+        if (!dir.isDirectory) return null
+        return dir.listFiles { f ->
+            f.isFile && f.name.endsWith(".gguf") && !f.name.endsWith(".progress")
+        }?.filter { it.length() > 50_000_000L }
+            ?.maxByOrNull { it.length() }
+    }
+
+    private fun diskFallbackPaths(context: Context, modelId: String): ModelPaths? {
+        val file = downloadedGgufFile(context, modelId) ?: return null
+        Log.i(TAG, "disk fallback paths model=$modelId file=${file.name}")
+        return ModelPaths(
+            file.absolutePath,
+            file.parent,
+            modelId,
+            optionFor(modelId).runtimeId,
+            ModelType.LLM,
+            null,
+            null,
+        )
+    }
 
     suspend fun download(context: Context, modelId: String) {
         val opt = optionFor(modelId)

@@ -212,8 +212,8 @@ object LocalPromptTools {
         if (texts.isEmpty() && clickables.isEmpty()) return "Empty screen."
         return buildString {
             if (pkg != null) append("App $pkg. ")
-            if (texts.isNotEmpty()) append("Texts: ${texts.joinToString(" | ")}. ")
-            if (clickables.isNotEmpty()) append("Clickable: ${clickables.joinToString(" | ")}.")
+            if (clickables.isNotEmpty()) append("Tappable (tap_text ONLY takes these exact labels): ${clickables.joinToString(" | ")}. ")
+            if (texts.isNotEmpty()) append("Info text (NOT tappable, never pass to tap_text): ${texts.joinToString(" | ")}.")
         }.trim()
     }
 
@@ -350,6 +350,8 @@ Otherwise reply with plain text only. Keep replies short."""
         "To open an app, call launch_app with the app name. Never tap blind at guessed coordinates. " +
         "After launch_app, you MUST call get_screen before any tap. " +
         "After get_screen, use tap_text with a visible label. " +
+        "tap_text ONLY accepts labels from the Tappable list. Info text and input hints are NOT tappable. " +
+        "To type into a search box, call type_text directly instead of tapping it. " +
         "If get_screen already shows the screen you were asked to open, the task is done. Describe what you see and stop. " +
         "If a tap fails, call get_screen again and pick a different exact label. Never repeat the same failed tap. " +
         "When asked for a file location, reply with the File path from the Tool result, not the full content."
