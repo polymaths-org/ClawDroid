@@ -65,9 +65,11 @@ object InterpoleConfig {
 
     fun screenshotCommand(output: String = "/tmp/interpole-shot.png"): String = when (backend()) {
         Backend.DISABLED -> "echo 'interpole disabled'"
-        Backend.HYPRLAND_EASY -> "grim -- \"$output\" && echo \"$output\""
-        Backend.GENERIC -> "grim -- \"$output\" && echo \"$output\""
+        Backend.HYPRLAND_EASY -> "grim -- " + dq(output) + " && echo " + dq(output)
+        Backend.GENERIC -> "grim -- " + dq(output) + " && echo " + dq(output)
     }
+
+    private fun dq(s: String): String = '"' + s + '"'
 
     fun guardOrError(): String? = when (backend()) {
         Backend.DISABLED -> "interpole_disabled: Enable Interpole in Settings > Interpole first."

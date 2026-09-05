@@ -316,7 +316,7 @@ object DesktopControlTools {
             val down = if (button == ClickButton.LEFT) "0x0002" else "0x0008"
             val up = if (button == ClickButton.LEFT) "0x0004" else "0x0010"
             powershell(
-                "\$c = '[DllImport(\"user32.dll\")]public static extern void mouse_event(int f,int x,int y,int d,int e);';" +
+                "\$c = '[DllImport(''user32.dll'')]public static extern void mouse_event(int f,int x,int y,int d,int e);';" +
                     "Add-Type -MemberDefinition \$c -Name Win -NamespaceTmp;" +
                     "[Tmp.Win]::mouse_event($down,0,0,0,0);" +
                     "[Tmp.Win]::mouse_event($up,0,0,0,0)",
@@ -350,12 +350,14 @@ object DesktopControlTools {
             val btn = if (direction == "up" || direction == "left") "4" else "5"
             "xdotool click --repeat $amount --delay 60 $btn"
         }
-        OsTarget.WINDOWS -> powershell(
-            "\$c='[DllImport(\"user32.dll\")]public static extern void mouse_event(int f,int x,int y,int d,int e);';" +
-                "Add-Type -MemberDefinition \$c -Name Wh -NamespaceTmp;" +
-                "[Tmp.Wh]::mouse_event(0x0800,0,0," +
-                (if (direction == \"up\" || direction == \"left\") 120 else -120) * amount + ",0)",
-        )
+        OsTarget.WINDOWS -> {
+            val delta = (if (direction == "up" || direction == "left") 120 else -120) * amount
+            powershell(
+                "\$c='[DllImport(''user32.dll'')]public static extern void mouse_event(int f,int x,int y,int d,int e);';" +
+                    "Add-Type -MemberDefinition \$c -Name Wh -NamespaceTmp;" +
+                    "[Tmp.Wh]::mouse_event(0x0800,0,0," + delta + ",0)",
+            )
+        }
         else -> {
             // Wayland has no universal scroll injection: page/arrow keys via ydotool.
             val code = when (direction) {
@@ -412,17 +414,17 @@ object DesktopControlTools {
     }
 
     private fun screenshotCmd(t: OsTarget, out: String): String = when (t) {
-        OsTarget.HYPRLAND, OsTarget.WAYLAND -> "grim -- \"$out\" && echo \"$out\""
+        OsTarget.HYPRLAND, OsTarget.WAYLAND -> "grim -- " + dq(out) + " && echo " + dq(out)
         OsTarget.X11, OsTarget.DEBIAN ->
-            "{ grim -- \"$out\" || scrot -- \"$out\" || import -window root \"$out\"; } && echo \"$out\""
+            "{ grim -- " + dq(out) + " || scrot -- " + dq(out) + " || import -window root " + dq(out) + "; } && echo " + dq(out)
         OsTarget.WINDOWS -> powershell(
             "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;" +
                 "\$b=New-Object System.Drawing.Rectangle([System.Windows.Forms.Screen]::PrimaryScreen.Bounds);" +
                 "\$bmp=New-Object System.Drawing.Bitmap(\$b.Width,\$b.Height);" +
                 "[System.Drawing.Graphics]::FromImage(\$bmp).CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size);" +
-                "\$bmp.Save('$out');'$out'",
+                "\$bmp.Save(" + psq(out) + ");" + psq(out),
         )
-        OsTarget.AUTO -> "grim -- \"$out\" && echo \"$out\""
+        OsTarget.AUTO -> "grim -- " + dq(out) + " && echo " + dq(out)
     }
 
     // ── Transport + execution ───────────────────────────────────────────────
@@ -509,8 +511,12 @@ object DesktopControlTools {
 
     private fun shQuote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 
+    private fun dq(s: String): String = '"' + s + '"'
+
+    private fun psq(s: String): String = "'" + s.replace("'", "''") + "'"
+
     private fun powershell(script: String): String =
-        "powershell -NoProfile -Command \"" + script.replace("\"", "`\"") + "\""
+        "powershell -NoProfile -Command " + dq(script.replace("\"", "`\""))
 
     private fun xdotoolKey(name: String): String = when (name.lowercase()) {
         "super", "win", "meta" -> "Super_L"
@@ -548,9 +554,8 @@ object DesktopControlTools {
             null
         }
 
-    companion object {
-        /** Linux evdev keycodes for ydotool on Wayland/Hyprland. */
-        val YDOTOl_KEYCODES: Map<String, Int> = mapOf(
+    /** Linux evdev keycodes for ydotool on Wayland/Hyprland. */
+    private val YDOTOl_KEYCODES: Map<String, Int> = mapOf(
             "Escape" to 1, "1" to 2, "2" to 3, "3" to 4, "4" to 5, "5" to 6,
             "6" to 7, "7" to 8, "8" to 9, "9" to 10, "0" to 11,
             "Backspace" to 14, "Tab" to 15,
@@ -567,5 +572,4 @@ object DesktopControlTools {
             "Up" to 103, "Page_Up" to 104, "Left" to 105, "Right" to 106,
             "End" to 107, "Down" to 108, "Page_Down" to 109, "Delete" to 111,
         )
-    }
 }
