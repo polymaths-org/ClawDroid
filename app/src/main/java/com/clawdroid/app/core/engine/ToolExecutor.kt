@@ -81,32 +81,52 @@ object ToolExecutor {
                 title = args.getString("title"),
                 body = args.getString("body"),
             )
-            "gmail_list_messages" -> GoogleTools.listEmails(
-                query = args.optString("query").takeIf { it.isNotBlank() },
-                maxResults = args.optInt("max_results", 10)
-            )
-            "gmail_get_message" -> GoogleTools.getEmail(args.getString("id"))
-            "gmail_send_message" -> GoogleTools.sendEmail(
-                to = args.getString("to"),
-                subject = args.getString("subject"),
-                body = args.getString("body")
-            )
-            "gmail_create_draft" -> GoogleTools.createDraft(
-                to = args.getString("to"),
-                subject = args.getString("subject"),
-                body = args.getString("body")
-            )
-            "calendar_list_events" -> GoogleTools.listCalendarEvents(
-                timeMin = args.optString("time_min").takeIf { it.isNotBlank() },
-                timeMax = args.optString("time_max").takeIf { it.isNotBlank() },
-                maxResults = args.optInt("max_results", 15)
-            )
-            "calendar_create_event" -> GoogleTools.createCalendarEvent(
-                summary = args.getString("summary"),
-                description = args.optString("description").takeIf { it.isNotBlank() },
-                startTime = args.getString("start_time"),
-                endTime = args.getString("end_time")
-            )
+            "gmail_list_messages", "gmail_get_message", "gmail_send_message", "gmail_create_draft" -> {
+                if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled ||
+                    !com.clawdroid.app.core.config.AppConfigManager.googleGmailEnabled) {
+                    throw IllegalStateException("Gmail tools are currently disabled or Google account is disconnected.")
+                }
+                when (call.name) {
+                    "gmail_list_messages" -> GoogleTools.listEmails(
+                        query = args.optString("query").takeIf { it.isNotBlank() },
+                        maxResults = args.optInt("max_results", 10)
+                    )
+                    "gmail_get_message" -> GoogleTools.getEmail(args.getString("id"))
+                    "gmail_send_message" -> GoogleTools.sendEmail(
+                        to = args.getString("to"),
+                        subject = args.getString("subject"),
+                        body = args.getString("body")
+                    )
+                    "gmail_create_draft" -> GoogleTools.createDraft(
+                        to = args.getString("to"),
+                        subject = args.getString("subject"),
+                        body = args.getString("body")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
+            "calendar_list_events", "calendar_create_event" -> {
+                if (!com.clawdroid.app.core.service.GoogleAuthManager.isGoogleConnected ||
+                    !com.clawdroid.app.core.config.AppConfigManager.googleConnectorEnabled ||
+                    !com.clawdroid.app.core.config.AppConfigManager.googleCalendarEnabled) {
+                    throw IllegalStateException("Calendar tools are currently disabled or Google account is disconnected.")
+                }
+                when (call.name) {
+                    "calendar_list_events" -> GoogleTools.listCalendarEvents(
+                        timeMin = args.optString("time_min").takeIf { it.isNotBlank() },
+                        timeMax = args.optString("time_max").takeIf { it.isNotBlank() },
+                        maxResults = args.optInt("max_results", 15)
+                    )
+                    "calendar_create_event" -> GoogleTools.createCalendarEvent(
+                        summary = args.getString("summary"),
+                        description = args.optString("description").takeIf { it.isNotBlank() },
+                        startTime = args.getString("start_time"),
+                        endTime = args.getString("end_time")
+                    )
+                    else -> error("Unreachable")
+                }
+            }
             else -> {
                 McpServerLauncher.executeMcpTool(call.name, args)?.toString()
                     ?: error("Unsupported tool: ${call.name}")

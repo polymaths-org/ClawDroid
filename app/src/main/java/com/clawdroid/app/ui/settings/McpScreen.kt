@@ -3,6 +3,7 @@ package com.clawdroid.app.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,9 +18,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import com.clawdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,10 +52,13 @@ fun McpScreen(
     // Google Sign-In config & launcher
     var isGoogleConnected by remember { mutableStateOf(GoogleAuthManager.isGoogleConnected) }
     var googleEmail by remember { mutableStateOf(AppConfigManager.googleAccountEmail) }
+    var googleConnectorEnabled by remember { mutableStateOf(AppConfigManager.googleConnectorEnabled) }
+    var googleGmailEnabled by remember { mutableStateOf(AppConfigManager.googleGmailEnabled) }
+    var googleCalendarEnabled by remember { mutableStateOf(AppConfigManager.googleCalendarEnabled) }
 
     val googleSignInOptions = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestServerAuthCode(AppConfigManager.googleClientId)
+            .requestServerAuthCode(AppConfigManager.googleClientId, true)
             .requestEmail()
             .requestScopes(
                 Scope("https://www.googleapis.com/auth/gmail.modify"),
@@ -78,6 +85,8 @@ fun McpScreen(
                     val success = GoogleAuthManager.exchangeAuthCode(authCode)
                     if (success) {
                         isGoogleConnected = true
+                        googleConnectorEnabled = true
+                        AppConfigManager.googleConnectorEnabled = true
                         Toast.makeText(context, "Google connected successfully!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "OAuth exchange failed. Check client secret.", Toast.LENGTH_LONG).show()
@@ -174,11 +183,38 @@ fun McpScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // ── Google Account Connection Card ──
+                // ── Connectors Title ──
                 item {
-                    GoogleAccountCard(
+                    Text(
+                        text = "Connectors",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            color = MutedGray,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
+                }
+
+                // Google Connector Card
+                item {
+                    GoogleConnectorCard(
                         isConnected = isGoogleConnected,
                         email = googleEmail,
+                        connectorEnabled = googleConnectorEnabled,
+                        gmailEnabled = googleGmailEnabled,
+                        calendarEnabled = googleCalendarEnabled,
+                        onConnectorToggle = { enabled ->
+                            AppConfigManager.googleConnectorEnabled = enabled
+                            googleConnectorEnabled = enabled
+                        },
+                        onGmailToggle = { enabled ->
+                            AppConfigManager.googleGmailEnabled = enabled
+                            googleGmailEnabled = enabled
+                        },
+                        onCalendarToggle = { enabled ->
+                            AppConfigManager.googleCalendarEnabled = enabled
+                            googleCalendarEnabled = enabled
+                        },
                         onConnect = {
                             googleSignInClient.signOut().addOnCompleteListener {
                                 signInLauncher.launch(googleSignInClient.signInIntent)
@@ -191,37 +227,6 @@ fun McpScreen(
                             googleEmail = ""
                             Toast.makeText(context, "Google Account Disconnected", Toast.LENGTH_SHORT).show()
                         }
-                    )
-                }
-
-                // ── Virtual/Native Tools Title ──
-                item {
-                    Text(
-                        text = "Virtual Google Tools",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            color = MutedGray,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                    )
-                }
-
-                // Virtual tools list (Always running/active if Google is connected)
-                item {
-                    VirtualToolItem(
-                        name = "Gmail API Tools",
-                        desc = "gmail_list_messages, gmail_get_message, gmail_send_message, gmail_create_draft",
-                        icon = Icons.Rounded.Email,
-                        active = isGoogleConnected
-                    )
-                }
-
-                item {
-                    VirtualToolItem(
-                        name = "Google Calendar API",
-                        desc = "calendar_list_events, calendar_create_event",
-                        icon = Icons.Rounded.CalendarMonth,
-                        active = isGoogleConnected
                     )
                 }
 
@@ -284,9 +289,15 @@ fun McpScreen(
 }
 
 @Composable
-private fun GoogleAccountCard(
+private fun GoogleConnectorCard(
     isConnected: Boolean,
     email: String,
+    connectorEnabled: Boolean,
+    gmailEnabled: Boolean,
+    calendarEnabled: Boolean,
+    onConnectorToggle: (Boolean) -> Unit,
+    onGmailToggle: (Boolean) -> Unit,
+    onCalendarToggle: (Boolean) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
@@ -298,123 +309,220 @@ private fun GoogleAccountCard(
             .fillMaxWidth()
             .border(1.dp, GlassBorderDim, shape)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header Row
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Circular icon with brand colors
                 Box(
                     modifier = Modifier
                         .size(42.dp)
                         .background(
-                            if (isConnected) Color(0xFF4CAF50).copy(alpha = 0.15f) else Color.DarkGray,
+                            if (isConnected && connectorEnabled) Color(0xFF4285F4).copy(alpha = 0.15f) else Color.DarkGray.copy(alpha = 0.3f),
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.CloudSync,
-                        contentDescription = "Google Client",
-                        tint = if (isConnected) Color(0xFF4CAF50) else MutedGray,
-                        modifier = Modifier.size(24.dp)
+                        painter = painterResource(id = R.drawable.ic_google_logo),
+                        contentDescription = "Google Logo",
+                        tint = Color.Unspecified,
+                        modifier = Modifier
+                            .size(22.dp)
+                            .then(if (isConnected && connectorEnabled) Modifier else Modifier.alpha(0.4f))
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Google Account Connection",
+                        text = "Google",
                         color = SoftWhite,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (isConnected) "Connected: $email" else "Tap below to connect your email & calendar",
-                        color = if (isConnected) Color(0xFF4CAF50) else MutedGray,
+                        text = if (isConnected) email else "Connect Gmail & Calendar",
+                        color = if (isConnected) MutedGray else Color(0xFF4285F4),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (isConnected) {
+                    // Entire connector enable/disable switch
+                    Switch(
+                        checked = connectorEnabled,
+                        onCheckedChange = onConnectorToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF4285F4),
+                            checkedTrackColor = Color(0xFF4285F4).copy(alpha = 0.4f),
+                            uncheckedThumbColor = MutedGray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                } else {
+                    // Small "Disconnected" indicator badge
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.1f))
+                            .border(1.dp, Color.Red.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Offline",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            if (!isConnected) {
+                // Prompt to sign in
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sign in with Google",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                // If connected, show child options (Gmail & Calendar switches) + Disconnect button
+                if (connectorEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Gmail Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Email,
+                                contentDescription = null,
+                                tint = if (gmailEnabled) Color(0xFFEA4335) else MutedGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Gmail Access",
+                                    color = SoftWhite,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Allow reading/writing email & drafts",
+                                    color = MutedGray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = gmailEnabled,
+                            onCheckedChange = onGmailToggle,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFFEA4335),
+                                checkedTrackColor = Color(0xFFEA4335).copy(alpha = 0.4f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = Color.DarkGray
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Calendar Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.CalendarMonth,
+                                contentDescription = null,
+                                tint = if (calendarEnabled) Color(0xFF34A853) else MutedGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Calendar Access",
+                                    color = SoftWhite,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Allow reading/updating primary calendar",
+                                    color = MutedGray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = calendarEnabled,
+                            onCheckedChange = onCalendarToggle,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF34A853),
+                                checkedTrackColor = Color(0xFF34A853).copy(alpha = 0.4f),
+                                uncheckedThumbColor = MutedGray,
+                                uncheckedTrackColor = Color.DarkGray
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Disconnect Button
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Logout,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Disconnect Account",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
         }
-        
-        HorizontalDivider(color = GlassBorderDim, thickness = 1.dp)
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GlassFillMedium)
-                .clickable { if (isConnected) onDisconnect() else onConnect() }
-                .padding(vertical = 12.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = if (isConnected) Icons.Rounded.LinkOff else Icons.Rounded.Link,
-                    contentDescription = null,
-                    tint = EmberOrange,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isConnected) "Disconnect Google Account" else "Connect Google Account",
-                    color = EmberOrange,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VirtualToolItem(
-    name: String,
-    desc: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    active: Boolean
-) {
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(CardDark.copy(alpha = 0.85f))
-            .border(1.dp, GlassBorderDim, shape)
-            .padding(14.dp, 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (active) Color(0xFF4CAF50) else MutedGray,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                color = SoftWhite,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-            )
-            Text(
-                text = desc,
-                color = MutedGray,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1
-            )
-        }
-        Text(
-            text = if (active) "Active" else "Disabled",
-            color = if (active) Color(0xFF4CAF50) else MutedGray,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
-        )
     }
 }
 
