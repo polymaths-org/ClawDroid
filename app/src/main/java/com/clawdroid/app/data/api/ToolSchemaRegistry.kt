@@ -4,6 +4,84 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ToolSchemaRegistry {
+    fun overlayTools(): JSONArray {
+        val array = JSONArray()
+
+        array.put(tool("launch_app", "Launch an installed app by package name.") {
+            putString("package_name", "Android package name, for example org.telegram.messenger.")
+            required("package_name")
+        })
+        array.put(tool("get_screen", "Read the current Android screen UI tree.") {
+            required()
+        })
+        array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
+            putString("label", "Text or content description to tap.")
+            required("label")
+        })
+        array.put(tool("tap", "Tap at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("press_back", "Press the Android Back button.") {
+            required()
+        })
+        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch. Use this for typing plus taps, like the successful app flow did.") {
+            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, type_text, wait, press_back.")
+            putBoolean("verify", "Return get_screen after all actions complete. Default true.")
+            required("actions")
+        })
+
+        return array
+    }
+
+    fun assistantTools(): JSONArray {
+        val array = JSONArray()
+
+        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps. Use this first when the user asks to send a specific message in the current chat.") {
+            putString("text", "Exact message text to send.")
+            putInteger("count", "How many times to send it. Default 1, max 20.")
+            required("text")
+        })
+        array.put(tool("get_screen", "Read the current Android screen UI tree. Use this first for app-control tasks.") {
+            required()
+        })
+        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one fast batch, then optionally verify the final screen.") {
+            putArray("actions", "Ordered actions. Each item has an action field: tap, tap_text, tap_resource_id, type_text, clear_text, wait, press_back, scroll, swipe, long_press.")
+            putBoolean("verify", "Return get_screen after all actions complete. Default true.")
+            required("actions")
+        })
+        array.put(tool("tap", "Tap at absolute screen coordinates.") {
+            putNumber("x", "X coordinate in pixels.")
+            putNumber("y", "Y coordinate in pixels.")
+            required("x", "y")
+        })
+        array.put(tool("tap_text", "Tap a UI element by visible text or content description.") {
+            putString("label", "Text or content description to tap.")
+            required("label")
+        })
+        array.put(tool("type_text", "Type text into the focused editable field.") {
+            putString("text", "Text to type.")
+            required("text")
+        })
+        array.put(tool("press_back", "Press the Android Back button.") {
+            required()
+        })
+        array.put(tool("wait", "Wait briefly for UI to settle. Prefer batching actions instead of separate wait turns.") {
+            putInteger("ms", "Milliseconds to wait, max 5000.")
+            required()
+        })
+        array.put(tool("screenshot", "Capture a screenshot as base64 JPEG only when the UI tree is empty or visual details are required.") {
+            required()
+        })
+        array.put(tool("web_search", "Search the web for current information when the user asks to search something up.") {
+            putString("query", "Search query.")
+            required("query")
+        })
+
+        return array
+    }
+
     fun allTools(): JSONArray {
         val array = JSONArray()
 
@@ -251,6 +329,16 @@ object ToolSchemaRegistry {
             putInteger("ms", "Milliseconds to wait (default 500).")
             required()
         })
+        array.put(tool("perform_android_actions", "Run multiple Android UI actions in one batch and optionally verify the final screen.") {
+            putArray("actions", "Ordered action objects with an action field plus parameters.")
+            putBoolean("verify", "Return get_screen after all actions complete. Default true.")
+            required("actions")
+        })
+        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps when the user already specified what to send.") {
+            putString("text", "Exact message text to send.")
+            putInteger("count", "How many times to send it. Default 1, max 20.")
+            required("text")
+        })
 
         return array
     }
@@ -301,6 +389,25 @@ object ToolSchemaRegistry {
                 JSONObject()
                     .put("type", "number")
                     .put("description", description)
+            )
+        }
+
+        fun putBoolean(name: String, description: String) {
+            properties.put(
+                name,
+                JSONObject()
+                    .put("type", "boolean")
+                    .put("description", description)
+            )
+        }
+
+        fun putArray(name: String, description: String) {
+            properties.put(
+                name,
+                JSONObject()
+                    .put("type", "array")
+                    .put("description", description)
+                    .put("items", JSONObject().put("type", "object"))
             )
         }
 

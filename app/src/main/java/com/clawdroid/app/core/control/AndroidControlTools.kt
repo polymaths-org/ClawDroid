@@ -14,6 +14,7 @@ object AndroidControlTools {
         "get_screen", "tap", "tap_text", "tap_resource_id", "long_press", "swipe",
         "scroll", "type_text", "clear_text", "press_back", "press_home", "press_recents",
         "open_notifications", "launch_app", "get_installed_apps", "screenshot", "wait",
+        "perform_android_actions", "send_message_in_current_chat",
     )
 
     fun isScreenControlTool(name: String): Boolean = name in screenControlToolNames
@@ -172,6 +173,183 @@ object AndroidControlTools {
         JSONObject()
             .put("success", true)
             .put("waited_ms", bounded)
+    }
+
+    suspend fun performActions(context: Context, actions: JSONArray, verify: Boolean): JSONObject = runTool {
+        val results = JSONArray()
+        for (i in 0 until actions.length()) {
+            val action = actions.optJSONObject(i)
+                ?: return@runTool errorResult("invalid_action", "Action at index $i must be an object")
+            val actionName = action.optString("action").ifBlank {
+                action.optString("type")
+            }
+            val result = when (actionName) {
+                "tap" -> tap(
+                    x = action.getDouble("x").toFloat(),
+                    y = action.getDouble("y").toFloat(),
+                )
+                "tap_text" -> tapText(action.getString("label"))
+                "tap_resource_id" -> tapResourceId(action.getString("id"))
+                "long_press" -> longPress(
+                    x = action.getDouble("x").toFloat(),
+                    y = action.getDouble("y").toFloat(),
+                )
+                "swipe" -> swipe(
+                    x1 = action.getDouble("x1").toFloat(),
+                    y1 = action.getDouble("y1").toFloat(),
+                    x2 = action.getDouble("x2").toFloat(),
+                    y2 = action.getDouble("y2").toFloat(),
+                    durationMs = action.optInt("duration_ms", 400),
+                )
+                "scroll" -> scroll(action.getString("direction"))
+                "type_text" -> typeText(action.getString("text"))
+                "clear_text" -> clearText()
+                "press_back" -> pressBack()
+                "wait" -> wait(action.optInt("ms", 250))
+                else -> return@runTool errorResult(
+                    "unsupported_batch_action",
+                    "Unsupported action '$actionName' at index $i",
+                )
+            }
+            results.put(
+                JSONObject()
+                    .put("index", i)
+                    .put("action", actionName)
+                    .put("result", result)
+            )
+
+            if (result.optBoolean("success") == false) {
+                return@runTool JSONObject()
+                    .put("success", false)
+                    .put("stopped_at", i)
+                    .put("results", results)
+            }
+        }
+
+        val response = JSONObject()
+            .put("success", true)
+            .put("count", actions.length())
+            .put("results", results)
+
+        if (verify) {
+            response.put("verification", getScreen(context))
+        }
+        response
+    }
+
+    suspend fun sendMessageInCurrentChat(context: Context, text: String, count: Int): JSONObject = runTool {
+        val service = requireService() ?: return@runTool serviceNotRunning()
+        val boundedCount = count.coerceIn(1, 20)
+        val results = JSONArray()
+
+        for (i in 0 until boundedCount) {
+            val focused = focusLikelyChatInput(context, service)
+            delay(180)
+            val typed = service.typeText(text)
+            if (!typed) {
+                return@runTool JSONObject()
+                    .put("success", false)
+                    .put("error", "message_input_not_available")
+                    .put("message", "I could not focus an editable message input in the current chat.")
+                    .put("sent_count", i)
+                    .put("focused", focused)
+                    .put("results", results)
+            }
+
+            delay(160)
+            val sent = tapLikelySendButton(context, service)
+            if (!sent) {
+                return@runTool JSONObject()
+                    .put("success", false)
+                    .put("error", "send_button_not_available")
+                    .put("message", "I typed the message, but could not find or tap the send button.")
+                    .put("sent_count", i)
+                    .put("results", results)
+            }
+
+            results.put(
+                JSONObject()
+                    .put("index", i)
+                    .put("text", text)
+                    .put("focused", focused)
+                    .put("sent", true)
+            )
+            delay(260)
+        }
+
+        JSONObject()
+            .put("success", true)
+            .put("sent_count", boundedCount)
+            .put("text", text)
+            .put("results", results)
+    }
+
+    private suspend fun focusLikelyChatInput(context: Context, service: ScreenReaderService): Boolean {
+        val inputResourceIds = listOf(
+            "com.whatsapp:id/entry",
+            "com.whatsapp.w4b:id/entry",
+            "org.telegram.messenger:id/chat_edit_text",
+            "org.thunderdog.challegram:id/input",
+        )
+        for (id in inputResourceIds) {
+            if (service.tapByResourceId(id)) return true
+        }
+
+        val inputLabels = listOf(
+            "Message",
+            "Type a message",
+            "Write a message",
+            "Text message",
+            "Message input",
+        )
+        for (label in inputLabels) {
+            if (service.tapByText(label)) return true
+        }
+
+        val metrics = context.resources.displayMetrics
+        val x = metrics.widthPixels * 0.42f
+        val candidateYs = listOf(
+            metrics.heightPixels - 150f,
+            metrics.heightPixels - 230f,
+            metrics.heightPixels * 0.92f,
+            metrics.heightPixels * 0.54f,
+        )
+        for (y in candidateYs) {
+            if (service.tap(x, y)) return true
+            delay(120)
+        }
+        return false
+    }
+
+    private suspend fun tapLikelySendButton(context: Context, service: ScreenReaderService): Boolean {
+        val sendResourceIds = listOf(
+            "com.whatsapp:id/send",
+            "com.whatsapp.w4b:id/send",
+            "org.telegram.messenger:id/chat_send_button",
+            "org.thunderdog.challegram:id/btn_send",
+        )
+        for (id in sendResourceIds) {
+            if (service.tapByResourceId(id)) return true
+        }
+
+        val sendLabels = listOf("Send", "Send message")
+        for (label in sendLabels) {
+            if (service.tapByText(label)) return true
+        }
+
+        val metrics = context.resources.displayMetrics
+        val x = metrics.widthPixels - 58f
+        val candidateYs = listOf(
+            metrics.heightPixels - 150f,
+            metrics.heightPixels - 230f,
+            metrics.heightPixels * 0.92f,
+            metrics.heightPixels * 0.54f,
+        )
+        for (y in candidateYs) {
+            if (service.tap(x, y)) return true
+            delay(120)
+        }
+        return false
     }
 
     private fun requireService(): ScreenReaderService? = ScreenReaderService.instance
