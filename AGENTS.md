@@ -891,6 +891,12 @@ Things we explicitly **won't** build for now:
 
 ---
 
+## Visual Review Budget
+
+49 images max per request. Batch all visual review (screenshots, video frames) within this limit; prefer sampled frames (e.g. fps=1 or key moments) over full extraction.
+
+---
+
 ## Current Agent Skills Update
 
 ### TUI via INTERPOLE

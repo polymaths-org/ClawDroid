@@ -32,6 +32,8 @@ import com.clawdroid.app.core.config.SavedProviderProfile
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassTextField
+import com.clawdroid.app.ui.components.ModelDropdown
+import com.clawdroid.app.ui.components.partitionZenModels
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -200,45 +202,28 @@ fun ProviderConfigScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
-                                zenModels.filter { OpenCodeZen.isFree(it) }.forEach { zenModel ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable { model = zenModel }
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            "Free · $zenModel",
-                                            color = onSurface,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        if (zenModel == model) {
-                                            Text("✓", color = accent, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
+                                val partitioned = remember(zenModels) {
+                                    partitionZenModels(zenModels, OpenCodeZen::isFree)
                                 }
-                                zenModels.filterNot { OpenCodeZen.isFree(it) }.take(60).forEach { zenModel ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable { model = zenModel }
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            zenModel,
-                                            color = onSurface,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        if (zenModel == model) {
-                                            Text("✓", color = accent, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
+                                if (partitioned.free.isNotEmpty()) {
+                                    Text("Free models", color = onVariant, style = MaterialTheme.typography.bodySmall)
+                                    ModelDropdown(
+                                        selected = if (model in partitioned.free) model else "",
+                                        options = partitioned.free,
+                                        onSelect = { model = it },
+                                        label = "Free models",
+                                        placeholder = "Select a free model",
+                                    )
+                                }
+                                if (partitioned.paid.isNotEmpty()) {
+                                    Text("All models", color = onVariant, style = MaterialTheme.typography.bodySmall)
+                                    ModelDropdown(
+                                        selected = if (model in partitioned.paid) model else "",
+                                        options = partitioned.paid,
+                                        onSelect = { model = it },
+                                        label = "All models",
+                                        placeholder = "Select a model",
+                                    )
                                 }
                             }
                         }

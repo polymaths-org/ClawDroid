@@ -1,14 +1,8 @@
 package com.clawdroid.app.ui.setup
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +11,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,7 +49,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,6 +77,8 @@ import com.clawdroid.app.ui.components.GlassButton
 import com.clawdroid.app.ui.components.GlassCard
 import com.clawdroid.app.ui.components.GlassTextField
 import com.clawdroid.app.ui.components.GlowText
+import com.clawdroid.app.ui.components.ModelDropdown
+import com.clawdroid.app.ui.components.partitionZenModels
 import com.clawdroid.app.ui.theme.CardDark
 import com.clawdroid.app.ui.theme.DeepBlack
 import com.clawdroid.app.ui.theme.EmberOrange
@@ -131,16 +130,27 @@ fun SetupScreen(
     onSetupComplete: () -> Unit,
 ) {
     val context = LocalContext.current
-    var step by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(pageCount = { SETUP_TOTAL_STEPS })
+    val step = pagerState.currentPage
+    suspend fun goTo(page: Int) {
+        pagerState.animateScrollToPage(page.coerceIn(0, SETUP_TOTAL_STEPS - 1))
+    }
+    fun goNext() {
+        scope.launch { goTo(step + 1) }
+    }
+    fun goBack() {
+        scope.launch { goTo(step - 1) }
+    }
     if (step > 0) {
         BackHandler {
-            step--
+            goBack()
         }
     }
-    var selectedProvider by remember { mutableStateOf<ProviderInfo?>(null) }
-    var baseUrl by remember { mutableStateOf("") }
+    var selectedProvider by remember { mutableStateOf<ProviderInfo?>(providers.first()) }
+    var baseUrl by remember { mutableStateOf(providers.first().defaultBaseUrl) }
     var apiKey by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
+    var model by remember { mutableStateOf(providers.first().defaultModel) }
 
     // Agent Customization states
     var agentName by remember { mutableStateOf("Nova") }
@@ -176,40 +186,67 @@ fun SetupScreen(
             )
         }
 
-        AnimatedContent(
-            targetState = step,
-            transitionSpec = {
-                (slideInHorizontally { it } + fadeIn()) togetherWith
-                        (slideOutHorizontally { -it } + fadeOut())
-            },
-            label = "setup_step",
-        ) { currentStep ->
+        Column(modifier = Modifier.fillMaxSize()) {
+            val pct = setupProgressPercent(step, SETUP_TOTAL_STEPS)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LinearProgressIndicator(
+                    progress = { setupProgressFraction(step, SETUP_TOTAL_STEPS) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "$pct%",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = "Step ${step + 1} of $SETUP_TOTAL_STEPS",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp),
+            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) { currentStep ->
             when (currentStep) {
                 0 -> OwnerIntroductionStep(
                     ownerName = ownerName,
                     onOwnerNameChange = { ownerName = it },
                     ownerInfo = ownerInfo,
                     onOwnerInfoChange = { ownerInfo = it },
-                    onNext = { step = 1 },
+                    onNext = { goNext() },
                 )
                 1 -> ProviderSelectionStep(
                     onProviderSelected = { provider ->
                         selectedProvider = provider
                         baseUrl = provider.defaultBaseUrl
                         model = provider.defaultModel
-                        step = 2
+                        goNext()
                     },
                 )
                 2 -> ConfigurationStep(
-                    provider = selectedProvider!!,
+                    provider = selectedProvider ?: providers.first(),
                     baseUrl = baseUrl,
                     onBaseUrlChange = { baseUrl = it },
                     apiKey = apiKey,
                     onApiKeyChange = { apiKey = it },
                     model = model,
                     onModelChange = { model = it },
-                    onBack = { step = 1 },
-                    onNext = { step = 3 },
+                    onBack = { goBack() },
+                    onNext = { goNext() },
                 )
                 3 -> AgentCustomizationStep(
                     agentName = agentName,
@@ -222,27 +259,28 @@ fun SetupScreen(
                     onPurposeSelected = { selectedPurpose = it },
                     customPurpose = customPurpose,
                     onCustomPurposeChange = { customPurpose = it },
-                    onBack = { step = 2 },
-                    onNext = { step = 4 },
+                    onBack = { goBack() },
+                    onNext = { goNext() },
                 )
                 4 -> AgentBehaviorSetupStep(
                     selectedBehaviorMode = selectedBehaviorMode,
                     onBehaviorModeSelected = { selectedBehaviorMode = it },
-                    onBack = { step = 3 },
-                    onNext = { step = 5 },
+                    onBack = { goBack() },
+                    onNext = { goNext() },
                 )
                 5 -> ConfirmationStep(
-                    provider = selectedProvider!!,
+                    provider = selectedProvider ?: providers.first(),
                     baseUrl = baseUrl,
                     model = model,
                     agentName = agentName,
                     selectedPersonality = if (selectedPersonality == "Other") customPersonality else selectedPersonality,
                     selectedPurpose = if (selectedPurpose == "Other") customPurpose else selectedPurpose,
                     selectedBehaviorMode = selectedBehaviorMode,
-                    onBack = { step = 4 },
+                    onBack = { goBack() },
                     onComplete = {
+                        val doneProvider = selectedProvider ?: providers.first()
                         AppConfigManager.save(
-                            provider = selectedProvider!!.id,
+                            provider = doneProvider.id,
                             baseUrl = baseUrl.trim(),
                             apiKey = apiKey.trim(),
                             model = model.trim(),
@@ -258,6 +296,7 @@ fun SetupScreen(
                         onSetupComplete()
                     },
                 )
+            }
             }
         }
     }
@@ -469,7 +508,6 @@ private fun ConfigurationStep(
     var zenModels by remember(provider.id) { mutableStateOf<List<String>>(emptyList()) }
     var zenModelsLoading by remember(provider.id) { mutableStateOf(false) }
     var zenModelsError by remember(provider.id) { mutableStateOf<String?>(null) }
-    var zenExpanded by remember(provider.id) { mutableStateOf(false) }
     var zenProbeRunning by remember(provider.id) { mutableStateOf(false) }
     var zenProbe by remember(provider.id) { mutableStateOf<OpenCodeZen.ChatProbe?>(null) }
     val isZenSetup = provider.id == "opencode_zen"
@@ -554,6 +592,29 @@ private fun ConfigurationStep(
                 )
 
                 if (isZenSetup) {
+                    val partitioned = remember(zenModels) {
+                        partitionZenModels(zenModels, OpenCodeZen::isFree)
+                    }
+                    if (partitioned.free.isNotEmpty()) {
+                        Text("Free models", style = MaterialTheme.typography.labelSmall, color = MutedGray)
+                        ModelDropdown(
+                            selected = if (model in partitioned.free) model else "",
+                            options = partitioned.free,
+                            onSelect = onModelChange,
+                            label = "Free models",
+                            placeholder = "Select a free model",
+                        )
+                    }
+                    if (partitioned.paid.isNotEmpty()) {
+                        Text("All models", style = MaterialTheme.typography.labelSmall, color = MutedGray)
+                        ModelDropdown(
+                            selected = if (model in partitioned.paid) model else "",
+                            options = partitioned.paid,
+                            onSelect = onModelChange,
+                            label = "All models",
+                            placeholder = "Select a model",
+                        )
+                    }
                     GlassButton(
                         onClick = {
                             zenModelsLoading = true
@@ -564,7 +625,6 @@ private fun ConfigurationStep(
                                     if (zenModels.isNotEmpty() && model.isBlank()) {
                                         onModelChange(zenModels.first())
                                     }
-                                    zenExpanded = zenModels.isNotEmpty()
                                 } catch (t: Throwable) {
                                     zenModelsError = t.message ?: "Failed to load models"
                                 } finally {
@@ -624,74 +684,10 @@ private fun ConfigurationStep(
                             color = if (probe.ok) EmberOrange else FireRed,
                         )
                     }
-                    if (zenModels.isNotEmpty()) {
-                        val freeModels = zenModels.filter { OpenCodeZen.isFree(it) }
-                        val paidModels = zenModels.filterNot { OpenCodeZen.isFree(it) }
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "Free models",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = EmberOrange,
-                            )
-                            freeModels.forEach { zenModel ->
-                                val isSelected = zenModel == model
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSelected) GlassFillStrong else GlassFill)
-                                        .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(10.dp))
-                                        .clickable { onModelChange(zenModel) }
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = zenModel,
-                                        color = SoftWhite,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    if (isSelected) {
-                                        Text("✓", color = EmberOrange, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                            if (paidModels.isNotEmpty()) {
-                                Text(
-                                    "All models",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = EmberOrange,
-                                )
-                                paidModels.take(60).forEach { zenModel ->
-                                    val isSelected = zenModel == model
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(if (isSelected) GlassFillStrong else GlassFill)
-                                            .border(1.dp, if (isSelected) EmberOrange else GlassBorderDim, RoundedCornerShape(10.dp))
-                                            .clickable { onModelChange(zenModel) }
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = zenModel,
-                                            color = SoftWhite,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        if (isSelected) {
-                                            Text("✓", color = EmberOrange, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
 
                 Text(
-                    text = "Type the model name manually or use the default.",
+                    text = "Pick from the dropdown or type the model name manually.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MutedGray.copy(alpha = 0.7f),
                 )

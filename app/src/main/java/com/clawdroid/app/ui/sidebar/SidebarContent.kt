@@ -83,12 +83,7 @@ fun SidebarContent(
     onSelectConversation: (String) -> Unit,
     onNewConversation: (projectId: String?) -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToAudio: () -> Unit,
-    onNavigateToAutomations: () -> Unit,
-    onNavigateToChannels: () -> Unit,
-    onNavigateToSkills: () -> Unit,
     onNavigateToMcp: () -> Unit,
-    onNavigateToAgentConfig: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToSelfManage: () -> Unit = {},
 ) {
@@ -294,8 +289,6 @@ fun SidebarContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(onClick = onNavigateToSettings)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -326,12 +319,6 @@ fun SidebarContent(
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, letterSpacing = 0.sp),
                 )
             }
-            Icon(
-                imageVector = Icons.Rounded.Settings,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f),
-                modifier = Modifier.size(20.dp),
-            )
         }
         Spacer(modifier = Modifier.height(Dimens.xxl))
     }

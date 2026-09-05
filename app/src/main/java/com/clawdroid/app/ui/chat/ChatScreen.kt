@@ -1042,29 +1042,9 @@ fun ChatScreen(
                         scope.launch { drawerState.close() }
                         onNavigateToSettings()
                     },
-                    onNavigateToAudio = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
-                    onNavigateToAutomations = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
-                    onNavigateToChannels = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
-                    onNavigateToSkills = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
-                    },
                     onNavigateToMcp = {
                         scope.launch { drawerState.close() }
                         onNavigateToMcp()
-                    },
-                    onNavigateToAgentConfig = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToSettings()
                     },
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
@@ -1088,6 +1068,7 @@ fun ChatScreen(
                             model = AppConfigManager.model,
                             onOpenDrawer = { scope.launch { drawerState.open() } },
                             onVoice = ::startVoiceSession,
+                            onOpenProvider = onNavigateToSettings,
                         )
                     } else {
                         TopAppBar(
@@ -1522,6 +1503,7 @@ private fun ReferenceChatTopBar(
     model: String,
     onOpenDrawer: () -> Unit,
     onVoice: () -> Unit,
+    onOpenProvider: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -1547,6 +1529,7 @@ private fun ReferenceChatTopBar(
                 1.dp,
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f),
             ),
+            onClick = onOpenProvider,
             modifier = Modifier
                 .weight(1f, fill = false)
                 .padding(horizontal = 8.dp),

@@ -120,6 +120,7 @@ fun GlassTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: @Composable (() -> Unit)? = null,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    readOnly: Boolean = false,
 ) {
     val shape = RoundedCornerShape(14.dp)
     val isLiquid = AppConfigManager.appTheme.startsWith("liquid_glass")
@@ -149,6 +150,7 @@ fun GlassTextField(
         } else null,
         singleLine = singleLine,
         maxLines = maxLines,
+        readOnly = readOnly,
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
