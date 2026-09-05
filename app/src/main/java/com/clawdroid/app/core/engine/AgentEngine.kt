@@ -69,8 +69,10 @@ class AgentEngine(
         Log.i("AgentEngine", "run() started. prompt: $prompt, targetConversationId: $targetConversationId")
         val result = BootstrapManager.ensureBootstrapped(context) { }
         Log.i("AgentEngine", "ensureBootstrapped completed. Result: $result")
+        McpServerLauncher.startAll(context)
 
-        val db = ClawDroidDatabase.get(context)
+        try {
+            val db = ClawDroidDatabase.get(context)
         val conversationDao = db.conversations()
         val messageDao = db.messages()
         val toolCallDao = db.toolCalls()
@@ -137,9 +139,12 @@ class AgentEngine(
             var tokenUsage: TokenUsage? = null
 
             // 5. Query the LLM
+            val toolsArray = ToolSchemaRegistry.allTools()
+            McpServerLauncher.getMcpTools().forEach { toolsArray.put(it) }
+
             client.streamChat(
                 messages = messages,
-                tools = ToolSchemaRegistry.allTools(),
+                tools = toolsArray,
             ).collect { event ->
                 when (event) {
                     is StreamEvent.TextDelta -> {
@@ -247,6 +252,9 @@ class AgentEngine(
         val final = finalText.toString().trim()
         send(AgentRunEvent.Stopped("Reached max agent turns ($maxTurns)"))
         saveSummary(final)
+        } finally {
+            McpServerLauncher.stopAll()
+        }
     }
 
     private fun saveSummary(text: String) {

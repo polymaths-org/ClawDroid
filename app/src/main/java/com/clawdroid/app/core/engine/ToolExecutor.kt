@@ -14,10 +14,12 @@ import com.clawdroid.app.core.tools.SendInputTool
 import com.clawdroid.app.core.tools.StartProcessTool
 import com.clawdroid.app.core.tools.WebSearchTool
 import com.clawdroid.app.core.tools.WriteFileTool
+import com.clawdroid.app.core.tools.GoogleTools
 import com.clawdroid.app.core.tools.checkAndRequestStoragePermission
 import com.clawdroid.app.data.api.CompletedToolCall
 import com.clawdroid.app.data.api.DefensiveJsonParser
 import org.json.JSONObject
+
 
 data class ToolExecutionResult(
     val callId: String,
@@ -79,8 +81,38 @@ object ToolExecutor {
                 title = args.getString("title"),
                 body = args.getString("body"),
             )
-            else -> error("Unsupported tool: ${call.name}")
+            "gmail_list_messages" -> GoogleTools.listEmails(
+                query = args.optString("query").takeIf { it.isNotBlank() },
+                maxResults = args.optInt("max_results", 10)
+            )
+            "gmail_get_message" -> GoogleTools.getEmail(args.getString("id"))
+            "gmail_send_message" -> GoogleTools.sendEmail(
+                to = args.getString("to"),
+                subject = args.getString("subject"),
+                body = args.getString("body")
+            )
+            "gmail_create_draft" -> GoogleTools.createDraft(
+                to = args.getString("to"),
+                subject = args.getString("subject"),
+                body = args.getString("body")
+            )
+            "calendar_list_events" -> GoogleTools.listCalendarEvents(
+                timeMin = args.optString("time_min").takeIf { it.isNotBlank() },
+                timeMax = args.optString("time_max").takeIf { it.isNotBlank() },
+                maxResults = args.optInt("max_results", 15)
+            )
+            "calendar_create_event" -> GoogleTools.createCalendarEvent(
+                summary = args.getString("summary"),
+                description = args.optString("description").takeIf { it.isNotBlank() },
+                startTime = args.getString("start_time"),
+                endTime = args.getString("end_time")
+            )
+            else -> {
+                McpServerLauncher.executeMcpTool(call.name, args)?.toString()
+                    ?: error("Unsupported tool: ${call.name}")
+            }
         }.toString()
+
     }.fold(
         onSuccess = { content -> ToolExecutionResult(callId = call.id, content = content) },
         onFailure = { error ->
