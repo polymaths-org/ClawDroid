@@ -110,8 +110,8 @@ class LlmApiClient(
                     ?: return@forEach
                 val delta = choice.optJSONObject("delta") ?: return@forEach
 
-                val text = delta.optString("content")
-                if (text.isNotEmpty()) emit(StreamEvent.TextDelta(text))
+                val text = delta.optNullableString("content")
+                if (!text.isNullOrEmpty()) emit(StreamEvent.TextDelta(text))
 
                 val deltaToolCalls = delta.optJSONArray("tool_calls")
                 if (deltaToolCalls != null) {
@@ -174,10 +174,14 @@ class LlmApiClient(
         val function = optJSONObject("function")
         return ToolCallDelta(
             index = index,
-            id = optString("id").takeIf { it.isNotEmpty() },
-            name = function?.optString("name")?.takeIf { it.isNotEmpty() },
-            argumentsDelta = function?.optString("arguments").orEmpty(),
+            id = optNullableString("id")?.takeIf { it.isNotEmpty() },
+            name = function?.optNullableString("name")?.takeIf { it.isNotEmpty() },
+            argumentsDelta = function?.optNullableString("arguments").orEmpty(),
         )
+    }
+
+    private fun JSONObject.optNullableString(name: String): String? {
+        return if (has(name) && !isNull(name)) optString(name) else null
     }
 
     private class ToolCallBuilder {
