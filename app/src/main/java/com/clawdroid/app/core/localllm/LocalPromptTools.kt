@@ -11,18 +11,58 @@ import java.util.UUID
  * tests can drive the shipped parsing and trimming without hardware.
  */
 object LocalPromptTools {
-    const val MAX_SYSTEM_CHARS = 2_000
-    const val MAX_MSG_CHARS = 1_500
-    const val MAX_HISTORY = 12
-    const val MAX_TOOLS = 20
-    const val MAX_PROMPT_CHARS = 6_000
+    const val MAX_SYSTEM_CHARS = 800
+    const val MAX_MSG_CHARS = 800
+    const val MAX_HISTORY = 6
+    const val MAX_TOOLS = 6
+    const val MAX_PROMPT_CHARS = 3_500
 
     val TOOL_JSON_REGEX = Regex("```tool_json\\s*(\\{.*?\\})\\s*```", RegexOption.DOT_MATCHES_ALL)
+    val THINK_REGEX = Regex("<think>.*?</think>", RegexOption.DOT_MATCHES_ALL)
     // Fallback for small models that forget the fence and emit raw JSON.
     val PLAIN_TOOL_REGEX = Regex("\\{\\s*\"name\"\\s*:\\s*\"([a-z_]+)\"\\s*,\\s*\"arguments\"\\s*:\\s*(\\{.*?\\})\\s*\\}", RegexOption.DOT_MATCHES_ALL)
 
     fun stripToolBlock(text: String): String {
         return TOOL_JSON_REGEX.replace(text, "").trim()
+    }
+
+    fun stripThinking(text: String): String {
+        return THINK_REGEX.replace(text, "").trim()
+    }
+
+    fun extractThinking(text: String): String {
+        return THINK_REGEX.find(text)?.value?.take(800).orEmpty()
+    }
+
+    /**
+     * PocketPal-style tool compression. Raw file JSON with absolute
+     * /data/user/0/... paths makes a 0.6B model copy JSON verbatim into chat
+     * (see screenshots). Summarize to names-only so the model can answer.
+     */
+    fun summarizeToolResult(raw: String): String {
+        var s = raw.orEmpty()
+        // Common case: list_directory JSON with entries array.
+        try {
+            val obj = org.json.JSONObject(s)
+            if (obj.has("entries")) {
+                val arr = obj.optJSONArray("entries")
+                if (arr != null) {
+                    val names = buildList {
+                        for (i in 0 until arr.length().coerceAtMost(30)) {
+                            add(arr.optJSONObject(i)?.optString("name").orEmpty())
+                        }
+                    }.filter { it.isNotEmpty() }
+                    if (names.isNotEmpty()) return "Files: " + names.joinToString(", ")
+                }
+            }
+            if (obj.has("content")) {
+                val c = obj.optString("content")
+                if (c.isNotEmpty()) return c.take(800)
+            }
+        } catch (_: Exception) { }
+        s = s.replace("/data/user/0/com.clawdroid.app/files/home/", "")
+            .replace("/data/data/com.clawdroid.app/files/home/", "")
+        return s.take(800)
     }
 
     fun duplicateReminder(toolName: String): String {
@@ -40,7 +80,9 @@ To call a tool, end your response with exactly one fenced block:
 {"name": "<tool name>", "arguments": {...}}
 ```
 Each tool spec lists its args (* = required). Use those exact argument names.
+You may think briefly inside <think>...</think> before deciding, then write the answer outside.
 After you receive a Tool result message, you MUST reply in plain text using that result.
+Summarize file lists as short names, never paste raw JSON back into chat.
 NEVER repeat the same tool call with the same arguments twice.
 If the result already answers the user, print it and stop. No more tool blocks.
 Otherwise reply with plain text only. Keep replies short."""
@@ -112,10 +154,10 @@ Otherwise reply with plain text only. Keep replies short."""
                             sb.append("Assistant tool call: ${c.name} ${c.arguments.take(500)}\n")
                         }
                     } else {
-                        sb.append("Assistant: ").append(m.content.orEmpty().take(MAX_MSG_CHARS)).append('\n')
+                        sb.append("Assistant: ").append(stripThinking(m.content.orEmpty()).take(MAX_MSG_CHARS)).append('\n')
                     }
                 }
-                "tool" -> sb.append("Tool result: ").append(m.content.orEmpty().take(MAX_MSG_CHARS)).append('\n')
+                "tool" -> sb.append("Tool result: ").append(summarizeToolResult(m.content.orEmpty()).take(MAX_MSG_CHARS)).append('\n')
             }
         }
         sb.append("Assistant:")

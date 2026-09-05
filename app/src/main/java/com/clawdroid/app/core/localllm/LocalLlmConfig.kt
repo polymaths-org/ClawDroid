@@ -36,11 +36,11 @@ object LocalLlmConfig {
     /**
      * Per-model context windows. GenieX llama_cpp uses use_mmap=false, so the
      * full weights sit in RAM (4B file 2.2 GB -> 2.8 GB RSS -> LMK OOM kill).
-     * 4B gets 1K context, 1.7B gets 2K, 0.6B keeps 4K.
+     * 4B gets 1K, 1.7B and 0.6B get 2K like PocketPal default.
      */
     const val N_CTX_4B = 1_024
     const val N_CTX_17B = 2_048
-    const val N_CTX_06B = 4_096
+    const val N_CTX_06B = 2_048
 
     fun nCtxFor(modelId: String): Int = when (modelId) {
         GGUF_MODEL_4B -> N_CTX_4B

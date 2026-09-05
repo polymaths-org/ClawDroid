@@ -146,9 +146,9 @@ class LocalPromptToolsTest {
     @Test
     fun `per-model context gives 4B a smaller window`() {
         assertEquals(1_024, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_4B))
-        assertEquals(4_096, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_06B))
+        assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_06B))
         assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_17B))
-        assertEquals(4_096, LocalLlmConfig.nCtxFor("unknown-model"))
+        assertEquals(2_048, LocalLlmConfig.nCtxFor("unknown-model"))
     }
 
     @Test
@@ -193,5 +193,20 @@ class LocalPromptToolsTest {
     fun `tool suffix forbids repeat calls`() {
         assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("NEVER repeat"))
         assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("plain text"))
+    }
+
+    @Test
+    fun `summarizeToolResult compresses directory JSON to names`() {
+        val json = "{\"path\":\"/a\",\"entries\":[{\"name\":\"SKILL.md\"},{\"name\":\"SOUL.md\"}]}"
+        val out = LocalPromptTools.summarizeToolResult(json)
+        assertTrue(out.contains("SKILL.md"))
+        assertTrue(!out.contains("/data/user"))
+    }
+
+    @Test
+    fun `thinking blocks are stripped from visible text`() {
+        val raw = "<think>plan list</think>Here are files: a, b"
+        assertEquals("Here are files: a, b", LocalPromptTools.stripThinking(raw))
+        assertTrue(LocalPromptTools.extractThinking(raw).contains("plan"))
     }
 }

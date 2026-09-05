@@ -45,12 +45,15 @@ class GenieXLocalProvider(
     private val loadLock = Mutex()
     @Volatile private var llm: LlmWrapper? = null
 
-    /** Core tools only — a 4k-context 4B model cannot hold all 30+ cloud tools. */
-    private val toolAllowlist = setOf(
-        "get_screen", "tap", "tap_text", "swipe", "scroll", "type_text",
-        "press_back", "press_home", "launch_app", "execute_command",
-        "read_file", "write_file", "list_directory", "wait",
-    )
+    /** PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only. */
+    private fun allowlistFor(model: String): Set<String> {
+        if (model == LocalLlmConfig.GGUF_MODEL_06B) return LocalPromptTools.BASIC_TOOLS
+        return setOf(
+            "get_screen", "tap", "tap_text", "swipe", "scroll", "type_text",
+            "press_back", "press_home", "launch_app", "execute_command",
+            "read_file", "write_file", "list_directory", "wait",
+        )
+    }
 
     private suspend fun ensureLoaded(): LlmWrapper {
         llm?.let { return it }
@@ -71,7 +74,7 @@ class GenieXLocalProvider(
                             nThreadsBatch = 4
                             nBatch = 128
                             nUBatch = 64
-                        },
+                        }.copy(enable_thinking = true),
                         runtime_id = paths.runtime_id?.takeIf { r -> r.isNotBlank() } ?: opt.runtimeId,
                         // CPU avoids the Hexagon NPU SIGABRT in ggml-hexagon dspqueue.
                         compute_unit = ComputeUnitValue.CPU.value,
@@ -132,7 +135,9 @@ class GenieXLocalProvider(
         }
         val raw = fullText.toString()
         val toolCall = parseToolCall(raw)
-        val visible = LocalPromptTools.stripToolBlock(raw).trim()
+        val thinking = LocalPromptTools.extractThinking(raw)
+        if (thinking.isNotEmpty()) Log.d(TAG, "thinking len=${thinking.length}")
+        val visible = LocalPromptTools.stripThinking(LocalPromptTools.stripToolBlock(raw)).trim()
         // If the turn is only a tool call, show no chat bubble; the tool step covers it.
         // If text accompanies the call, show only that text.
         if (toolCall == null) {
@@ -146,7 +151,7 @@ class GenieXLocalProvider(
 
     private fun buildPrompt(messages: List<ChatMessage>, tools: JSONArray?): String {
         val home = runCatching { EnvironmentSetup.build(appContext).home.absolutePath }.getOrNull()
-        return LocalPromptTools.buildPrompt(messages, tools, toolAllowlist, home)
+        return LocalPromptTools.buildPrompt(messages, tools, allowlistFor(modelId), home)
     }
 
     private fun parseToolCall(text: String): CompletedToolCall? =
