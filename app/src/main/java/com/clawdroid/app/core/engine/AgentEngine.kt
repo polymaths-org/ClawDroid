@@ -1,6 +1,7 @@
 package com.clawdroid.app.core.engine
 
 import android.content.Context
+import android.util.Log
 import com.clawdroid.app.core.bootstrap.BootstrapManager
 import com.clawdroid.app.core.memory.MemoryManager
 import com.clawdroid.app.data.api.ChatMessage
@@ -29,6 +30,7 @@ sealed interface AgentRunEvent {
     data class LoopWarning(val message: String) : AgentRunEvent
     data class Completed(val finalText: String) : AgentRunEvent
     data class Stopped(val reason: String) : AgentRunEvent
+    data class RunError(val message: String) : AgentRunEvent
 }
 
 class AgentEngine(
@@ -56,23 +58,36 @@ class AgentEngine(
         stopRequested.set(true)
     }
 
-    fun run(prompt: String, maxTurns: Int = 200): Flow<AgentRunEvent> = channelFlow {
+    fun run(
+        prompt: String,
+        targetConversationId: String? = null,
+        maxTurns: Int = 200,
+        mediaPath: String? = null,
+        mediaMimeType: String? = null,
+    ): Flow<AgentRunEvent> = channelFlow {
         stopRequested.set(false)
-        BootstrapManager.ensureBootstrapped(context) { }
+        Log.i("AgentEngine", "run() started. prompt: $prompt, targetConversationId: $targetConversationId")
+        val result = BootstrapManager.ensureBootstrapped(context) { }
+        Log.i("AgentEngine", "ensureBootstrapped completed. Result: $result")
 
         val db = ClawDroidDatabase.get(context)
         val conversationDao = db.conversations()
         val messageDao = db.messages()
         val toolCallDao = db.toolCalls()
 
-        // 1. Fetch or create active conversation associated with this project
-        var conversation = conversationDao.getMostRecent()
-        if (conversation == null || conversation.projectId != projectId) {
-            val newId = UUID.randomUUID().toString()
+        // 1. Fetch or create active conversation associated with this project/id
+        var conversation = if (targetConversationId != null) {
+            conversationDao.getById(targetConversationId)
+        } else {
+            conversationDao.getMostRecent()
+        }
+
+        if (conversation == null || (targetConversationId == null && conversation.projectId != projectId)) {
+            val newId = targetConversationId ?: UUID.randomUUID().toString()
             conversation = ConversationEntity(
                 id = newId,
                 projectId = projectId,
-                title = "New Chat",
+                title = if (targetConversationId != null && targetConversationId.startsWith("whatsapp_chat_")) "WhatsApp Chat" else if (targetConversationId != null && targetConversationId.startsWith("sms_chat_")) "SMS Chat" else "New Chat",
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 status = "active",
@@ -90,7 +105,9 @@ class AgentEngine(
         val existingMessages = messageDao.getAll(conversationId)
         val lastMsg = existingMessages.lastOrNull()
         if (lastMsg == null || lastMsg.role != "user" || lastMsg.content != prompt) {
-            contextBuilder.saveUserMessage(conversationId, prompt)
+            contextBuilder.saveUserMessage(conversationId, prompt, mediaPath, mediaMimeType)
+        } else if (lastMsg.mediaPath != mediaPath || lastMsg.mediaMimeType != mediaMimeType) {
+            messageDao.update(lastMsg.copy(mediaPath = mediaPath, mediaMimeType = mediaMimeType))
         }
 
         val finalText = StringBuilder()

@@ -114,10 +114,11 @@ class BackgroundAgent(private val context: Context) {
         )
 
         processingJob = scope.launch {
+            val conversationId = "${msg.channelType}_chat_${msg.sender}"
             val engine = AgentEngine(context)
             var responseText = ""
 
-            engine.run(msg.text).collect { event ->
+            engine.run(msg.text, targetConversationId = conversationId).collect { event ->
                 when (event) {
                     is AgentRunEvent.TextDelta -> responseText += event.text
                     is AgentRunEvent.Completed -> {
