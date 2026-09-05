@@ -198,6 +198,9 @@ object AppConfigManager {
     const val KEY_GOOGLE_CLIENT_SECRET = "google_client_secret"
     const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token"
     const val KEY_GOOGLE_ACCOUNT_EMAIL = "google_account_email"
+    const val KEY_GOOGLE_GMAIL_ENABLED = "google_gmail_enabled"
+    const val KEY_GOOGLE_CALENDAR_ENABLED = "google_calendar_enabled"
+    const val KEY_GOOGLE_CONNECTOR_ENABLED = "google_connector_enabled"
     const val KEY_MCP_SERVERS_CONFIG = "mcp_servers_config"
 
     var googleClientId: String
@@ -215,6 +218,18 @@ object AppConfigManager {
     var googleAccountEmail: String
         get() = p.getString(KEY_GOOGLE_ACCOUNT_EMAIL, "") ?: ""
         set(value) = p.edit().putString(KEY_GOOGLE_ACCOUNT_EMAIL, value).apply()
+
+    var googleGmailEnabled: Boolean
+        get() = p.getBoolean(KEY_GOOGLE_GMAIL_ENABLED, true)
+        set(value) = p.edit().putBoolean(KEY_GOOGLE_GMAIL_ENABLED, value).apply()
+
+    var googleCalendarEnabled: Boolean
+        get() = p.getBoolean(KEY_GOOGLE_CALENDAR_ENABLED, true)
+        set(value) = p.edit().putBoolean(KEY_GOOGLE_CALENDAR_ENABLED, value).apply()
+
+    var googleConnectorEnabled: Boolean
+        get() = p.getBoolean(KEY_GOOGLE_CONNECTOR_ENABLED, true)
+        set(value) = p.edit().putBoolean(KEY_GOOGLE_CONNECTOR_ENABLED, value).apply()
 
     var mcpServersConfig: String
         get() = p.getString(KEY_MCP_SERVERS_CONFIG, "") ?: ""
