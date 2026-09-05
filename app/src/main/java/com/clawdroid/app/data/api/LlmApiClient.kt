@@ -30,9 +30,16 @@ data class CompletedToolCall(
     val arguments: String,
 )
 
+data class TokenUsage(
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val cachedTokens: Int = 0,
+)
+
 sealed interface StreamEvent {
     data class TextDelta(val text: String) : StreamEvent
     data class ToolCallComplete(val call: CompletedToolCall) : StreamEvent
+    data class Usage(val usage: TokenUsage) : StreamEvent
     data class Error(val message: String) : StreamEvent
     data object Done : StreamEvent
 }
@@ -54,6 +61,7 @@ class LlmApiClient(
         val payload = JSONObject()
             .put("model", model)
             .put("stream", true)
+            .put("stream_options", JSONObject().put("include_usage", true))
             .put("messages", messages.toJson())
 
         if (tools != null) {
@@ -91,6 +99,7 @@ class LlmApiClient(
         }
 
         val toolCalls = mutableMapOf<Int, ToolCallBuilder>()
+        var lastUsage: TokenUsage? = null
         connection.inputStream.bufferedReader().useLines { lines ->
             lines.forEach { line ->
                 if (!line.startsWith("data:")) return@forEach
@@ -99,12 +108,22 @@ class LlmApiClient(
                     toolCalls.values
                         .mapNotNull { it.buildOrNull() }
                         .forEach { emit(StreamEvent.ToolCallComplete(it)) }
+                    lastUsage?.let { emit(StreamEvent.Usage(it)) }
                     emit(StreamEvent.Done)
                     return@useLines
                 }
 
                 val event = runCatching { JSONObject(data) }.getOrNull()
                     ?: return@forEach
+
+                val usageObj = event.optJSONObject("usage")
+                if (usageObj != null) {
+                    val prompt = usageObj.optInt("prompt_tokens", 0)
+                    val completion = usageObj.optInt("completion_tokens", 0)
+                    val cached = usageObj.optJSONObject("prompt_tokens_details")?.optInt("cached_tokens", 0) ?: 0
+                    lastUsage = TokenUsage(prompt, completion, cached)
+                }
+
                 val choice = event.optJSONArray("choices")
                     ?.optJSONObject(0)
                     ?: return@forEach
