@@ -37,7 +37,7 @@ import org.json.JSONArray
 class GenieXLocalProvider(
     private val appContext: Context,
     private val modelId: String = AppConfigManager.model
-        .takeIf { it.isNotBlank() } ?: LocalLlmConfig.GGUF_MODEL_06B,
+        .takeIf { it.isNotBlank() } ?: LocalLlmConfig.DEFAULT_MODEL,
 ) : LlmProvider {
     override val contextLimit: Int get() = LocalLlmConfig.nCtxFor(modelId)
     override val isLocal: Boolean = true

@@ -23,6 +23,8 @@ object LocalLlmConfig {
     const val GGUF_MODEL_4B = "unsloth/Qwen3-4B-GGUF"
     const val GGUF_MODEL_06B = "unsloth/Qwen3-0.6B-GGUF"
     const val GGUF_MODEL_17B = "unsloth/Qwen3-1.7B-GGUF"
+    /** Default is 1.7B: 0.6B is too weak for tools, 4B OOM-kills with mmap disabled. */
+    const val DEFAULT_MODEL = GGUF_MODEL_17B
     const val GGUF_PRECISION_Q4_0 = "Q4_0"
     const val RUNTIME_LLAMA_CPP = "llama_cpp"
 

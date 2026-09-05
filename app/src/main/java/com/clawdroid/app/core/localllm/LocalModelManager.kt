@@ -42,18 +42,18 @@ object LocalModelManager {
 
     val options = listOf(
         LocalModelOption(
-            id = LocalLlmConfig.GGUF_MODEL_06B,
-            label = "Qwen3-0.6B (stable, low RAM)",
-            sizeNote = "~0.4 GB download · ~1.5 GB RAM · best for tool calls",
+            id = LocalLlmConfig.GGUF_MODEL_17B,
+            label = "Qwen3-1.7B (recommended)",
+            sizeNote = "~1.3 GB download · ~2.4 GB RAM · best for tools",
             hub = HubSource.HUGGINGFACE,
             precision = LocalLlmConfig.GGUF_PRECISION_Q4_0,
             chipset = null,
             runtimeId = LocalLlmConfig.RUNTIME_LLAMA_CPP,
         ),
         LocalModelOption(
-            id = LocalLlmConfig.GGUF_MODEL_17B,
-            label = "Qwen3-1.7B (balanced)",
-            sizeNote = "~1.3 GB download · ~2.4 GB RAM · better tools",
+            id = LocalLlmConfig.GGUF_MODEL_06B,
+            label = "Qwen3-0.6B (chat only)",
+            sizeNote = "~0.4 GB download · ~1.5 GB RAM · too weak for tools",
             hub = HubSource.HUGGINGFACE,
             precision = LocalLlmConfig.GGUF_PRECISION_Q4_0,
             chipset = null,
@@ -71,7 +71,9 @@ object LocalModelManager {
     )
 
     fun optionFor(modelId: String): LocalModelOption =
-        options.firstOrNull { it.id == modelId } ?: options.first()
+        options.firstOrNull { it.id == modelId }
+            ?: options.firstOrNull { it.id == LocalLlmConfig.DEFAULT_MODEL }
+            ?: options.first()
 
     private val _status = MutableStateFlow<Map<String, LocalModelStatus>>(emptyMap())
     val status: StateFlow<Map<String, LocalModelStatus>> = _status.asStateFlow()

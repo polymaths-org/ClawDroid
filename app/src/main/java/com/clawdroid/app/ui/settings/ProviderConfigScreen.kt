@@ -60,7 +60,7 @@ fun ProviderConfigScreen(
     var localModelId by remember {
         mutableStateOf(
             localOptions.firstOrNull { it.id == AppConfigManager.model }?.id
-                ?: LocalLlmConfig.GGUF_MODEL_4B
+                ?: LocalLlmConfig.DEFAULT_MODEL
         )
     }
     val localStatusMap by LocalModelManager.status.collectAsState()
@@ -270,7 +270,7 @@ fun ProviderConfigScreen(
                         ProviderPreset("Ollama (Local)", "llama3.2", "http://localhost:11434/v1", provider, model, baseUrl) {
                             provider = "ollama"; baseUrl = "http://localhost:11434/v1"; model = "llama3.2"
                         }
-                        ProviderPreset("On-Device NPU (GenieX)", LocalLlmConfig.GGUF_MODEL_4B, "ondevice://geniex", provider, model, baseUrl) {
+                        ProviderPreset("On-Device (GenieX)", LocalLlmConfig.DEFAULT_MODEL, "ondevice://geniex", provider, model, baseUrl) {
                             provider = LocalLlmConfig.PROVIDER_ID; baseUrl = "ondevice://geniex"; model = localModelId
                         }
                     }
