@@ -4,7 +4,7 @@
 
 **A native Android AI agent that can chat, think, run Linux commands, control Android apps with permission, connect services, and show every action it takes.**
 
-Built by **TEAM POLYMATH** .
+Built by **TEAM POLYMATH**.
 
 Creators: **Nabil**, **Paris**, **Rushi**, and **Talib**.
 
