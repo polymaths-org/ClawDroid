@@ -77,16 +77,12 @@ fun HatchingScreen(onComplete: () -> Unit) {
     }
 
     LaunchedEffect(line) {
-        typedLine = ""
-        line.forEachIndexed { index, _ ->
-            typedLine = line.take(index + 1)
-            delay(16)
-        }
+        typedLine = line
     }
 
     LaunchedEffect(phase) {
         if (phase >= 2) {
-            delay(1500)
+            delay(1200)
             AppConfigManager.hasSeenHatching = true
             onComplete()
         }
@@ -94,34 +90,16 @@ fun HatchingScreen(onComplete: () -> Unit) {
 
     val infinite = rememberInfiniteTransition(label = "hatch_motion")
     val breathe by infinite.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.97f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "egg_breathe",
     )
-    val lift by infinite.animateFloat(
-        initialValue = -10f,
-        targetValue = 10f,
-        animationSpec = infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "egg_lift",
-    )
-    val wiggle by infinite.animateFloat(
-        initialValue = -6f,
-        targetValue = 6f,
-        animationSpec = infiniteRepeatable(tween(80), RepeatMode.Reverse),
-        label = "egg_wiggle",
-    )
     val pulse by infinite.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        initialValue = 0.4f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "hint_pulse",
-    )
-    val scan by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Restart),
-        label = "scan",
     )
     val eggSize by animateFloatAsState(
         targetValue = when (phase) {
@@ -139,7 +117,7 @@ fun HatchingScreen(onComplete: () -> Unit) {
             .background(background),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width * 0.5f, size.height * (0.48f + scan * 0.04f))
+            val center = Offset(size.width * 0.5f, size.height * 0.48f)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -216,10 +194,6 @@ fun HatchingScreen(onComplete: () -> Unit) {
                     modifier = Modifier
                         .size(eggSize.dp)
                         .scale(if (currentPhase == 0) breathe else 1.05f)
-                        .graphicsLayer(
-                            translationY = if (currentPhase == 0) lift else 0f,
-                            rotationZ = if (currentPhase == 1) wiggle else 0f,
-                        )
                         .clickable(enabled = phase < 2) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             phase = (phase + 1).coerceAtMost(2)

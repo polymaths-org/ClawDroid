@@ -79,18 +79,21 @@ fun MCPStatusRow(
         label = "status_color",
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse_alpha",
-    )
     val isPulsing = server.status == ServerStatus.Running || server.status == ServerStatus.Starting
-    val dotAlpha = if (isPulsing) pulseAlpha else 1.0f
+    val dotAlpha = if (isPulsing) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse_alpha",
+        ).value
+    } else {
+        1.0f
+    }
 
     Box(
         modifier = modifier

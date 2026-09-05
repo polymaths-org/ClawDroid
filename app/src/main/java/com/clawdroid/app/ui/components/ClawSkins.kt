@@ -70,11 +70,13 @@ fun ClawSkin.isHud(): Boolean = this == ClawSkin.Cyberpunk || this == ClawSkin.J
 @Composable
 fun ClawSkinBackground(
     modifier: Modifier = Modifier,
+    showAmbient: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val skin = currentClawSkin()
     val colors = MaterialTheme.colorScheme
-    val backgroundBrush = when (skin) {
+    val backgroundBrush = remember(skin, colors.background, colors.surfaceContainerLowest, colors.surfaceContainerHigh) {
+        when (skin) {
         ClawSkin.ClawMagic -> Brush.verticalGradient(listOf(colors.background, colors.background))
         ClawSkin.LiquidGlass -> Brush.linearGradient(
             colors = listOf(
@@ -102,9 +104,10 @@ fun ClawSkinBackground(
         ClawSkin.Minimalist -> Brush.verticalGradient(
             listOf(colors.background, colors.surfaceContainerLowest),
         )
-        ClawSkin.Material -> Brush.verticalGradient(
+        else -> Brush.verticalGradient(
             listOf(colors.background, colors.background),
         )
+        }
     }
     val configuration = LocalConfiguration.current
 
@@ -126,11 +129,13 @@ fun ClawSkinBackground(
                 .matchParentSize()
                 .background(backgroundBrush)
         )
-        when (skin) {
-            ClawSkin.ClawMagic -> ClawMagicAmbient(Modifier.matchParentSize())
-            ClawSkin.LiquidGlass -> LiquidGlassAmbient(Modifier.matchParentSize())
-            ClawSkin.Cyberpunk, ClawSkin.Jarvis -> HudAmbient(skin = skin, modifier = Modifier.matchParentSize())
-            else -> Unit
+        if (showAmbient) {
+            when (skin) {
+                ClawSkin.ClawMagic -> ClawMagicAmbient(Modifier.matchParentSize())
+                ClawSkin.LiquidGlass -> LiquidGlassAmbient(Modifier.matchParentSize())
+                ClawSkin.Cyberpunk, ClawSkin.Jarvis -> HudAmbient(skin = skin, modifier = Modifier.matchParentSize())
+                else -> Unit
+            }
         }
         content()
     }
@@ -142,12 +147,14 @@ fun ClawPanel(
     cornerRadius: Dp = 18.dp,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     emphasis: Float = 0f,
+    enableShadow: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val skin = currentClawSkin()
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(if (skin.isHud()) max(8f, cornerRadius.value - 8f).dp else cornerRadius)
-    val panelBrush = when (skin) {
+    val panelBrush = remember(skin, emphasis, colors.surface, colors.surfaceContainerLowest, colors.surfaceContainerHigh, colors.surfaceContainerLow, colors.surfaceContainer) {
+        when (skin) {
         ClawSkin.ClawMagic -> Brush.verticalGradient(
             listOf(
                 Color.White.copy(alpha = 0.030f + emphasis * 0.018f),
@@ -185,14 +192,16 @@ fun ClawPanel(
                 colors.surfaceContainer.copy(alpha = 0.86f),
             ),
         )
-        ClawSkin.Material -> Brush.verticalGradient(
+        else -> Brush.verticalGradient(
             listOf(
                 colors.surfaceContainerLow.copy(alpha = 0.82f),
                 colors.surfaceContainer.copy(alpha = 0.82f),
             ),
         )
+        }
     }
-    val borderBrush = when (skin) {
+    val borderBrush = remember(skin, emphasis, colors.primary, colors.outlineVariant) {
+        when (skin) {
         ClawSkin.ClawMagic -> Brush.verticalGradient(
             listOf(
                 Color.White.copy(alpha = 0.070f),
@@ -227,6 +236,7 @@ fun ClawPanel(
                 colors.outlineVariant.copy(alpha = 0.38f),
             ),
         )
+        }
     }
     val glow = when (skin) {
         ClawSkin.ClawMagic -> colors.primary.copy(alpha = 0.08f + emphasis * 0.04f)
@@ -235,20 +245,17 @@ fun ClawPanel(
         ClawSkin.LiquidGlass -> Color.White.copy(alpha = 0.18f)
         else -> Color.Black.copy(alpha = 0.18f)
     }
+    val shadowElevation = when {
+        !enableShadow -> 0.dp
+        skin == ClawSkin.ClawMagic -> if (emphasis > 0.25f) 4.dp else 0.dp
+        skin == ClawSkin.Cyberpunk || skin == ClawSkin.Jarvis -> 14.dp
+        skin == ClawSkin.LiquidGlass -> 10.dp
+        else -> 3.dp
+    }
 
     Box(
         modifier = modifier
-            .shadow(
-                elevation = when (skin) {
-                    ClawSkin.ClawMagic -> if (emphasis > 0.25f) 4.dp else 0.dp
-                    ClawSkin.Cyberpunk, ClawSkin.Jarvis -> 14.dp
-                    ClawSkin.LiquidGlass -> 10.dp
-                    else -> 3.dp
-                },
-                shape = shape,
-                ambientColor = glow,
-                spotColor = glow,
-            )
+            .then(if (shadowElevation > 0.dp) Modifier.shadow(shadowElevation, shape, ambientColor = glow, spotColor = glow) else Modifier)
             .clip(shape)
             .background(panelBrush, shape)
             .border(1.dp, borderBrush, shape),
@@ -284,16 +291,20 @@ fun ClawMagicMark(
     animated: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val transition = rememberInfiniteTransition(label = "claw_magic_mark")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (animated) 360f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(9000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "claw_magic_mark_rotation",
-    )
+    val rotation = if (animated) {
+        val transition = rememberInfiniteTransition(label = "claw_magic_mark")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(9000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "claw_magic_mark_rotation",
+        ).value
+    } else {
+        0f
+    }
     Canvas(modifier = modifier.size(42.dp)) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val long = size.minDimension * 0.42f
@@ -330,16 +341,6 @@ fun ClawMagicMark(
 
 @Composable
 private fun ClawMagicAmbient(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "claw_magic_ambient")
-    val pulse by transition.animateFloat(
-        initialValue = 0.72f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(7200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "claw_magic_pulse",
-    )
     val primary = MaterialTheme.colorScheme.primary
     val tertiary = MaterialTheme.colorScheme.tertiary
     Canvas(modifier = modifier) {
@@ -348,7 +349,7 @@ private fun ClawMagicAmbient(modifier: Modifier = Modifier) {
                 colors = listOf(
                     Color.Transparent,
                     Color.Transparent,
-                    primary.copy(alpha = 0.035f * pulse),
+                    primary.copy(alpha = 0.03f),
                 ),
                 startY = size.height * 0.76f,
                 endY = size.height,
@@ -359,8 +360,8 @@ private fun ClawMagicAmbient(modifier: Modifier = Modifier) {
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    primary.copy(alpha = 0.035f * pulse),
-                    tertiary.copy(alpha = 0.018f * pulse),
+                    primary.copy(alpha = 0.03f),
+                    tertiary.copy(alpha = 0.015f),
                     Color.Transparent,
                 ),
                 center = Offset(size.width * 0.50f, size.height * 0.22f),
@@ -374,24 +375,14 @@ private fun ClawMagicAmbient(modifier: Modifier = Modifier) {
 
 @Composable
 private fun LiquidGlassAmbient(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "liquid_ambient")
-    val shift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(9000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "liquid_shift",
-    )
     Canvas(modifier = modifier) {
         val bandWidth = size.width * 0.38f
-        val startX = -bandWidth + shift * (size.width + bandWidth * 2f)
+        val startX = size.width * 0.3f
         drawRect(
             brush = Brush.linearGradient(
                 colors = listOf(
                     Color.Transparent,
-                    Color.White.copy(alpha = 0.055f),
+                    Color.White.copy(alpha = 0.04f),
                     Color.Transparent,
                 ),
                 start = Offset(startX, 0f),

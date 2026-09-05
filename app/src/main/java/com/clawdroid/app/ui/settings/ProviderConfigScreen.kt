@@ -27,10 +27,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.clawdroid.app.core.config.AppConfigManager
+import com.clawdroid.app.core.config.OpenCodeZen
 import com.clawdroid.app.core.config.SavedProviderProfile
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassTextField
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +46,11 @@ fun ProviderConfigScreen(
     var model by remember { mutableStateOf(AppConfigManager.model) }
     var profileName by remember { mutableStateOf(AppConfigManager.provider.ifBlank { "Main" }) }
     var showKey by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var zenModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var zenModelsLoading by remember { mutableStateOf(false) }
+    var zenModelsError by remember { mutableStateOf<String?>(null) }
+    val isZen = OpenCodeZen.isZen(provider, baseUrl)
 
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
@@ -161,6 +168,79 @@ fun ProviderConfigScreen(
                                 placeholder = "gpt-4o, claude-3-opus, ...",
                                 singleLine = true,
                             )
+                            if (isZen) {
+                                OutlinedButton(
+                                    onClick = {
+                                        zenModelsLoading = true
+                                        zenModelsError = null
+                                        scope.launch {
+                                            try {
+                                                zenModels = OpenCodeZen.fetchModels(
+                                                    baseUrl.ifBlank { OpenCodeZen.BASE_URL },
+                                                    apiKey,
+                                                )
+                                                if (zenModels.isNotEmpty() && model.isBlank()) {
+                                                    model = zenModels.first()
+                                                }
+                                            } catch (t: Throwable) {
+                                                zenModelsError = t.message ?: "Failed to load models"
+                                            } finally {
+                                                zenModelsLoading = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !zenModelsLoading,
+                                ) {
+                                    Text(if (zenModelsLoading) "Loading models…" else "Load Zen models")
+                                }
+                                if (zenModelsError != null) {
+                                    Text(
+                                        zenModelsError.orEmpty(),
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                zenModels.filter { OpenCodeZen.isFree(it) }.forEach { zenModel ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { model = zenModel }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            "Free · $zenModel",
+                                            color = onSurface,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        if (zenModel == model) {
+                                            Text("✓", color = accent, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                zenModels.filterNot { OpenCodeZen.isFree(it) }.take(60).forEach { zenModel ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { model = zenModel }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            zenModel,
+                                            color = onSurface,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        if (zenModel == model) {
+                                            Text("✓", color = accent, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -173,6 +253,9 @@ fun ProviderConfigScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Quick Presets", color = accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
 
+                        ProviderPreset("OpenCode Zen", "big-pickle", "https://opencode.ai/zen/v1", provider, model, baseUrl) {
+                            provider = "opencode_zen"; baseUrl = "https://opencode.ai/zen/v1"; model = "big-pickle"
+                        }
                         ProviderPreset("OpenAI", "gpt-4o", "https://api.openai.com/v1", provider, model, baseUrl) {
                             provider = "openai"; baseUrl = "https://api.openai.com/v1"; model = "gpt-4o"
                         }

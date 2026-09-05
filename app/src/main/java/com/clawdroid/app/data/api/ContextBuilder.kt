@@ -78,11 +78,16 @@ class ContextBuilder(
             0
         }
 
-        // 3. Convert remaining messages to ChatMessage format
+        // 3. Convert remaining messages to ChatMessage format (single batch tool-call fetch)
+        val toolCallsByMessage = if (startIndex < allMessages.size) {
+            toolCallDao.getForConversation(conversationId).groupBy { it.messageId }
+        } else {
+            emptyMap()
+        }
         for (i in startIndex until allMessages.size) {
             val msg = allMessages[i]
             val toolCalls = if (msg.role == "assistant") {
-                toolCallDao.getForMessage(msg.id).map { entity ->
+                toolCallsByMessage[msg.id].orEmpty().map { entity ->
                     CompletedToolCall(
                         id = entity.id,
                         name = entity.toolName,

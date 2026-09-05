@@ -46,16 +46,7 @@ fun SplashScreen(
     val subtitleOffsetY = remember { Animatable(30f) }
 
     // Glow pulsing animation
-    val infiniteTransition = rememberInfiniteTransition(label = "glow_pulse")
-    val glowBlurRadius by infiniteTransition.animateFloat(
-        initialValue = 8f,
-        targetValue = 24f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow_blur"
-    )
+    val glowBlurRadius = 14f
 
     // ── Animation sequence ────────────────────────────────────
     LaunchedEffect(Unit) {

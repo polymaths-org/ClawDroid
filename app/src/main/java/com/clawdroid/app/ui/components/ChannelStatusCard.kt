@@ -72,17 +72,21 @@ fun ChannelStatusCard(
         label = "status_color",
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_channel")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse_alpha",
-    )
     val isPulsing = status == ChannelConnectionStatus.Connected || status == ChannelConnectionStatus.Connecting
+    val pulseAlpha = if (isPulsing) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse_channel")
+        infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse_alpha",
+        ).value
+    } else {
+        1f
+    }
 
     val borderColor by animateColorAsState(
         targetValue = when (status) {

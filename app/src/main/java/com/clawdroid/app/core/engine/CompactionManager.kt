@@ -3,6 +3,7 @@ package com.clawdroid.app.core.engine
 import com.clawdroid.app.data.api.ChatMessage
 import com.clawdroid.app.data.api.ContextBuilder
 import com.clawdroid.app.data.api.LlmApiClient
+import com.clawdroid.app.core.config.OpenCodeZen
 import com.clawdroid.app.data.api.StreamEvent
 import com.clawdroid.app.data.db.ConversationDao
 import com.clawdroid.app.data.db.MessageDao
@@ -77,7 +78,10 @@ class CompactionManager(
 
         // 3. Call LLM to generate summary
         val summaryBuilder = StringBuilder()
-        llmClient.streamChat(summarizerMessages).collect { event ->
+        llmClient.streamChat(
+            summarizerMessages,
+            openCodeSessionId = OpenCodeZen.sessionIdForConversation(conversationId),
+        ).collect { event ->
             if (event is StreamEvent.TextDelta) {
                 summaryBuilder.append(event.text)
             }

@@ -1,9 +1,6 @@
 package com.clawdroid.app.ui.markdown
 
 import android.widget.TextView
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -33,9 +30,7 @@ fun MarkdownText(
     }
 
     AndroidView(
-        modifier = modifier.animateContentSize(
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        ),
+        modifier = modifier,
         factory = { viewContext ->
             TextView(viewContext).apply {
                 textSize = 16f
@@ -43,12 +38,14 @@ fun MarkdownText(
                 setTextColor(textColor)
                 setLinkTextColor(linkColor)
                 setTextIsSelectable(true)
+                tag = ""
             }
         },
         update = { textView ->
+            if (textView.tag == markdown) return@AndroidView
+            textView.tag = markdown
             textView.setTextColor(textColor)
             textView.setLinkTextColor(linkColor)
-            textView.setTextIsSelectable(true)
             markwon.setMarkdown(textView, markdown)
         },
     )
