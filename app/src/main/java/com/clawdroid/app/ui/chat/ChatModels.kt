@@ -15,8 +15,12 @@ data class AgentChatItem(
     override val id: String = UUID.randomUUID().toString(),
     val text: String,
     val streaming: Boolean = false,
-    val activitySteps: List<ActivityStepItem> = emptyList(),
-    val activityRunning: Boolean = false,
+) : ChatItem
+
+data class ActivityChatItem(
+    override val id: String = UUID.randomUUID().toString(),
+    val steps: List<ActivityStepItem> = emptyList(),
+    val running: Boolean = false,
 ) : ChatItem
 
 data class ActivityStepItem(

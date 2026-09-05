@@ -78,22 +78,47 @@ fun ChatScreen(modifier: Modifier = Modifier) {
     var engine by remember { mutableStateOf<AgentEngine?>(null) }
     var runJob by remember { mutableStateOf<Job?>(null) }
     var runningAgentMessageId by remember { mutableStateOf<String?>(null) }
+    var runningActivityId by remember { mutableStateOf<String?>(null) }
+
+    fun ensureAgentMessage(): String {
+        val existingId = runningAgentMessageId
+        if (existingId != null) return existingId
+        val message = AgentChatItem(text = "", streaming = true)
+        items += message
+        runningAgentMessageId = message.id
+        return message.id
+    }
+
+    fun finishCurrentAgentText() {
+        runningAgentMessageId?.let { id ->
+            items.replaceAgentMessage(id) { it.copy(streaming = false) }
+        }
+        runningAgentMessageId = null
+    }
+
+    fun finishCurrentActivity() {
+        runningActivityId?.let { id ->
+            items.replaceActivityItem(id) { it.copy(running = false, steps = it.steps.markAllComplete()) }
+        }
+        runningActivityId = null
+    }
 
     fun stopCurrentRun(reason: String = "Stopped") {
         engine?.stop()
         runJob?.cancel()
         runningAgentMessageId?.let { id ->
             items.replaceAgentMessage(id) { current ->
-                current.copy(
-                    text = current.text.ifBlank { reason },
-                    streaming = false,
-                    activityRunning = false,
-                    activitySteps = current.activitySteps.markLastComplete(reason),
-                )
+                current.copy(text = current.text.ifBlank { reason }, streaming = false)
+            }
+        }
+        runningActivityId?.let { id ->
+            items.replaceActivityItem(id) { current ->
+                current.copy(running = false, steps = current.steps.markLastComplete(reason))
             }
         }
         runtimeState = AgentRuntimeState.Idle
         runningAgentMessageId = null
+        runningActivityId = null
     }
 
     fun submit() {
@@ -108,9 +133,7 @@ fun ChatScreen(modifier: Modifier = Modifier) {
         }
 
         items += UserChatItem(text = text)
-        val agentMessage = AgentChatItem(text = "", streaming = true, activityRunning = true)
-        items += agentMessage
-        runningAgentMessageId = agentMessage.id
+        val initialAgentMessageId = ensureAgentMessage()
 
         val newEngine = AgentEngine(context.applicationContext)
         engine = newEngine
@@ -120,96 +143,114 @@ fun ChatScreen(modifier: Modifier = Modifier) {
                 newEngine.run(text).collect { event ->
                     when (event) {
                         is AgentRunEvent.TextDelta -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
+                            finishCurrentActivity()
+                            val messageId = ensureAgentMessage()
+                            items.replaceAgentMessage(messageId) { current ->
                                 current.copy(text = current.text + event.text, streaming = true)
                             }
                         }
 
                         is AgentRunEvent.ToolCallRequested -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    activityRunning = true,
-                                    activitySteps = current.activitySteps + ActivityStepItem(
-                                        type = event.call.name.toActivityStepType(),
-                                        summary = event.call.name.readableToolName(),
-                                        detail = event.call.arguments,
-                                        running = true,
-                                    ),
-                                )
+                            finishCurrentAgentText()
+                            val step = ActivityStepItem(
+                                type = event.call.name.toActivityStepType(),
+                                summary = event.call.name.readableToolName(),
+                                detail = event.call.arguments,
+                                running = true,
+                            )
+                            val activityId = runningActivityId
+                            if (activityId == null) {
+                                val activity = ActivityChatItem(steps = listOf(step), running = true)
+                                items += activity
+                                runningActivityId = activity.id
+                            } else {
+                                items.replaceActivityItem(activityId) { current ->
+                                    current.copy(running = true, steps = current.steps + step)
+                                }
                             }
                         }
 
                         is AgentRunEvent.ToolResultReceived -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    activityRunning = true,
-                                    activitySteps = current.activitySteps.markLastComplete(event.result.content),
-                                )
+                            runningActivityId?.let { id ->
+                                items.replaceActivityItem(id) { current ->
+                                    current.copy(running = true, steps = current.steps.markLastComplete(event.result.content))
+                                }
                             }
                         }
 
                         is AgentRunEvent.SteeringApplied -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    activitySteps = current.activitySteps + ActivityStepItem(
+                            val activity = ActivityChatItem(
+                                steps = listOf(
+                                    ActivityStepItem(
                                         type = ActivityStepType.Service,
                                         summary = "Applied steering",
                                         detail = event.message,
-                                    ),
-                                )
-                            }
+                                    )
+                                ),
+                                running = false,
+                            )
+                            items += activity
                         }
 
                         is AgentRunEvent.LoopWarning -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    activitySteps = current.activitySteps + ActivityStepItem(
+                            val activity = ActivityChatItem(
+                                steps = listOf(
+                                    ActivityStepItem(
                                         type = ActivityStepType.Service,
                                         summary = "Loop warning",
                                         detail = event.message,
-                                    ),
-                                )
-                            }
+                                    )
+                                ),
+                                running = false,
+                            )
+                            items += activity
                         }
 
                         is AgentRunEvent.Completed -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    text = current.text.ifBlank { event.finalText },
-                                    streaming = false,
-                                    activityRunning = false,
-                                    activitySteps = current.activitySteps.markAllComplete(),
-                                )
+                            runningAgentMessageId?.let { id ->
+                                items.replaceAgentMessage(id) { current ->
+                                    current.copy(text = current.text.ifBlank { event.finalText }, streaming = false)
+                                }
                             }
+                            finishCurrentActivity()
                             runtimeState = AgentRuntimeState.Idle
                             runningAgentMessageId = null
+                            runningActivityId = null
                         }
 
                         is AgentRunEvent.Stopped -> {
-                            items.replaceAgentMessage(agentMessage.id) { current ->
-                                current.copy(
-                                    text = current.text.ifBlank { "Stopped: ${event.reason}" },
-                                    streaming = false,
-                                    activityRunning = false,
-                                    activitySteps = current.activitySteps.markLastComplete(event.reason),
-                                )
+                            runningAgentMessageId?.let { id ->
+                                items.replaceAgentMessage(id) { current ->
+                                    current.copy(text = current.text.ifBlank { "Stopped: ${event.reason}" }, streaming = false)
+                                }
+                            }
+                            runningActivityId?.let { id ->
+                                items.replaceActivityItem(id) { current ->
+                                    current.copy(running = false, steps = current.steps.markLastComplete(event.reason))
+                                }
                             }
                             runtimeState = AgentRuntimeState.Idle
                             runningAgentMessageId = null
+                            runningActivityId = null
                         }
                     }
                 }
             }.onFailure { error ->
-                items.replaceAgentMessage(agentMessage.id) { current ->
+                val messageId = runningAgentMessageId ?: initialAgentMessageId
+                items.replaceAgentMessage(messageId) { current ->
                     current.copy(
                         text = current.text.ifBlank { "Error: ${error.message ?: error::class.java.simpleName}" },
                         streaming = false,
-                        activityRunning = false,
-                        activitySteps = current.activitySteps.markLastComplete(error.message ?: "Run failed"),
                     )
+                }
+                runningActivityId?.let { id ->
+                    items.replaceActivityItem(id) { current ->
+                        current.copy(running = false, steps = current.steps.markLastComplete(error.message ?: "Run failed"))
+                    }
                 }
                 runtimeState = AgentRuntimeState.Idle
                 runningAgentMessageId = null
+                runningActivityId = null
             }
         }
     }
@@ -251,6 +292,7 @@ fun ChatScreen(modifier: Modifier = Modifier) {
                         when (item) {
                             is UserChatItem -> UserMessageBubble(item)
                             is AgentChatItem -> AgentMessageCard(item)
+                            is ActivityChatItem -> ActivityMessageCard(item)
                         }
                     }
                 }
@@ -364,21 +406,15 @@ private fun UserMessageBubble(item: UserChatItem) {
 
 @Composable
 private fun AgentMessageCard(item: AgentChatItem) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        if (item.activitySteps.isNotEmpty() || item.activityRunning) {
-            InlineActivityTrail(
-                steps = item.activitySteps,
-                running = item.activityRunning,
-            )
-        }
-        MarkdownText(
-            markdown = item.text.ifBlank { if (item.streaming) "Thinking…" else "" },
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
+    MarkdownText(
+        markdown = item.text.ifBlank { if (item.streaming) "Thinking…" else "" },
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+}
+
+@Composable
+private fun ActivityMessageCard(item: ActivityChatItem) {
+    InlineActivityTrail(steps = item.steps, running = item.running)
 }
 
 @Composable
@@ -390,38 +426,43 @@ private fun InlineActivityTrail(
     val commandCount = steps.count { it.type == ActivityStepType.Command }
     val latest = steps.lastOrNull()
     val title = when {
-        commandCount > 0 && running -> "Running $commandCount command${if (commandCount == 1) "" else "s"}"
-        commandCount > 0 -> "Ran $commandCount command${if (commandCount == 1) "" else "s"}"
+        commandCount > 0 -> "$commandCount command${if (commandCount == 1) "" else "s"}"
         latest != null -> latest.summary
         else -> "Preparing activity"
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded },
-            verticalAlignment = Alignment.CenterVertically,
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
         ) {
-            Surface(
-                modifier = Modifier.size(28.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.primaryContainer,
-                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primaryContainer),
-            ) {}
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            )
-            Text(
-                text = if (running) "live" else "done",
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                style = MaterialTheme.typography.labelLarge,
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = if (running) "Running ·" else "Done ·",
+                    color = if (running) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                )
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+                Text(
+                    text = if (expanded) "Hide" else "Details",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
 
         AnimatedVisibility(visible = expanded && steps.isNotEmpty()) {
@@ -688,6 +729,11 @@ private fun CompactIconButton(
 private fun MutableList<ChatItem>.replaceAgentMessage(id: String, transform: (AgentChatItem) -> AgentChatItem) {
     val index = indexOfFirst { it.id == id }
     if (index >= 0) this[index] = transform(this[index] as AgentChatItem)
+}
+
+private fun MutableList<ChatItem>.replaceActivityItem(id: String, transform: (ActivityChatItem) -> ActivityChatItem) {
+    val index = indexOfFirst { it.id == id }
+    if (index >= 0) this[index] = transform(this[index] as ActivityChatItem)
 }
 
 private fun List<ActivityStepItem>.markLastComplete(detail: String): List<ActivityStepItem> {
