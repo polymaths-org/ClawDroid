@@ -277,4 +277,19 @@ class LocalPromptToolsTest {
         assertEquals(2_048, LocalLlmConfig.nCtxFor(LocalLlmConfig.GGUF_MODEL_GEMMA_3N_E2B))
         assertEquals("Q4_K_M", LocalLlmConfig.GGUF_PRECISION_Q4_K_M)
     }
+
+    @Test
+    fun `summarizeToolResult compresses gmail and calendar JSON`() {
+        val mail = "{\"messages\":[{\"id\":\"abc\",\"from\":\"a@x.com\",\"subject\":\"Hello\",\"date\":\"today\"}]}"
+        val mailOut = LocalPromptTools.summarizeToolResult(mail)
+        assertTrue(mailOut.contains("Hello"))
+        assertTrue(mailOut.contains("abc"))
+        val emptyMail = LocalPromptTools.summarizeToolResult("{\"messages\":[]}")
+        assertTrue(emptyMail.contains("empty", ignoreCase = true))
+        val cal = "{\"events\":[{\"id\":\"1\",\"summary\":\"Standup\",\"start\":\"2026-09-07T09:00:00\"}]}"
+        val calOut = LocalPromptTools.summarizeToolResult(cal)
+        assertTrue(calOut.contains("Standup"))
+        val emptyCal = LocalPromptTools.summarizeToolResult("{\"events\":[]}")
+        assertTrue(emptyCal.contains("No upcoming events"))
+    }
 }

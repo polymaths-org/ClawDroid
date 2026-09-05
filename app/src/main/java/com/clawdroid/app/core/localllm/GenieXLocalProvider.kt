@@ -49,9 +49,37 @@ class GenieXLocalProvider(
      * PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only.
      * Order matters: renderTools emits in allowlist order and caps at MAX_TOOLS,
      * so launch_app leads — "open browser" must never degrade to blind taps.
+     * Gmail/Calendar tools are intent-routed: they replace the file/screen set
+     * only when the last user message asks for mail or events, keeping the
+     * 6-tool prompt budget intact.
      */
-    private fun allowlistFor(model: String): Set<String> {
+    private fun allowlistFor(model: String, lastUserText: String = ""): Set<String> {
         if (model == LocalLlmConfig.GGUF_MODEL_06B) return LocalPromptTools.BASIC_TOOLS
+        val lower = lastUserText.lowercase()
+        val wantsGmail = lower.contains("gmail") || lower.contains("email") ||
+            lower.contains("inbox") || lower.contains("draft") ||
+            lower.contains("send mail") || lower.contains("check mail")
+        val wantsCalendar = lower.contains("calendar") || lower.contains("event") ||
+            lower.contains("meeting") || lower.contains("schedule") ||
+            lower.contains("appointment")
+        if (wantsGmail && wantsCalendar) {
+            return linkedSetOf(
+                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
+                "calendar_list_events", "calendar_create_event", "launch_app",
+            )
+        }
+        if (wantsGmail) {
+            return linkedSetOf(
+                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
+                "gmail_create_draft", "launch_app", "get_screen",
+            )
+        }
+        if (wantsCalendar) {
+            return linkedSetOf(
+                "calendar_list_events", "calendar_create_event", "launch_app",
+                "get_screen", "tap_text", "type_text",
+            )
+        }
         return linkedSetOf(
             "launch_app", "get_screen", "tap_text", "tap", "type_text",
             "press_back", "press_home", "scroll", "swipe", "wait",
@@ -162,7 +190,8 @@ class GenieXLocalProvider(
 
     private fun buildPrompt(messages: List<ChatMessage>, tools: JSONArray?): String {
         val home = runCatching { EnvironmentSetup.build(appContext).home.absolutePath }.getOrNull()
-        return LocalPromptTools.buildPrompt(messages, tools, allowlistFor(modelId), home)
+        val lastUser = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+        return LocalPromptTools.buildPrompt(messages, tools, allowlistFor(modelId, lastUser), home)
     }
 
     private fun parseToolCall(text: String): CompletedToolCall? =

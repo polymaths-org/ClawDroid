@@ -121,6 +121,37 @@ object LocalPromptTools {
                     if (names.isNotEmpty()) return "Apps: " + names.joinToString(", ")
                 }
             }
+            if (obj.has("messages")) {
+                val arr = obj.optJSONArray("messages")
+                if (arr != null) {
+                    if (arr.length() == 0) return "Inbox is empty."
+                    val lines = buildList {
+                        for (i in 0 until arr.length().coerceAtMost(10)) {
+                            val m = arr.optJSONObject(i) ?: continue
+                            val from = m.optString("from").take(60)
+                            val subject = m.optString("subject").take(80)
+                            val id = m.optString("id")
+                            if (subject.isNotEmpty()) add("$subject — $from (id $id)")
+                        }
+                    }
+                    if (lines.isNotEmpty()) return "Emails:\n" + lines.joinToString("\n")
+                }
+            }
+            if (obj.has("events")) {
+                val arr = obj.optJSONArray("events")
+                if (arr != null) {
+                    if (arr.length() == 0) return "No upcoming events."
+                    val lines = buildList {
+                        for (i in 0 until arr.length().coerceAtMost(10)) {
+                            val e = arr.optJSONObject(i) ?: continue
+                            val summary = e.optString("summary").take(80)
+                            val start = e.optString("start").take(40)
+                            if (summary.isNotEmpty()) add("$summary at $start")
+                        }
+                    }
+                    if (lines.isNotEmpty()) return "Events:\n" + lines.joinToString("\n")
+                }
+            }
             if (obj.has("output")) {
                 val code = obj.optInt("exit_code", 0)
                 val out = obj.optString("output").take(700)
