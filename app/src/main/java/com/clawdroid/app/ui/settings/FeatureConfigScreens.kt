@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -2034,7 +2035,9 @@ fun AutomationsConfigScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun AgentConfigScreen(onBack: () -> Unit) {
+ fun AgentConfigScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var agentName by remember { mutableStateOf(AppConfigManager.agentName) }
     var agentPersonality by remember { mutableStateOf(AppConfigManager.agentPersonality) }
     var agentPurpose by remember { mutableStateOf(AppConfigManager.agentPurpose) }
@@ -2046,6 +2049,17 @@ fun AgentConfigScreen(onBack: () -> Unit) {
     var dynamicThinking by remember { mutableStateOf(AppConfigManager.dynamicThinkingEnabled) }
     var promptEnhancement by remember { mutableStateOf(AppConfigManager.promptEnhancementEnabled) }
     var emojiTone by remember { mutableStateOf(AppConfigManager.emojiToneEnabled) }
+    var miniEnabled by remember { mutableStateOf(AppConfigManager.miniContextEnabled) }
+    var miniMaxLines by remember { mutableStateOf(AppConfigManager.miniContextMaxLines) }
+    var miniRefresh by remember { mutableStateOf(0) }
+    val miniStatus = remember(miniRefresh) {
+        val manager = com.clawdroid.app.core.memory.MiniContextManager(context)
+        if (manager.exists()) {
+            "Generated — ${manager.lineCount()} lines, ${manager.charCount()} chars. Injected into on-device prompts."
+        } else {
+            "Not generated yet. Generate it below or pick it up in the MINI.md editor."
+        }
+    }
     
     // Prompt Files
     var agentsMd by remember { mutableStateOf(AppConfigManager.agentsMd) }
@@ -2135,6 +2149,84 @@ fun AgentConfigScreen(onBack: () -> Unit) {
 
         GlassCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionTitle("Mini Context (local models)")
+                Text(
+                    "A pocket-sized identity card (mini.md) injected into on-device prompts. " +
+                        "Local phone models only have a 1–2K context window, so they get this " +
+                        "instead of the full memory files.",
+                    color = MutedGray,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                ConfigSwitch(
+                    "Enable mini context",
+                    "Inject mini.md at the start of on-device prompts. Turn off to send bare prompts.",
+                    miniEnabled,
+                ) { miniEnabled = it }
+                Text(
+                    "Max lines: $miniMaxLines",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Slider(
+                    value = miniMaxLines.toFloat(),
+                    onValueChange = { miniMaxLines = it.toInt().coerceIn(4, 40) },
+                    valueRange = 4f..40f,
+                    steps = 35,
+                    colors = configSliderColors(),
+                )
+                Text(
+                    "Fewer lines = smaller prompt for tiny models. More lines = more identity detail. Default: 12.",
+                    color = MutedGray,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    miniStatus,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    com.clawdroid.app.core.memory.MiniContextManager(context).generate(
+                                        agentName = agentName,
+                                        personality = agentPersonality,
+                                        purpose = agentPurpose,
+                                        ownerName = ownerName,
+                                        ownerInfo = ownerInfo,
+                                        maxLines = miniMaxLines,
+                                        overwrite = true,
+                                    )
+                                }
+                                miniRefresh++
+                                Toast.makeText(context, "mini.md regenerated", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Regenerate")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    com.clawdroid.app.core.memory.MiniContextManager(context).delete()
+                                }
+                                miniRefresh++
+                                Toast.makeText(context, "mini.md deleted", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Delete")
+                    }
+                }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionTitle("Owner Context")
                 GlassTextField(
                     value = ownerName,
@@ -2212,6 +2304,8 @@ fun AgentConfigScreen(onBack: () -> Unit) {
             AppConfigManager.dynamicThinkingEnabled = dynamicThinking
             AppConfigManager.promptEnhancementEnabled = promptEnhancement
             AppConfigManager.emojiToneEnabled = emojiTone
+            AppConfigManager.miniContextEnabled = miniEnabled
+            AppConfigManager.miniContextMaxLines = miniMaxLines
             
             AppConfigManager.agentsMd = agentsMd.trim()
             AppConfigManager.soulMd = soulMd.trim()

@@ -296,6 +296,18 @@ fun SetupScreen(
                         AppConfigManager.agentBehaviorMode = selectedBehaviorMode
                         AppConfigManager.approvalMode = if (selectedBehaviorMode == "confirm") "cautious" else AppConfigManager.approvalMode
                         AppConfigManager.syncToSandbox(context)
+                        // Pocket identity card for small-context local models. Only
+                        // fills in when missing so re-running setup never clobbers edits.
+                        runCatching {
+                            com.clawdroid.app.core.memory.MiniContextManager(context).generateIfMissing(
+                                agentName = agentName.trim(),
+                                personality = if (selectedPersonality == "Other") customPersonality.trim() else selectedPersonality,
+                                purpose = if (selectedPurpose == "Other") customPurpose.trim() else selectedPurpose,
+                                ownerName = ownerName.trim(),
+                                ownerInfo = ownerInfo.trim(),
+                                maxLines = AppConfigManager.miniContextMaxLines,
+                            )
+                        }
                         onSetupComplete()
                     },
                 )

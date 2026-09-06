@@ -171,6 +171,9 @@ fun SettingsScreen(
                     SettingsRow(Icons.Outlined.Code, "SYSTEM.md", "System-level base prompt overrides", accent, onSurface, onVariant, onClick = {
                         onNavigateToConfigEditor(ConfigFileType.SYSTEM)
                     })
+                    SettingsRow(Icons.Outlined.Code, "MINI.md", "Pocket identity card for small local models", accent, onSurface, onVariant, onClick = {
+                        onNavigateToConfigEditor(ConfigFileType.MINI)
+                    })
                 }
             }
         }

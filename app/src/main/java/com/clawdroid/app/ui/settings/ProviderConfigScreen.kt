@@ -32,12 +32,15 @@ import com.clawdroid.app.core.config.SavedProviderProfile
 import com.clawdroid.app.core.localllm.LocalLlmConfig
 import com.clawdroid.app.core.localllm.LocalModelManager
 import com.clawdroid.app.core.localllm.LocalModelStatus
+import com.clawdroid.app.core.memory.MiniContextManager
 import com.clawdroid.app.ui.components.ClawPanel
 import com.clawdroid.app.ui.components.ClawSkinBackground
 import com.clawdroid.app.ui.components.GlassTextField
 import com.clawdroid.app.ui.components.ModelDropdown
 import com.clawdroid.app.ui.components.partitionZenModels
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -296,12 +299,22 @@ fun ProviderConfigScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { localModelId = opt.id }
+                                    .clickable {
+                                        localModelId = opt.id
+                                        if (provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex") {
+                                            model = opt.id
+                                        }
+                                    }
                                     .padding(4.dp),
                             ) {
                                 RadioButton(
                                     selected = localModelId == opt.id,
-                                    onClick = { localModelId = opt.id },
+                                    onClick = {
+                                        localModelId = opt.id
+                                        if (provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex") {
+                                            model = opt.id
+                                        }
+                                    },
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -345,7 +358,63 @@ fun ProviderConfigScreen(
                                     ) {
                                         Text("Delete")
                                     }
-                                    Button(
+                val isLocalForm = provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex"
+                if (isLocalForm) {
+                    var miniRefresh by remember { mutableStateOf(0) }
+                    val miniStatus = remember(miniRefresh) {
+                        val manager = MiniContextManager(context)
+                        if (manager.exists()) {
+                            "mini.md ready — ${manager.lineCount()} lines. Injected into on-device prompts."
+                        } else {
+                            "mini.md not generated yet. Local models need it: their 1–2K context window can't fit the full memory files."
+                        }
+                    }
+                    ClawPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = 16.dp,
+                        contentPadding = PaddingValues(16.dp),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Mini context (mini.md)", color = accent, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "A pocket-sized identity card generated from your Agent settings. " +
+                                    "On-device models read this instead of the full memory files. " +
+                                    "Size and on/off live under Settings → Agent.",
+                                color = onVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                miniStatus,
+                                color = onSurface,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            MiniContextManager(context).generate(
+                                                agentName = AppConfigManager.agentName,
+                                                personality = AppConfigManager.agentPersonality,
+                                                purpose = AppConfigManager.agentPurpose,
+                                                ownerName = AppConfigManager.ownerName,
+                                                ownerInfo = AppConfigManager.ownerInfo,
+                                                maxLines = AppConfigManager.miniContextMaxLines,
+                                                overwrite = true,
+                                            )
+                                        }
+                                        miniRefresh++
+                                        Toast.makeText(context, "mini.md generated", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Generate mini context")
+                            }
+                        }
+                    }
+                }
+
+                Button(
                                         onClick = {
                                             provider = LocalLlmConfig.PROVIDER_ID
                                             baseUrl = "ondevice://geniex"
@@ -383,15 +452,22 @@ fun ProviderConfigScreen(
                     onClick = {
                         val keyOptional = provider.equals("ollama", ignoreCase = true) || baseUrl.contains("localhost") ||
                             provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex"
-                        if (baseUrl.isNotBlank() && model.isNotBlank() && (apiKey.isNotBlank() || keyOptional)) {
-                            AppConfigManager.save(provider.trim(), baseUrl.trim(), apiKey.trim(), model.trim())
+                        // Radio selection is the source of truth in local mode; otherwise
+                        // saving keeps the stale 4B id when the user never tapped "Use this model".
+                        val effectiveModel = if (provider == LocalLlmConfig.PROVIDER_ID || baseUrl == "ondevice://geniex") {
+                            localModelId
+                        } else {
+                            model.trim()
+                        }
+                        if (baseUrl.isNotBlank() && effectiveModel.isNotBlank() && (apiKey.isNotBlank() || keyOptional)) {
+                            AppConfigManager.save(provider.trim(), baseUrl.trim(), apiKey.trim(), effectiveModel.trim())
                             AppConfigManager.saveProviderProfile(
                                 SavedProviderProfile(
                                     name = profileName.trim().ifBlank { provider.trim() },
                                     provider = provider.trim(),
                                     baseUrl = baseUrl.trim(),
                                     apiKey = apiKey.trim(),
-                                    model = model.trim(),
+                                    model = effectiveModel.trim(),
                                 ),
                             )
                             Toast.makeText(context, "Provider settings saved", Toast.LENGTH_SHORT).show()

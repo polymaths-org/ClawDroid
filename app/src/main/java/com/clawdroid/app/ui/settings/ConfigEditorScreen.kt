@@ -49,6 +49,7 @@ enum class ConfigFileType(val fileName: String, val label: String) {
     TOOLS("TOOLS.md", "TOOLS.md — Tool Rules"),
     SKILL("SKILL.md", "SKILL.md — Core Skills"),
     SYSTEM("SYSTEM.md", "SYSTEM.md — Base Prompt"),
+    MINI("home/.memory/mini.md", "MINI.md — Compact Identity"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +72,17 @@ fun ConfigEditorScreen(
             when {
                 file.exists() -> file.readText()
                 fileType == ConfigFileType.SYSTEM && legacyFile.exists() -> legacyFile.readText()
+                fileType == ConfigFileType.MINI -> {
+                    // Seed the editor with a fresh card so there is always something to edit.
+                    com.clawdroid.app.core.memory.MiniContextManager(context).generate(
+                        agentName = com.clawdroid.app.core.config.AppConfigManager.agentName,
+                        personality = com.clawdroid.app.core.config.AppConfigManager.agentPersonality,
+                        purpose = com.clawdroid.app.core.config.AppConfigManager.agentPurpose,
+                        ownerName = com.clawdroid.app.core.config.AppConfigManager.ownerName,
+                        ownerInfo = com.clawdroid.app.core.config.AppConfigManager.ownerInfo,
+                        maxLines = com.clawdroid.app.core.config.AppConfigManager.miniContextMaxLines,
+                    )
+                }
                 else -> "# ${fileType.fileName}\n\n"
             }
         }

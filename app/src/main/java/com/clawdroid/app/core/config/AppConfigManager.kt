@@ -477,6 +477,15 @@ object AppConfigManager {
         get() = p.getString("skill_md", "") ?: ""
         set(value) = p.edit().putString("skill_md", value).apply()
 
+    // Mini context (mini.md): pocket identity card for small-context local models.
+    var miniContextEnabled: Boolean
+        get() = p.getBoolean("mini_context_enabled", true)
+        set(value) = p.edit().putBoolean("mini_context_enabled", value).apply()
+
+    var miniContextMaxLines: Int
+        get() = p.getInt("mini_context_max_lines", 12)
+        set(value) = p.edit().putInt("mini_context_max_lines", value.coerceIn(4, 40)).apply()
+
     var systemMd: String
         get() = p.getString("system_md", null) ?: p.getString("claude_md", "") ?: ""
         set(value) = p.edit().putString("system_md", value).apply()
