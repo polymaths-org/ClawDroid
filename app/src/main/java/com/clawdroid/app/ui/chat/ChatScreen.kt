@@ -627,26 +627,21 @@ fun ChatScreen(
         val list = allConversations ?: return@LaunchedEffect
         val exists = list.any { it.id == currentConversationId }
         if (!exists) {
-            val latest = list.firstOrNull()
-            if (latest != null) {
-                currentConversationId = latest.id
-                AppConfigManager.activeConversationId = latest.id
-            } else {
-                val newId = UUID.randomUUID().toString()
-                db.conversations().upsert(
-                    ConversationEntity(
-                        id = newId,
-                        projectId = null,
-                        title = "New Agent Chat",
-                        createdAt = System.currentTimeMillis(),
-                        updatedAt = System.currentTimeMillis(),
-                        status = "idle",
-                        costUsd = 0.0
-                    )
+            // Always start a fresh session; past threads stay in history.
+            val newId = UUID.randomUUID().toString()
+            db.conversations().upsert(
+                ConversationEntity(
+                    id = newId,
+                    projectId = null,
+                    title = "New Agent Chat",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    status = "idle",
+                    costUsd = 0.0
                 )
-                currentConversationId = newId
-                AppConfigManager.activeConversationId = newId
-            }
+            )
+            currentConversationId = newId
+            AppConfigManager.activeConversationId = newId
         }
     }
 

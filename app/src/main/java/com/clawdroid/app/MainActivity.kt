@@ -60,6 +60,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // App was closed (activity recreated without state): start a new session.
+        // Rotation keeps savedInstanceState, so in-progress chats survive that.
+        if (savedInstanceState == null && !isFreshLaunch) {
+            runCatching { AppConfigManager.activeConversationId = null }
+        }
         val appContext = applicationContext
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { NotificationHelper.ensureChannels(appContext) }

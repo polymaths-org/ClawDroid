@@ -9,5 +9,8 @@ class ClawDroidApplication : Application() {
         super.onCreate()
         AppConfigManager.init(this)
         AppContainer.init(this)
+        // Fresh process (app was closed/killed): do not reopen the last thread.
+        // ChatScreen creates a new session; history stays in the sidebar.
+        runCatching { AppConfigManager.activeConversationId = null }
     }
 }
