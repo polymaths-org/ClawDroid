@@ -203,6 +203,7 @@ class AgentEngine(
         val costTracker = CostTracker()
         var emptyScreenCount = 0
         var screenCaptureBlocked = false
+        var emptyNudges = 0
 
         // 2. Save current user prompt to DB if not already present as the last message.
         // Internal enhanced prompts stay in model context but are filtered out of chat UI.
@@ -329,23 +330,51 @@ class AgentEngine(
                 costDelta = costDelta
             )
 
-            // 7. Check if compaction is needed (skipped for on-device: tiny ctx
-            // would compact every turn, and the local model can't summarize).
+            // 7. Check if compaction is needed. Cloud uses LLM summarization;
+            // on-device uses rule-based LocalCompactor (no LLM, no hallucination)
+            // keyed to the per-model harness so tiny ctx stops looping.
             val postTurnMessages = contextBuilder.buildContext(conversationId)
             if (!client.isLocal) {
                 val decision = compactionManager.shouldCompact(postTurnMessages)
                 if (decision.shouldCompact) {
                     compactionManager.compact(conversationId)
                 }
+            } else {
+                val modelId = com.clawdroid.app.core.config.AppConfigManager.model
+                    .takeIf { it.isNotBlank() }
+                    ?: com.clawdroid.app.core.localllm.LocalLlmConfig.DEFAULT_MODEL
+                if (com.clawdroid.app.core.localllm.LocalCompactor.shouldCompact(postTurnMessages, modelId)) {
+                    val dropped = com.clawdroid.app.core.localllm.LocalCompactor.compact(
+                        conversationId, messageDao, modelId,
+                    )
+                    if (dropped > 0) {
+                        Log.i("AgentEngine", "local compact conversationId=$conversationId dropped=$dropped")
+                    }
+                }
             }
 
             // 8. Exit loop if no tool calls were generated
             if (toolCalls.isEmpty()) {
                 val finalAnswer = finalText.toString().trim()
-                Log.i("AgentEngine", "completed no tools conversationId=$conversationId finalLen=${finalAnswer.length}")
-                send(AgentRunEvent.Completed(finalAnswer))
-                saveSummary(finalAnswer)
-                return@channelFlow
+                // On-device models stall with fully empty turns (no text, no call)
+                // right after get_screen. Nudge once or twice instead of ending blank.
+                if (client.isLocal && EmptyTurnPolicy.shouldNudge(
+                        finalLen = finalAnswer.length,
+                        turnBlank = turnText.toString().isBlank(),
+                        hadTools = false,
+                        nudgesUsed = emptyNudges,
+                    )
+                ) {
+                    emptyNudges += 1
+                    Log.i("AgentEngine", "empty local turn conversationId=$conversationId nudge=$emptyNudges")
+                    send(AgentRunEvent.LoopWarning(EmptyTurnPolicy.NUDGE))
+                    contextBuilder.saveUserMessage(conversationId, EmptyTurnPolicy.NUDGE)
+                } else {
+                    Log.i("AgentEngine", "completed no tools conversationId=$conversationId finalLen=${finalAnswer.length}")
+                    send(AgentRunEvent.Completed(finalAnswer))
+                    saveSummary(finalAnswer)
+                    return@channelFlow
+                }
             }
 
             // 9. Execute tools
