@@ -419,10 +419,10 @@ class ChatViewModel(
                     })
                 }
                 lower.contains("remind") -> {
-                    NotificationHelper.showNotification(context, "Reminder", text)
+                    NotificationHelper.sendAgentNotification(context, "Reminder", text)
                 }
                 lower.contains("save note") || lower.contains("write down") -> {
-                    NotificationHelper.showNotification(context, "Note Saved", text)
+                    NotificationHelper.sendAgentNotification(context, "Note Saved", text)
                 }
             }
         } catch (_: Exception) {

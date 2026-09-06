@@ -10,6 +10,7 @@ sealed class NavRoutes(val route: String, val label: String) {
     data object SettingsAgent : NavRoutes("settings/agent", "Agent")
     data object SettingsChannels : NavRoutes("settings/channels", "Channels")
     data object SettingsSkills : NavRoutes("settings/skills", "Skills")
+    data object SettingsWorkspace : NavRoutes("settings/workspace", "Workspace")
     data object SettingsMCP : NavRoutes("settings/mcp", "MCP")
     data object SettingsConfig : NavRoutes("settings/config", "Config")
     data object SettingsAutomations : NavRoutes("settings/automations", "Automations")
