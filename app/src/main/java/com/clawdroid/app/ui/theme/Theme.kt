@@ -230,7 +230,8 @@ private val CyberpunkColors = darkColorScheme(
     error = Color(0xFFFF5C7A),
 )
 
-private val DeveloperColors = darkColorScheme(
+/** Replit-style developer palette. Also used as the default Code viewer theme. */
+val DeveloperColors = darkColorScheme(
     primary = Color(0xFFF2762E),
     onPrimary = Color(0xFF2A1200),
     primaryContainer = Color(0xFF5A2C12),
