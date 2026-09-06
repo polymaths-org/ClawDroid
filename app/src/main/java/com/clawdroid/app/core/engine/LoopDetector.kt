@@ -32,7 +32,13 @@ class LoopDetector(
             )
 
             identicalCount >= warnAfterSimilarCalls -> LoopCheckResult.Warn(
-                "You already called this exact tool with the same arguments and received the result. Reply in plain text using that result. Do NOT repeat the same tool call."
+                if (call.name == "launch_app" || call.name == "open_app") {
+                    "The app is already open (launch succeeded above). Do NOT call launch_app again. " +
+                        "Your NEXT call must send the message: send_message_in_current_chat with the text, " +
+                        "or tap_text the Editable input label then type_text."
+                } else {
+                    "You already called this exact tool with the same arguments and received the result. Reply in plain text using that result. Do NOT repeat the same tool call."
+                }
             )
 
             else -> LoopCheckResult.Ok
@@ -40,4 +46,30 @@ class LoopDetector(
     }
 
     private fun CompletedToolCall.signature(): String = "$name:$arguments"
+}
+
+/**
+ * Decides whether an empty local-model turn (no text, no tool call) gets one
+ * more chance with an explicit nudge instead of ending the run with nothing.
+ * Small on-device models stall this way right after get_screen: they have the
+ * screen but emit neither text nor a tool block. A plain-text nudge has proven
+ * to steer them (same mechanism as the repeat-launch warning).
+ */
+object EmptyTurnPolicy {
+    const val MAX_NUDGES = 2
+
+    fun shouldNudge(
+        finalLen: Int,
+        turnBlank: Boolean,
+        hadTools: Boolean,
+        nudgesUsed: Int,
+    ): Boolean {
+        if (hadTools || !turnBlank || finalLen > 0) return false
+        return nudgesUsed < MAX_NUDGES
+    }
+
+    const val NUDGE = "Continue the task: the current screen is in the Tool result above and the " +
+        "original request is the first User message in the history. " +
+        "Take the NEXT step now with a tool call, not empty text. To send a message, call " +
+        "send_message_in_current_chat with the text, or tap_text the Editable input label then type_text."
 }
