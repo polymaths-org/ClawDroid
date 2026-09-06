@@ -216,7 +216,7 @@ fun TerminalScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            StatusStrip(state = state)
+            StatusStrip(state = state, lastCommand = history.lastOrNull())
 
             LazyColumn(
                 modifier = Modifier
@@ -374,34 +374,45 @@ private fun TerminalChip(
 }
 
 @Composable
-private fun StatusStrip(state: ProcessState) {
+private fun StatusStrip(state: ProcessState, lastCommand: String?) {
     val color = when (state) {
         ProcessState.RUNNING, ProcessState.WAITING_FOR_INPUT -> Color(0xFF81C784)
         ProcessState.COMPLETED -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.error
     }
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = when (state) {
-                ProcessState.WAITING_FOR_INPUT -> "Waiting for input"
-                ProcessState.RUNNING -> "Linux shell active"
-                ProcessState.COMPLETED -> "Shell exited"
-                ProcessState.KILLED -> "Shell stopped"
-                ProcessState.TIMED_OUT -> "Shell timed out"
-                ProcessState.FAILED -> "Shell failed"
-            },
-            color = Color(0xFFE7ECEF),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = when (state) {
+                    ProcessState.WAITING_FOR_INPUT -> "Waiting for input"
+                    ProcessState.RUNNING -> "Linux shell active"
+                    ProcessState.COMPLETED -> "Shell exited"
+                    ProcessState.KILLED -> "Shell stopped"
+                    ProcessState.TIMED_OUT -> "Shell timed out"
+                    ProcessState.FAILED -> "Shell failed"
+                },
+                color = Color(0xFFE7ECEF),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        if (!lastCommand.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "$ $lastCommand",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 

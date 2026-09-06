@@ -31,10 +31,13 @@ object AppConfigManager {
     private var prefs: SharedPreferences? = null
     private val _appThemeFlow = MutableStateFlow("claw_magic")
     val appThemeFlow: StateFlow<String> = _appThemeFlow.asStateFlow()
+    private val _devAccentFlow = MutableStateFlow(0)
+    val devAccentFlow: StateFlow<Int> = _devAccentFlow.asStateFlow()
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         _appThemeFlow.value = appTheme
+        _devAccentFlow.value = devAccentArgb
     }
 
     private val p: SharedPreferences get() = prefs!!
@@ -294,6 +297,20 @@ object AppConfigManager {
     var dynamicThinkingEnabled: Boolean
         get() = p.getBoolean("dynamic_thinking_enabled", true)
         set(value) = p.edit().putBoolean("dynamic_thinking_enabled", value).apply()
+
+    // Code mode: "auto" detects coding tasks, "on"/"off" force it.
+    var codeModeOverride: String
+        get() = (p.getString("code_mode_override", "auto") ?: "auto").lowercase()
+            .takeIf { it == "on" || it == "off" } ?: "auto"
+        set(value) = p.edit().putString("code_mode_override", value).apply()
+
+    // Developer-theme custom accent (ARGB int, 0 = theme default).
+    var devAccentArgb: Int
+        get() = p.getInt("dev_accent_argb", 0)
+        set(value) {
+            p.edit().putInt("dev_accent_argb", value).apply()
+            _devAccentFlow.value = value
+        }
 
     var promptEnhancementEnabled: Boolean
         get() = p.getBoolean("prompt_enhancement_enabled", true)

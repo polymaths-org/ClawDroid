@@ -47,6 +47,7 @@ enum class ClawSkin {
     LiquidGlass,
     Cyberpunk,
     Jarvis,
+    Developer,
 }
 
 @Composable
@@ -59,6 +60,7 @@ fun currentClawSkin(): ClawSkin {
             "liquid_glass_light", "liquid_glass_dark" -> ClawSkin.LiquidGlass
             "cyberpunk" -> ClawSkin.Cyberpunk
             "jarvis" -> ClawSkin.Jarvis
+            "developer" -> ClawSkin.Developer
             "dark", "light" -> ClawSkin.Material
             else -> ClawSkin.ClawMagic
         }
@@ -103,6 +105,13 @@ fun ClawSkinBackground(
         )
         ClawSkin.Minimalist -> Brush.verticalGradient(
             listOf(colors.background, colors.surfaceContainerLowest),
+        )
+        ClawSkin.Developer -> Brush.verticalGradient(
+            listOf(
+                Color(0xFF0D1526),
+                Color(0xFF0A1120),
+                Color(0xFF111A30),
+            ),
         )
         else -> Brush.verticalGradient(
             listOf(colors.background, colors.background),

@@ -709,6 +709,13 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
             ThemePreset("liquid_glass_dark", "Liquid Glass Dark", "Deep translucent glass with luminous blue, violet, and soft highlights.", listOf(Color(0xFF05070A), Color(0xFF1C1C1E), Color(0xFF64D2FF), Color(0xFFBF5AF2))),
             ThemePreset("cyberpunk", "Cyberpunk", "Neon magenta/cyan HUD surfaces, scanlines, and high-contrast agent chrome.", listOf(Color(0xFF04010A), Color(0xFF18E6FF), Color(0xFFFF4FDB), Color(0xFFFFD166))),
             ThemePreset("jarvis", "JARVIS", "Precision cyan interface with tactical HUD framing and holographic panels.", listOf(Color(0xFF01080B), Color(0xFF23E7FF), Color(0xFF8BD7E6), Color(0xFFFFC857))),
+            ThemePreset("developer", "Developer", "Replit-style deep-navy editor theme with warm orange accents. Pair it with the Code explorer.", listOf(Color(0xFF0D1526), Color(0xFF16213A), Color(0xFFF2762E), Color(0xFF7DD3FC))),
+        )
+    }
+    var accentHex by remember {
+        mutableStateOf(
+            AppConfigManager.devAccentArgb.takeIf { it != 0 }
+                ?.let { "#%06X".format(0xFFFFFF and it) } ?: "",
         )
     }
 
@@ -736,6 +743,60 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
 
         GlassCard {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle("Developer accent")
+                Text(
+                    "Only applies to the Developer theme. Pick a swatch or type a hex color.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                val swatches = listOf(
+                    0xFFF2762E to "Replit orange",
+                    0xFF22C55E to "Green",
+                    0xFF3B82F6 to "Blue",
+                    0xFFA855F7 to "Purple",
+                    0xFF06B6D4 to "Cyan",
+                    0xFFEC4899 to "Pink",
+                    0xFFEAB308 to "Yellow",
+                    0xFFEF4444 to "Red",
+                    0xFF2DD4BF to "Mint",
+                    0xFFE8EAED to "White",
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    swatches.forEach { (argb, name) ->
+                        val selected = AppConfigManager.devAccentArgb == argb.toInt()
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color(argb))
+                                .border(
+                                    2.dp,
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else Color.White.copy(alpha = 0.18f),
+                                    CircleShape,
+                                )
+                                .clickable {
+                                    AppConfigManager.devAccentArgb = argb.toInt()
+                                    accentHex = "#%06X".format(0xFFFFFF and argb.toInt())
+                                },
+                        )
+                    }
+                }
+                InterpoleTextField(
+                    label = "Custom hex (e.g. #F2762E, empty = default)",
+                    value = accentHex,
+                    placeholder = "#RRGGBB",
+                    onChange = { accentHex = it },
+                )
+                DetailRow("Active accent", accentHex.ifBlank { "Theme default" })
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SectionTitle("Preview")
                 DetailRow("Current", selectedTheme.replace('_', ' ').replaceFirstChar { it.uppercaseChar() })
                 DetailRow("Applies To", "Chat, sidebar, settings, terminal surfaces")
@@ -744,6 +805,8 @@ fun ThemeConfigScreen(onBack: () -> Unit) {
 
         SaveConfigButton {
             AppConfigManager.appTheme = selectedTheme
+            parseAccentHex(accentHex)?.let { AppConfigManager.devAccentArgb = it }
+                ?: run { if (accentHex.isBlank()) AppConfigManager.devAccentArgb = 0 }
         }
     }
 }
@@ -754,6 +817,14 @@ private data class ThemePreset(
     val description: String,
     val colors: List<Color>,
 )
+
+private fun parseAccentHex(raw: String): Int? {
+    val hex = raw.trim().removePrefix("#")
+    if (hex.length != 6 && hex.length != 8) return null
+    if (!hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+    val full = if (hex.length == 6) "FF$hex" else hex
+    return runCatching { full.toLong(16).toInt() }.getOrNull()
+}
 
 @Composable
 private fun ThemeChoiceCard(

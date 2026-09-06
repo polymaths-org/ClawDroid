@@ -9,6 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.clawdroid.app.core.config.AppConfigManager
 
 private val ObsidianAstraColors = darkColorScheme(
@@ -229,6 +230,55 @@ private val CyberpunkColors = darkColorScheme(
     error = Color(0xFFFF5C7A),
 )
 
+private val DeveloperColors = darkColorScheme(
+    primary = Color(0xFFF2762E),
+    onPrimary = Color(0xFF2A1200),
+    primaryContainer = Color(0xFF5A2C12),
+    onPrimaryContainer = Color(0xFFFFD9C4),
+    secondary = Color(0xFF7DD3FC),
+    onSecondary = Color(0xFF06222E),
+    secondaryContainer = Color(0xFF164154),
+    onSecondaryContainer = Color(0xFFD3F0FF),
+    tertiary = Color(0xFFA78BFA),
+    onTertiary = Color(0xFF221146),
+    tertiaryContainer = Color(0xFF3B2A63),
+    onTertiaryContainer = Color(0xFFE6DCFF),
+    background = Color(0xFF0D1526),
+    onBackground = Color(0xFFE8ECF4),
+    surface = Color(0xFF111A30),
+    onSurface = Color(0xFFE8ECF4),
+    surfaceVariant = Color(0xFF232F4D),
+    onSurfaceVariant = Color(0xFFB9C2D6),
+    surfaceContainerLowest = Color(0xFF080E1C),
+    surfaceContainerLow = Color(0xFF111A30),
+    surfaceContainer = Color(0xFF16213A),
+    surfaceContainerHigh = Color(0xFF1D2A45),
+    surfaceContainerHighest = Color(0xFF253453),
+    outline = Color(0xFF7E8AA3),
+    outlineVariant = Color(0xFF35415C),
+    error = Color(0xFFFFB4AB),
+)
+
+/** User-picked accent support for the Developer theme. */
+private fun applyDevAccent(base: androidx.compose.material3.ColorScheme, argb: Int): androidx.compose.material3.ColorScheme {
+    if (argb == 0) return base
+    val accent = Color(argb)
+    fun dim(f: Float) = accent.copy(
+        red = (accent.red * f).coerceIn(0f, 1f),
+        green = (accent.green * f).coerceIn(0f, 1f),
+        blue = (accent.blue * f).coerceIn(0f, 1f),
+    )
+    val onAccent = if (accent.luminance() > 0.45f) Color(0xFF101418) else Color.White
+    return base.copy(
+        primary = accent,
+        onPrimary = onAccent,
+        primaryContainer = dim(0.30f),
+        onPrimaryContainer = accent,
+        tertiary = accent,
+        onTertiary = onAccent,
+    )
+}
+
 private val JarvisColors = darkColorScheme(
     primary = Color(0xFF23E7FF),
     onPrimary = Color(0xFF00262D),
@@ -263,6 +313,7 @@ fun ClawDroidTheme(
     content: @Composable () -> Unit,
 ) {
     val themeKey by AppConfigManager.appThemeFlow.collectAsState()
+    val devAccent by AppConfigManager.devAccentFlow.collectAsState()
     val context = LocalContext.current
     val dynamicColorsAvailable = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
     val dynamicClawMagicColors = if (dynamicColorsAvailable) {
@@ -292,6 +343,7 @@ fun ClawDroidTheme(
         "liquid_glass_dark" -> LiquidGlassDarkColors
         "cyberpunk" -> CyberpunkColors
         "jarvis" -> JarvisColors
+        "developer" -> applyDevAccent(DeveloperColors, devAccent)
         "dark" -> ObsidianAstraColors
         else -> dynamicClawMagicColors.copy(
             background = ClawMagicDarkColors.background,

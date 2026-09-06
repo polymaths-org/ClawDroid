@@ -47,6 +47,7 @@ import com.clawdroid.app.ui.selfmanage.SelfManageScreen
 import com.clawdroid.app.ui.setup.PostSetupScreen
 import com.clawdroid.app.ui.splash.HatchingScreen
 import com.clawdroid.app.ui.splash.SplashScreen
+import com.clawdroid.app.ui.code.CodeScreen
 import com.clawdroid.app.ui.terminal.TerminalScreen
 import com.clawdroid.app.ui.theme.ClawDroidTheme
 
@@ -190,6 +191,7 @@ enum class Screen {
     ConfigEditor,
     Terminal,
     SelfManage,
+    Code,
 }
 
 @Composable
@@ -216,7 +218,7 @@ private fun ClawDroidApp(
     var providerReturnScreen by remember { mutableStateOf(Screen.Settings) }
 
     val backTarget = when (currentScreen) {
-        Screen.Settings, Screen.Terminal, Screen.SelfManage -> Screen.Chat
+        Screen.Settings, Screen.Terminal, Screen.SelfManage, Screen.Code -> Screen.Chat
         Screen.Provider -> providerReturnScreen
         Screen.Audio, Screen.Notifications, Screen.Overlay, Screen.Agent,
         Screen.Automations, Screen.Connections, Screen.Channels, Screen.Skills,
@@ -359,6 +361,11 @@ private fun ClawDroidApp(
                 onNavigateToSelfManage = { currentScreen = Screen.SelfManage },
             )
 
+            Screen.Code -> CodeScreen(
+                onBack = { currentScreen = Screen.Chat },
+                onOpenTerminal = { currentScreen = Screen.Terminal },
+            )
+
             Screen.SelfManage -> SelfManageScreen(onBack = { currentScreen = Screen.Chat })
 
             Screen.Chat -> {
@@ -367,6 +374,7 @@ private fun ClawDroidApp(
                     onNavigateToMcp = { currentScreen = Screen.Mcp },
                     onNavigateToInterpole = { currentScreen = Screen.Interpole },
                     onNavigateToTerminal = { currentScreen = Screen.Terminal },
+                    onNavigateToCode = { currentScreen = Screen.Code },
                     onNavigateToSelfManage = { currentScreen = Screen.SelfManage },
                     startVoiceTrigger = startVoiceTrigger,
                     onVoiceTriggerHandled = onVoiceTriggerHandled

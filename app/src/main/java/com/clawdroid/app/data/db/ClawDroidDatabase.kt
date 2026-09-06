@@ -276,6 +276,9 @@ interface ToolCallDao {
     @Query("SELECT * FROM tool_calls WHERE messageId = :messageId ORDER BY id ASC")
     fun observeForMessage(messageId: String): Flow<List<ToolCallEntity>>
 
+    @Query("SELECT * FROM tool_calls WHERE toolName IN (:names) ORDER BY rowid DESC LIMIT :limit")
+    suspend fun getRecentByTools(names: List<String>, limit: Int): List<ToolCallEntity>
+
     @Query("SELECT * FROM tool_calls WHERE messageId = :messageId ORDER BY id ASC")
     suspend fun getForMessage(messageId: String): List<ToolCallEntity>
 

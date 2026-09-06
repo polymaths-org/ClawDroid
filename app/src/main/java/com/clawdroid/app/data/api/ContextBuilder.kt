@@ -55,9 +55,12 @@ class ContextBuilder(
 
         val result = mutableListOf<ChatMessage>()
 
-        // 1. System prompt
+        // 1. System prompt (plus Code-mode reviewer section for coding work)
         if (includeSystemPrompt) {
-            result += ChatMessage(role = "system", content = buildSystemPrompt())
+            val codeMode = com.clawdroid.app.core.agent.CodeMode.resolveForConversation(
+                allMessages.filter { it.role == "user" }.map { it.content },
+            )
+            result += ChatMessage(role = "system", content = buildSystemPrompt(codeMode))
         }
 
         // 2. Determine start index based on compaction
@@ -195,8 +198,10 @@ class ContextBuilder(
         return id
     }
 
-    fun buildSystemPrompt(): String {
-        return MessageBuilder.buildSystemPrompt(context, projectId)
+    fun buildSystemPrompt(codeMode: Boolean = false): String {
+        val base = MessageBuilder.buildSystemPrompt(context, projectId)
+        if (!codeMode) return base
+        return base + "\n\n" + com.clawdroid.app.core.agent.CodeMode.reviewerPrompt()
     }
 }
 

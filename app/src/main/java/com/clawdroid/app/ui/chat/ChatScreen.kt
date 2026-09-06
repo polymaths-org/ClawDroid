@@ -185,6 +185,7 @@ fun ChatScreen(
     onNavigateToTerminal: () -> Unit = {},
     onNavigateToSelfManage: () -> Unit = {},
     onNavigateToInterpole: () -> Unit = onNavigateToSettings,
+    onNavigateToCode: () -> Unit = onNavigateToSettings,
     modifier: Modifier = Modifier,
     startVoiceTrigger: Boolean = false,
     onVoiceTriggerHandled: () -> Unit = {}
@@ -1065,6 +1066,10 @@ fun ChatScreen(
                     onNavigateToTerminal = {
                         scope.launch { drawerState.close() }
                         onNavigateToTerminal()
+                    },
+                    onNavigateToCode = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToCode()
                     },
                     onNavigateToSelfManage = {
                         scope.launch { drawerState.close() }
@@ -2344,6 +2349,10 @@ private fun ReferenceInputBar(
     onMediaSelected: (Uri?, String?, String?) -> Unit,
     onAttach: () -> Unit,
     onCommandMenu: () -> Unit,
+    codeChipVisible: Boolean = false,
+    codeChipLabel: String = "",
+    codeChipActive: Boolean = false,
+    onCodeChipClick: () -> Unit = {},
 ) {
     Box(
         modifier = Modifier
@@ -2368,6 +2377,36 @@ private fun ReferenceInputBar(
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            androidx.compose.animation.AnimatedVisibility(visible = codeChipVisible) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (codeChipActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                1.dp,
+                                if (codeChipActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                RoundedCornerShape(10.dp),
+                            )
+                            .clickable(onClick = onCodeChipClick)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            text = codeChipLabel,
+                            color = if (codeChipActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                }
+            }
             if (selectedMediaUri != null) {
                 AttachmentPreviewRow(
                     uri = selectedMediaUri,
@@ -2494,6 +2533,17 @@ private fun PremiumInputBar(
 ) {
     var commandMenuVisible by remember { mutableStateOf(false) }
     var orchestrationDialogVisible by remember { mutableStateOf(false) }
+    var codeOverride by remember { mutableStateOf(AppConfigManager.codeModeOverride) }
+    val codeActive = codeOverride == "on" ||
+        (codeOverride == "auto" && com.clawdroid.app.core.agent.CodeMode.isCodingTask(value))
+    fun cycleCodeMode() {
+        codeOverride = when (codeOverride) {
+            "auto" -> "on"
+            "on" -> "off"
+            else -> "auto"
+        }
+        AppConfigManager.codeModeOverride = codeOverride
+    }
     val skin = currentClawSkin()
     val context = LocalContext.current
     val attachmentPicker = rememberLauncherForActivityResult(
@@ -2552,6 +2602,10 @@ private fun PremiumInputBar(
                 onMediaSelected = onMediaSelected,
                 onAttach = { attachmentPicker.launch("*/*") },
                 onCommandMenu = { commandMenuVisible = !commandMenuVisible },
+                codeChipVisible = codeActive || codeOverride != "auto",
+                codeChipLabel = if (codeActive) "</> Code mode · $codeOverride" else "</> Code mode · off",
+                codeChipActive = codeActive,
+                onCodeChipClick = { cycleCodeMode() },
             )
         }
         return

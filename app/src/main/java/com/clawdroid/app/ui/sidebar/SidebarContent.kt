@@ -88,6 +88,7 @@ fun SidebarContent(
     onNavigateToInterpole: () -> Unit = {},
     onNavigateToAgentConfig: () -> Unit = {},
     onNavigateToTerminal: () -> Unit,
+    onNavigateToCode: () -> Unit = {},
     onNavigateToSelfManage: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -188,6 +189,7 @@ fun SidebarContent(
                 detail = "${conversations.size} chats tracked",
             )
             SidebarTerminalButton(onClick = onNavigateToTerminal)
+            SidebarCodeButton(onClick = onNavigateToCode)
             SidebarInterpoleButton(onClick = onNavigateToInterpole)
             SidebarSelfManageButton(onClick = onNavigateToSelfManage)
         }
@@ -520,6 +522,52 @@ private fun SidebarInterpoleButton(
         Text(
             text = "Interpole desktop",
             color = MaterialTheme.colorScheme.tertiary,
+            style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SidebarCodeButton(
+    onClick: () -> Unit,
+) {
+    val skin = currentClawSkin()
+    val isMagic = skin == ClawSkin.ClawMagic
+    val isLiquid = skin == ClawSkin.LiquidGlass
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .shadow(if (isLiquid) 8.dp else 0.dp, shape)
+            .clip(shape)
+            .background(
+                when {
+                    isMagic -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    isLiquid -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+                }
+            )
+            .border(
+                1.dp,
+                if (isLiquid) Color.White.copy(alpha = 0.30f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "Code explorer",
+            color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp),
             fontWeight = FontWeight.SemiBold,
         )
