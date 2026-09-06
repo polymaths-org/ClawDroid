@@ -87,7 +87,7 @@ object ToolSchemaRegistry {
         array.put(tool("get_installed_apps", "List installed launchable apps.") {
             required()
         })
-        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps. Use this first when the user asks to send a specific message in the current chat.") {
+        array.put(tool("send_message_in_current_chat", "Send text in current app (Gemini, WhatsApp, Telegram, any chat or AI input). Prefer after launch_app and get_screen.") {
             putString("text", "Exact message text to send.")
             putInteger("count", "How many times to send it. Default 1, max 20.")
             required("text")
@@ -124,7 +124,7 @@ object ToolSchemaRegistry {
     fun assistantTools(): JSONArray {
         val array = JSONArray()
 
-        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps. Use this first when the user asks to send a specific message in the current chat.") {
+        array.put(tool("send_message_in_current_chat", "Send text in current app (Gemini, WhatsApp, Telegram, any chat or AI input). Prefer after launch_app and get_screen.") {
             putString("text", "Exact message text to send.")
             putInteger("count", "How many times to send it. Default 1, max 20.")
             required("text")
@@ -635,7 +635,7 @@ object ToolSchemaRegistry {
             putBoolean("verify", "Return get_screen after all actions complete. Default true.")
             required("actions")
         })
-        array.put(tool("send_message_in_current_chat", "Fast native skill for Telegram, WhatsApp, and similar chat apps when the user already specified what to send.") {
+        array.put(tool("send_message_in_current_chat", "Send text in current app (Gemini, WhatsApp, Telegram, any chat or AI input). Prefer after launch_app and get_screen.") {
             putString("text", "Exact message text to send.")
             putInteger("count", "How many times to send it. Default 1, max 20.")
             required("text")

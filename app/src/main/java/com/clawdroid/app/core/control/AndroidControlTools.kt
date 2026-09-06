@@ -127,14 +127,21 @@ object AndroidControlTools {
 
     suspend fun tapText(label: String): JSONObject = runTool {
         val service = requireService() ?: return@runTool serviceNotRunning()
-        val ok = service.tapByTextWithCenterFallback(label)
-        if (!ok) {
-            return@runTool errorResult(
-                "tap_target_not_found",
-                "No clickable '$label' found. Call get_screen first and use an exact visible label.",
-            ).put("label", label)
+        when (service.tapByTextWithCenterFallback(label)) {
+            ScreenReaderService.TapTextOutcome.CLICKED ->
+                successResult("tapped", true).put("label", label)
+            ScreenReaderService.TapTextOutcome.CENTER_TAPPED_NON_CLICKABLE ->
+                JSONObject()
+                    .put("success", true)
+                    .put("action", "tapped_non_clickable_center")
+                    .put("label", label)
+                    .put("warning", "No clickable '$label' found; tapped its center instead and the screen may be unchanged. Call get_screen to verify, then tap an exact Tappable label or type into the editable input.")
+            ScreenReaderService.TapTextOutcome.NOT_FOUND ->
+                errorResult(
+                    "tap_target_not_found",
+                    "No clickable '$label' found. Call get_screen first and use an exact visible label.",
+                ).put("label", label)
         }
-        successResult("tapped", true).put("label", label)
     }
 
     suspend fun tapResourceId(id: String): JSONObject = runTool {
@@ -434,6 +441,8 @@ object AndroidControlTools {
             "com.whatsapp.w4b:id/entry",
             "org.telegram.messenger:id/chat_edit_text",
             "org.thunderdog.challegram:id/input",
+            "com.google.android.googlequicksearchbox:id/assistant_robin_input_collapsed_text_half_sheet",
+            "com.google.android.googlequicksearchbox:id/assistant_robin_chat_input_box",
         )
         for (id in inputResourceIds) {
             if (service.tapByResourceId(id)) return true
@@ -445,24 +454,15 @@ object AndroidControlTools {
             "Write a message",
             "Text message",
             "Message input",
+            "Ask Gemini",
         )
         for (label in inputLabels) {
             if (service.tapByText(label)) return true
         }
 
-        val metrics = context.resources.displayMetrics
-        val x = metrics.widthPixels * 0.42f
-        val candidateYs = listOf(
-            metrics.heightPixels - 150f,
-            metrics.heightPixels - 230f,
-            metrics.heightPixels * 0.92f,
-            metrics.heightPixels * 0.54f,
-        )
-        for (y in candidateYs) {
-            if (service.tap(x, y)) return true
-            delay(120)
-        }
-        return false
+        // Grounded generic fallback: click the focused/first editable.
+        // No blind coordinate taps — those hit the keyboard spacebar and fake success.
+        return service.focusAnyEditable()
     }
 
     private suspend fun tapLikelySendButton(context: Context, service: ScreenReaderService): Boolean {
@@ -471,6 +471,9 @@ object AndroidControlTools {
             "com.whatsapp.w4b:id/send",
             "org.telegram.messenger:id/chat_send_button",
             "org.thunderdog.challegram:id/btn_send",
+            "com.google.android.googlequicksearchbox:id/assistant_robin_send_button",
+            "com.google.android.googlequicksearchbox:id/assistant_robin_input_send_button",
+            "com.google.android.googlequicksearchbox:id/assistant_robin_chat_input_send_button",
         )
         for (id in sendResourceIds) {
             if (service.tapByResourceId(id)) return true
@@ -481,19 +484,9 @@ object AndroidControlTools {
             if (service.tapByText(label)) return true
         }
 
-        val metrics = context.resources.displayMetrics
-        val x = metrics.widthPixels - 58f
-        val candidateYs = listOf(
-            metrics.heightPixels - 150f,
-            metrics.heightPixels - 230f,
-            metrics.heightPixels * 0.92f,
-            metrics.heightPixels * 0.54f,
-        )
-        for (y in candidateYs) {
-            if (service.tap(x, y)) return true
-            delay(120)
-        }
-        return false
+        // Grounded generic fallback: click the first Send-labelled button.
+        // No blind coordinate taps — those fake success without sending.
+        return service.tapFirstSendButton()
     }
 
     private fun requireService(): ScreenReaderService? = ScreenReaderService.instance

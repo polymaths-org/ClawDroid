@@ -248,13 +248,21 @@ class ScreenReaderService : AccessibilityService() {
         }
     }
 
-    suspend fun tapByTextWithCenterFallback(label: String): Boolean {
-        if (tapByText(label)) return true
-        val root = getUsableRoot() ?: return false
+    /** Outcome of a label tap: CLICKED hit a clickable node, CENTER_TAPPED hit the
+     * center of a non-clickable match (screen may be unchanged), NOT_FOUND matched nothing. */
+    enum class TapTextOutcome { CLICKED, CENTER_TAPPED_NON_CLICKABLE, NOT_FOUND }
+
+    suspend fun tapByTextWithCenterFallback(label: String): TapTextOutcome {
+        if (tapByText(label)) return TapTextOutcome.CLICKED
+        val root = getUsableRoot() ?: return TapTextOutcome.NOT_FOUND
         return try {
-            val bounds = findAnyNodeBounds(root, label.trim()) ?: return false
-            if (bounds.isEmpty) return false
-            tap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+            val bounds = findAnyNodeBounds(root, label.trim()) ?: return TapTextOutcome.NOT_FOUND
+            if (bounds.isEmpty) return TapTextOutcome.NOT_FOUND
+            if (tap(bounds.centerX().toFloat(), bounds.centerY().toFloat())) {
+                TapTextOutcome.CENTER_TAPPED_NON_CLICKABLE
+            } else {
+                TapTextOutcome.NOT_FOUND
+            }
         } finally {
             root.recycle()
         }
@@ -351,6 +359,54 @@ class ScreenReaderService : AccessibilityService() {
         } finally {
             root.recycle()
         }
+    }
+
+    /** Grounded focus: click the focused (or first) editable so the keyboard opens. No blind taps. */
+    fun focusAnyEditable(): Boolean {
+        val root = getUsableRoot() ?: return false
+        return try {
+            val target = findFocusedEditable(root) ?: findEditableNode(root) ?: return false
+            // Focusing alone rarely opens the keyboard; a click does. Best-effort both.
+            runCatching { target.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
+            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /** Grounded send: click the first enabled, clickable, non-editable node labelled Send. No blind taps. */
+    fun tapFirstSendButton(): Boolean {
+        val root = getUsableRoot() ?: return false
+        return try {
+            val target = findSendNode(root) ?: return false
+            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findSendNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val text = node.text?.toString()?.trim().orEmpty()
+        val desc = node.contentDescription?.toString()?.trim().orEmpty()
+        val res = runCatching { node.viewIdResourceName.orEmpty() }.getOrDefault("")
+        val labelledSend = text.equals("Send", ignoreCase = true) ||
+            desc.equals("Send", ignoreCase = true) ||
+            text.contains("Send", ignoreCase = true) ||
+            desc.contains("Send", ignoreCase = true)
+        // Resource-id match alone is weak (containers contain "send"), so it only
+        // counts when the node is also labelled Send-like or is a leaf button.
+        val resSend = res.contains("send", ignoreCase = true) &&
+            (labelledSend || node.childCount == 0)
+        if ((labelledSend || resSend) && node.isClickable && node.isEnabled && !node.isEditable) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findSendNode(child)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
     }
 
     fun clearText(): Boolean {
