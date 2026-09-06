@@ -48,8 +48,52 @@ object LocalLlmConfig {
     const val QAIRT_MODEL = "ai-hub-models/Qwen3-4B-Instruct-2507"
     const val RUNTIME_QAIRT = "qairt"
 
-    /** Cap per generation — tool calls need <200 tokens; 1024 caps KV growth on low-RAM phones. */
-    const val LOCAL_MAX_TOKENS = 1_024
+    /** Cap per generation — tool calls need <200 tokens; 768 fits thinking plus fence while capping KV. */
+    const val LOCAL_MAX_TOKENS = 768
+
+    /**
+     * Unified on-device harness. Native caps (via Exa): Qwen3 0.6B/1.7B/4B
+     * native 32K (4B 128K with YaRN), Llama-3.2-3B native 128K but xLAM
+     * fine-tune 2048, Gemma 3 1B and 3n E2B native 32K. Phone caps (iQOO 15
+     * 12GB, GenieX llama_cpp use_mmap=false): weights sit in RAM, so 4B
+     * (2.2GB file) gets 1K ctx, everything else 2K. Prompt budgets are ~34%
+     * of device ctx (~4 chars/token), leaving room for template + generation.
+     * One lookup replaces per-model if-else scattered through the stack.
+     */
+    data class Harness(
+        val nCtx: Int,
+        val maxPromptChars: Int,
+        val maxTokens: Int,
+        val maxHistory: Int,
+        val maxMsgChars: Int,
+        val maxMiniChars: Int,
+        val compactAfterMessages: Int,
+    )
+
+    fun harnessFor(modelId: String): Harness = when (modelId) {
+        GGUF_MODEL_4B -> Harness(
+            nCtx = N_CTX_4B, maxPromptChars = 2_000, maxTokens = 512,
+            maxHistory = 3, maxMsgChars = 400, maxMiniChars = 400,
+            compactAfterMessages = 14,
+        )
+        GGUF_MODEL_06B -> Harness(
+            nCtx = N_CTX_06B, maxPromptChars = 2_000, maxTokens = 512,
+            maxHistory = 4, maxMsgChars = 500, maxMiniChars = 600,
+            compactAfterMessages = 20,
+        )
+        GGUF_MODEL_GEMMA_3_1B -> Harness(
+            nCtx = N_CTX_GEMMA, maxPromptChars = 2_600, maxTokens = 640,
+            maxHistory = 4, maxMsgChars = 500, maxMiniChars = 600,
+            compactAfterMessages = 20,
+        )
+        else -> Harness(
+            nCtx = nCtxFor(modelId), maxPromptChars = 2_800, maxTokens = 768,
+            maxHistory = 5, maxMsgChars = 600, maxMiniChars = 800,
+            compactAfterMessages = 24,
+        )
+    }
+
+    fun maxTokensFor(modelId: String): Int = harnessFor(modelId).maxTokens
 
     /**
      * Per-model context windows. GenieX llama_cpp uses use_mmap=false, so the

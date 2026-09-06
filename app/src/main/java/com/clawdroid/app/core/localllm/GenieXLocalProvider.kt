@@ -42,55 +42,50 @@ class GenieXLocalProvider(
     override val contextLimit: Int get() = LocalLlmConfig.nCtxFor(modelId)
     override val isLocal: Boolean = true
 
-    private val loadLock = Mutex()
-    @Volatile private var llm: LlmWrapper? = null
+    /**
+     * Crash guard: the 10:57 tombstone showed 209% CPU, 352K major faults,
+     * and mem-pressure restarts after 4 concurrent loads of the same 1.7B
+     * weights. Per-instance locks allowed duplicate native residents that
+     * together exceed phone RAM and take down system services. One resident
+     * model and one inference at a time, process-wide.
+     */
+    companion object {
+        private const val TAG = "GenieXLocalProvider"
+        private val globalLoadMutex = Mutex()
+        private val globalGenMutex = Mutex()
+        @Volatile private var sharedHandle: LlmWrapper? = null
+        @Volatile private var sharedModelId: String = ""
+        private const val MIN_AVAIL_MB = 900
+    }
 
     /**
-     * PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only.
+     * PocketPal-style: tiny catalog per model. 0.6B gets 4 basic tools only,
+     * unless the message asks for mail/events — then every local model gets
+     * the Gmail/Calendar intent-routed set (same 6-tool budget).
      * Order matters: renderTools emits in allowlist order and caps at MAX_TOOLS,
      * so launch_app leads — "open browser" must never degrade to blind taps.
      * Gmail/Calendar tools are intent-routed: they replace the file/screen set
      * only when the last user message asks for mail or events, keeping the
      * 6-tool prompt budget intact.
      */
-    private fun allowlistFor(model: String, lastUserText: String = ""): Set<String> {
-        if (model == LocalLlmConfig.GGUF_MODEL_06B) return LocalPromptTools.BASIC_TOOLS
-        val lower = lastUserText.lowercase()
-        val wantsGmail = lower.contains("gmail") || lower.contains("email") ||
-            lower.contains("inbox") || lower.contains("draft") ||
-            lower.contains("send mail") || lower.contains("check mail")
-        val wantsCalendar = lower.contains("calendar") || lower.contains("event") ||
-            lower.contains("meeting") || lower.contains("schedule") ||
-            lower.contains("appointment")
-        if (wantsGmail && wantsCalendar) {
-            return linkedSetOf(
-                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
-                "calendar_list_events", "calendar_create_event", "launch_app",
-            )
-        }
-        if (wantsGmail) {
-            return linkedSetOf(
-                "gmail_list_messages", "gmail_get_message", "gmail_send_message",
-                "gmail_create_draft", "launch_app", "get_screen",
-            )
-        }
-        if (wantsCalendar) {
-            return linkedSetOf(
-                "calendar_list_events", "calendar_create_event", "launch_app",
-                "get_screen", "tap_text", "type_text",
-            )
-        }
-        return linkedSetOf(
-            "launch_app", "get_screen", "tap_text", "tap", "type_text",
-            "press_back", "press_home", "scroll", "swipe", "wait",
-            "execute_command", "read_file", "write_file", "list_directory",
-        )
-    }
+    private fun allowlistFor(model: String, lastUserText: String = ""): Set<String> =
+        LocalPromptTools.localAllowlist(model, lastUserText)
 
     private suspend fun ensureLoaded(): LlmWrapper {
-        llm?.let { return it }
-        return loadLock.withLock {
-            llm?.let { return it }
+        sharedHandle?.takeIf { sharedModelId == modelId }?.let { return it }
+        return globalLoadMutex.withLock {
+            sharedHandle?.takeIf { sharedModelId == modelId }?.let { return it }
+            // Only one resident: drop a different model before loading, so
+            // two weights never sit in RAM together on a 12GB phone.
+            if (sharedHandle != null && sharedModelId != modelId) {
+                Log.i(TAG, "unloading model=$sharedModelId for model=$modelId")
+                runCatching { sharedHandle?.stopStream() }
+                runCatching { sharedHandle?.reset() }
+                sharedHandle = null
+                sharedModelId = ""
+                System.gc()
+            }
+            checkFreeMemory()
             Log.i(TAG, "loading model=$modelId")
             val paths = LocalModelManager.getPaths(appContext, modelId)
                 ?: error("Local model '$modelId' is not downloaded. Download it in Provider settings first.")
@@ -114,9 +109,22 @@ class GenieXLocalProvider(
                 )
                 .build()
                 .getOrThrow()
-            llm = handle
+            sharedHandle = handle
+            sharedModelId = modelId
             Log.i(TAG, "model loaded model=$modelId")
             handle
+        }
+    }
+
+    private fun checkFreeMemory() {
+        val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            ?: return
+        val info = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        val availMb = info.availMem / (1024 * 1024)
+        Log.i(TAG, "availMem=${availMb}MB lowMemory=${info.lowMemory}")
+        if (info.lowMemory || availMb < MIN_AVAIL_MB) {
+            error("Phone is low on memory (${availMb}MB free). Close other apps and retry — loading now would risk killing the app.")
         }
     }
 
@@ -135,6 +143,10 @@ class GenieXLocalProvider(
             return@flow
         }
         val prompt = buildPrompt(messages, tools)
+        // The native handle is reused across turns; its KV cache accumulates
+        // unless cleared, surfacing as "context length exceeded" mid-thread.
+        // Reset per turn so each prompt starts from a clean context.
+        runCatching { handle.reset() }.onFailure { Log.w(TAG, "context reset failed", it) }
         val templated = try {
             handle.applyChatTemplate(arrayOf(GenieChatMessage("user", prompt)), null, false)
                 .getOrThrow()
@@ -146,24 +158,46 @@ class GenieXLocalProvider(
             return@flow
         }
         val fullText = StringBuilder()
+        var genFailed: Throwable? = null
         try {
-            handle.generateStreamFlow(
-                templated,
-                GenerationConfig(maxTokens = LocalLlmConfig.LOCAL_MAX_TOKENS),
-            ).collect { result ->
-                when (result) {
-                    // Buffer only: tool_json blocks must not appear as chat text.
-                    // Visible text is emitted once, stripped, after generation.
-                    is LlmStreamResult.Token -> fullText.append(result.text)
-                    is LlmStreamResult.Completed -> Unit
-                    is LlmStreamResult.Error -> {
-                        Log.e(TAG, "generate error", result.throwable)
-                        emit(StreamEvent.Error(result.throwable.message ?: "Local generation failed"))
+            // One inference at a time: concurrent decodes double KV RAM and
+            // pin CPU past 200%, which is what forced mem-pressure restarts.
+            globalGenMutex.withLock {
+                handle.generateStreamFlow(
+                    templated,
+                    GenerationConfig(maxTokens = LocalLlmConfig.maxTokensFor(modelId)),
+                ).collect { result ->
+                    when (result) {
+                        // Buffer only: tool_json blocks must not appear as chat text.
+                        // Visible text is emitted once, stripped, after generation.
+                        is LlmStreamResult.Token -> fullText.append(result.text)
+                        is LlmStreamResult.Completed -> Unit
+                        is LlmStreamResult.Error -> {
+                            Log.e(TAG, "generate error", result.throwable)
+                            genFailed = result.throwable
+                        }
                     }
                 }
             }
+        } catch (t: Throwable) {
+            // Includes OutOfMemoryError: surface as a chat error so the run
+            // stops cleanly instead of taking the process (and phone) down.
+            Log.e(TAG, "generate failed", t)
+            genFailed = t
         } finally {
             runCatching { handle.stopStream() }
+        }
+        if (genFailed != null) {
+            // Drop the resident on OOM so the next turn reloads cleanly
+            // instead of reusing a poisoned native context.
+            if (genFailed is OutOfMemoryError) {
+                sharedHandle = null
+                sharedModelId = ""
+                System.gc()
+            }
+            emit(StreamEvent.Error(genFailed?.message ?: "Local generation failed"))
+            emit(StreamEvent.Done)
+            return@flow
         }
         val raw = fullText.toString()
         val toolCall = parseToolCall(raw)
@@ -176,7 +210,7 @@ class GenieXLocalProvider(
                     "",
                 ),
             ),
-        ).trim().take(800)
+        ).trim().take(500)
         // If the turn is only a tool call, show no chat bubble; the tool step covers it.
         // If text accompanies the call, show only that text.
         if (toolCall == null) {
@@ -190,14 +224,28 @@ class GenieXLocalProvider(
 
     private fun buildPrompt(messages: List<ChatMessage>, tools: JSONArray?): String {
         val home = runCatching { EnvironmentSetup.build(appContext).home.absolutePath }.getOrNull()
+        // Route on oldest plus newest user text: mid-thread nudges and loop
+        // warnings are stored as user messages and would otherwise flip the
+        // tool catalog away from the original task.
+        val firstUser = messages.firstOrNull { it.role == "user" }?.content.orEmpty()
         val lastUser = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
-        return LocalPromptTools.buildPrompt(messages, tools, allowlistFor(modelId, lastUser), home)
+        val routeText = "$firstUser $lastUser"
+        val mini = runCatching {
+            if (AppConfigManager.miniContextEnabled) {
+                com.clawdroid.app.core.memory.MiniContextManager(appContext)
+                    .readForPrompt(AppConfigManager.miniContextMaxLines)
+            } else ""
+        }.getOrDefault("")
+        return LocalPromptTools.buildPromptForModel(
+            messages,
+            tools,
+            allowlistFor(modelId, routeText),
+            modelId,
+            home,
+            miniContext = mini.ifBlank { null },
+        )
     }
 
     private fun parseToolCall(text: String): CompletedToolCall? =
         LocalPromptTools.parseToolCall(text)
-
-    companion object {
-        private const val TAG = "GenieXLocalProvider"
-    }
 }

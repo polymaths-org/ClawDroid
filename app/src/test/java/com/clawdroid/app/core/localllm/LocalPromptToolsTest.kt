@@ -161,7 +161,37 @@ class LocalPromptToolsTest {
         val prompt = LocalPromptTools.buildPrompt(msgs, null, LocalPromptTools.BASIC_TOOLS)
         assertTrue(prompt.length <= LocalPromptTools.MAX_PROMPT_CHARS)
         assertTrue(prompt.endsWith("Assistant:"))
-        assertTrue(!prompt.contains("q0"))
+        // The original request (oldest user) is pinned by design; middle
+        // chatter is what gets trimmed instead.
+        assertTrue(prompt.contains("q0"))
+        assertTrue(!prompt.contains("r0"))
+    }
+
+    @Test
+    fun `buildPrompt keeps tool specs visible in long threads`() {
+        val tools = JSONArray()
+        for (name in listOf("launch_app", "get_screen", "send_message_in_current_chat", "tap_text", "type_text", "wait")) {
+            tools.put(
+                JSONObject().put(
+                    "function",
+                    JSONObject().put("name", name).put("description", "desc $name"),
+                ),
+            )
+        }
+        val allow = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_17B, "open Gemini and say hello",
+        )
+        val msgs = mutableListOf(ChatMessage(role = "user", content = "open Gemini and say hello TASKSTATEMENT"))
+        repeat(15) { i ->
+            msgs.add(ChatMessage(role = "assistant", content = "Gemini is a large language model. ".repeat(30)))
+            msgs.add(ChatMessage(role = "tool", content = "{\"success\":true}".repeat(40)))
+        }
+        msgs.add(ChatMessage(role = "tool", content = "{\"success\":true,\"type\":\"tree\"}".repeat(20)))
+        val prompt = LocalPromptTools.buildPrompt(msgs, tools, allow, "/home/agent", "mini ".repeat(500))
+        assertTrue(prompt.length <= LocalPromptTools.MAX_PROMPT_CHARS)
+        assertTrue(prompt.contains("send_message_in_current_chat"))
+        assertTrue(prompt.contains("TASKSTATEMENT"))
+        assertTrue(prompt.endsWith("Assistant:"))
     }
 
     @Test
@@ -313,7 +343,9 @@ class LocalPromptToolsTest {
         val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_17B, "check my mail")
         assertTrue(allow.contains("gmail_list_messages"))
         assertTrue(allow.contains("gmail_get_message"))
-        assertTrue(allow.contains("gmail_send_message"))
+        // Capability-capped: sends/drafts are cloud-only, never offered locally.
+        assertTrue(!allow.contains("gmail_send_message"))
+        assertTrue(!allow.contains("gmail_create_draft"))
         val allow2 = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_4B, "read my inbox")
         assertTrue(allow2.contains("gmail_list_messages"))
     }
@@ -322,7 +354,8 @@ class LocalPromptToolsTest {
     fun `local allowlist routes calendar intent including invites`() {
         val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_17B, "any meeting invites today?")
         assertTrue(allow.contains("calendar_list_events"))
-        assertTrue(allow.contains("calendar_create_event"))
+        // Capability-capped: event creation is cloud-only.
+        assertTrue(!allow.contains("calendar_create_event"))
     }
 
     @Test
@@ -341,8 +374,15 @@ class LocalPromptToolsTest {
 
     @Test
     fun `local allowlist keeps 06B basic tools otherwise`() {
-        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_06B, "open settings")
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_06B, "list files in tmp")
         assertEquals(LocalPromptTools.BASIC_TOOLS, allow)
+    }
+
+    @Test
+    fun `local allowlist gives 06B screen tools for open phrasing`() {
+        val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_06B, "open settings")
+        assertTrue(allow.contains("launch_app"))
+        assertTrue(allow.contains("get_screen"))
     }
 
     @Test
@@ -374,5 +414,215 @@ class LocalPromptToolsTest {
         assertTrue(out.contains("Tappable"))
         assertTrue(out.contains("Open settings"))
         assertTrue(out.contains("NOT tappable"))
+    }
+
+    @Test
+    fun `screen summary surfaces editable input first`() {
+        val tree = JSONObject()
+            .put("package", "com.google.android.googlequicksearchbox")
+            .put("nodes", JSONArray()
+                .put(JSONObject().put("text", "Hello, PUBG").put("contentDescription", "")
+                    .put("className", "android.widget.TextView")
+                    .put("isClickable", false).put("isEditable", false))
+                .put(JSONObject().put("text", "Ask Gemini").put("contentDescription", "")
+                    .put("className", "android.widget.EditText")
+                    .put("isClickable", true).put("isEditable", true)))
+        val out = LocalPromptTools.summarizeScreenTree(tree)
+        assertTrue(out.contains("Editable input"))
+        assertTrue(out.contains("Ask Gemini"))
+        assertTrue(out.indexOf("Editable input") < out.indexOf("Info text"))
+    }
+
+    @Test
+    fun `summarizeToolResult surfaces non-clickable tap warning`() {
+        val warned = "{\"success\":true,\"action\":\"tapped_non_clickable_center\",\"label\":\"Hello\"," +
+            "\"warning\":\"No clickable 'Hello' found; tapped its center instead.\"}"
+        val out = LocalPromptTools.summarizeToolResult(warned)
+        assertTrue(out.contains("No clickable"))
+    }
+
+    @Test
+    fun `local allowlist routes open-and-say intent to sender skill`() {
+        val allow = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_17B, "Can you please open Gemini and say hello to him",
+        )
+        assertTrue(allow.contains("send_message_in_current_chat"))
+        assertTrue(allow.contains("launch_app"))
+        assertTrue(allow.contains("get_screen"))
+        // Capability-capped: atomic sender only, no fragile tap/type chains.
+        assertTrue(!allow.contains("tap_text"))
+        assertTrue(!allow.contains("type_text"))
+        assertTrue(allow.size <= LocalPromptTools.MAX_TOOLS)
+    }
+
+    @Test
+    fun `local allowlist keeps file tools for file phrasing`() {
+        val allow = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_17B, "open the file and write hello in it",
+        )
+        assertTrue(!allow.contains("send_message_in_current_chat"))
+    }
+
+    @Test
+    fun `local system teaches label versus message distinction`() {
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("never the message to send"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("send_message_in_current_chat"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("get_screen takes no arguments"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("Do NOT tap_text hello"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("Do NOT define Gemini"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("you ARE in Gemini"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("NEVER call launch_app twice"))
+    }
+
+    @Test
+    fun `screen summary ignores null text and surfaces nested editable`() {
+        // Real Gemini tree: top-level nodes carry null text (JSONObject.NULL),
+        // the Ask Gemini input lives two levels deep in children.
+        val tree = JSONObject()
+            .put("package", "com.google.android.googlequicksearchbox")
+            .put("nodes", JSONArray()
+                .put(JSONObject().put("text", JSONObject.NULL).put("contentDescription", "Open sidebar")
+                    .put("className", "android.widget.ImageButton").put("isClickable", true))
+                .put(JSONObject().put("text", JSONObject.NULL).put("contentDescription", JSONObject.NULL)
+                    .put("className", "android.widget.LinearLayout").put("isClickable", true)
+                    .put("children", JSONArray()
+                        .put(JSONObject().put("text", "Gemini").put("contentDescription", JSONObject.NULL)
+                            .put("className", "android.widget.TextView").put("isClickable", false))
+                        .put(JSONObject().put("text", "Ask Gemini").put("contentDescription", JSONObject.NULL)
+                            .put("className", "android.widget.EditText").put("isClickable", true).put("isEditable", true)))))
+        val out = LocalPromptTools.summarizeScreenTree(tree)
+        // Literal "null" label must never appear as a tappable target.
+        assertTrue(!out.contains("null"))
+        assertTrue(out.contains("Open sidebar"))
+        assertTrue(out.contains("Ask Gemini"))
+        assertTrue(out.contains("Editable input"))
+    }
+
+    @Test
+    fun `local allowlist routes gemini hello variants to sender`() {
+        for (phrase in listOf(
+            "open Gemini and say hello",
+            "write hello in Gemini",
+            "open%Gemini%and ay%hello",
+            "say hello in Gemini",
+        )) {
+            val allow = LocalPromptTools.localAllowlist(LocalLlmConfig.GGUF_MODEL_17B, phrase)
+            assertTrue("phrase=$phrase", allow.contains("send_message_in_current_chat"))
+            assertTrue("phrase=$phrase", allow.contains("launch_app"))
+        }
+    }
+
+    @Test
+    fun `star-suffixed gmail args are stripped on parse`() {
+        val text = "```tool_json\n{\"name\": \"gmail_create_draft\", \"arguments\": {\"to*\": \"a@x.com\", \"subject*\": \"Hi\", \"body*\": \"Hello\"}}\n```"
+        val call = LocalPromptTools.parseToolCall(text)
+        assertNotNull(call)
+        val args = JSONObject(call!!.arguments)
+        assertTrue(args.has("to"))
+        assertTrue(args.has("subject"))
+        assertTrue(args.has("body"))
+        assertTrue(!args.has("to*"))
+    }
+
+    @Test
+    fun `tool suffix tells model to strip the star`() {
+        assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("never emit it"))
+        assertTrue(LocalPromptTools.TOOL_SUFFIX.contains("without the *"))
+    }
+
+    @Test
+    fun `accessibility error summary orders stop without claiming success`() {
+        val raw = "{\"success\":false,\"error\":\"accessibility_service_not_running\",\"message\":\"User must enable ClawDroid Screen Control in Settings > Accessibility\"}"
+        val out = LocalPromptTools.summarizeToolResult(raw)
+        assertTrue(out.contains("accessibility_service_not_running"))
+        assertTrue(out.contains("STOP"))
+        assertTrue(!out.contains("I see"))
+    }
+
+    @Test
+    fun `local system forbids inventing unseen results`() {
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("without a successful tool result"))
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("instead of inventing success"))
+    }
+
+    @Test
+    fun `original request survives warning and nudge pile-up`() {        val msgs = mutableListOf(ChatMessage(role = "user", content = "Open Gemini and send hello text to it TASKORIGIN"))
+        repeat(4) { i ->
+            msgs.add(ChatMessage(role = "assistant", content = ""))
+            msgs.add(ChatMessage(role = "tool", content = "{\"success\":true}".repeat(20)))
+            msgs.add(ChatMessage(role = "user", content = "System reminder $i: do not repeat. "))
+        }
+        msgs.add(ChatMessage(role = "tool", content = "{\"success\":true,\"type\":\"tree\"}".repeat(10)))
+        val prompt = LocalPromptTools.buildPrompt(msgs, null, LocalPromptTools.BASIC_TOOLS)
+        assertTrue(prompt.length <= LocalPromptTools.MAX_PROMPT_CHARS)
+        assertTrue(prompt.contains("TASKORIGIN"))
+        assertTrue(prompt.endsWith("Assistant:"))
+    }
+
+    @Test
+    fun `harness locks 4B to smaller budget than 2K models`() {
+        val small = LocalLlmConfig.harnessFor(LocalLlmConfig.GGUF_MODEL_4B)
+        val big = LocalLlmConfig.harnessFor(LocalLlmConfig.GGUF_MODEL_XLAM_3B)
+        assertEquals(1_024, small.nCtx)
+        assertEquals(2_048, big.nCtx)
+        assertTrue(small.maxPromptChars < big.maxPromptChars)
+        assertTrue(small.maxHistory < big.maxHistory)
+        assertTrue(small.maxTokens <= big.maxTokens)
+        assertEquals(512, LocalLlmConfig.maxTokensFor(LocalLlmConfig.GGUF_MODEL_06B))
+    }
+
+    @Test
+    fun `buildPromptForModel respects 4B budget`() {
+        val msgs = mutableListOf(ChatMessage(role = "user", content = "list files TASK4B"))
+        repeat(10) { i ->
+            msgs.add(ChatMessage(role = "assistant", content = "chatter $i ".repeat(50)))
+            msgs.add(ChatMessage(role = "tool", content = "{\"output\":\"x\"}".repeat(30)))
+        }
+        val h = LocalLlmConfig.harnessFor(LocalLlmConfig.GGUF_MODEL_4B)
+        val prompt = LocalPromptTools.buildPromptForModel(
+            msgs, null, LocalPromptTools.BASIC_TOOLS, LocalLlmConfig.GGUF_MODEL_4B,
+        )
+        assertTrue(prompt.length <= h.maxPromptChars)
+        assertTrue(prompt.contains("TASK4B"))
+    }
+
+    @Test
+    fun `local compactor drops middle pile-up but keeps ends`() {
+        val ids = (0 until 30).map { "m$it" }
+        val contents = ids.mapIndexed { i, _ ->
+            when {
+                i == 0 -> "Can you list me files TASKKEEP"
+                i >= 25 -> "recent $i"
+                i % 3 == 0 -> "You already called this exact tool with the same arguments and received the result."
+                else -> "Okay, I'm Nova, ready to assist."
+            }
+        }
+        val deletions = LocalCompactor.planDeletions(ids, contents, keepLast = 8)
+        assertTrue(deletions.isNotEmpty())
+        assertTrue(!deletions.contains("m0"))
+        assertTrue(!deletions.contains("m29"))
+        val h = LocalLlmConfig.harnessFor(LocalLlmConfig.GGUF_MODEL_XLAM_3B)
+        assertTrue(ids.size > h.compactAfterMessages)
+    }
+
+    @Test
+    fun `pure knowledge questions offer no tools`() {
+        val allow = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_XLAM_3B, "What's the full form of BDSM",
+        )
+        assertTrue(allow.isEmpty())
+        val allow2 = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_17B, "who is the president",
+        )
+        assertTrue(allow2.isEmpty())
+        val allow3 = LocalPromptTools.localAllowlist(
+            LocalLlmConfig.GGUF_MODEL_17B, "Tell me about harry potter series",
+        )
+        assertTrue(allow3.isEmpty())
+    }
+
+    @Test
+    fun `local system orders direct answers for knowledge questions`() {
+        assertTrue(LocalPromptTools.LOCAL_SYSTEM.contains("answer directly in plain text with no tool block"))
     }
 }
