@@ -32,33 +32,69 @@ class ElevenLabsTtsEngine(
 
     private var mediaPlayer: MediaPlayer? = null
 
+    data class VoiceRef(val name: String, val id: String)
+
     private val apiKey: String
         get() = AppConfigManager.elevenlabsApiKey
 
-    private val currentVoice: String
+    private val storedVoice: String
         get() {
             val stored = AppConfigManager.ttsVoice
             if (stored.isNotBlank() && stored != "alloy" && stored != "onyx") return stored
-            return "21m00Tcm4TlvDq8ikWAM"
+            return DEFAULT_VOICE_NAME
         }
 
     companion object {
         private const val TAG = "ElevenLabsTtsEngine"
         private const val BASE_URL = "https://api.elevenlabs.io/v1"
+        private const val MODEL_ID = "eleven_multilingual_v2"
+        private const val DEFAULT_VOICE_NAME = "Sarah"
+        private const val VOICES_CACHE_TTL_MS = 24L * 60 * 60 * 1000
 
         val PRESET_VOICES = listOf(
-            "21m00Tcm4TlvDq8ikWAM" to "Rachel (Female)",
-            "AZnzlk1XvdvUeBnXmlld" to "Domi (Female)",
-            "EXAVITQu4vrVxnwl2K6Ez" to "Bella (Female)",
-            "ErXwobaYiN019PkySvjV" to "Antoni (Male)",
-            "MF3mGyEYCl7XYWbV9V6O" to "Elli (Female)",
-            "TxGEqnHWrfWFTfGW9XjX" to "Josh (Male)",
-            "VR6AewLTigWG4xSOGBAt" to "Arnold (Male)",
-            "ODq5zmih8GrVes37Dizd" to "Patrick (Male)",
-            "XUq2iLhUeRMkYQP5CJTU" to "Emily (Female)",
-            "N2lVS1w4EtoT3dr4eOWO" to "Callum (Male)",
+            "Sarah" to "EXAVITQu4vr4xnSDxMaL",
+            "Roger" to "CwhRBWXzGAHq8TQ4Fs17",
+            "Laura" to "FGY2WhTYpPnrIDTdsKH5",
+            "Charlie" to "IKne3meq5aSn9XLyUdCD",
+            "George" to "JBFqnCBsd6RMkjVDRZzb",
+            "Callum" to "N2lVS1w4EtoT3dr4eOWO",
+            "River" to "SAz9YHcvj6GT2YYXdXww",
+            "Harry" to "SOYHLrjzK2X1ezoPC6cr",
+            "Liam" to "TX3LPaxmHKxFdv7VOQHJ",
+            "Alice" to "Xb7hH8MSUJpSbSDYk0k2",
+            "Matilda" to "XrExE9yKIg1WjnnlVkGX",
+            "Will" to "bIHbv24MWmeRgasZH58o",
+            "Jessica" to "cgSgspJ2msm6clMCkdW9",
+            "Eric" to "cjVigY5qzO86Huf0OWal",
+            "Bella" to "hpp4J3VqNfWAUOO0d1Us",
+            "Chris" to "iP95p4xoKVk53GoZ742B",
+            "Brian" to "nPczCjzI2devNBz1zQrb",
+            "Daniel" to "onwK4e9ZLuTAKqWW03F9",
+            "Lily" to "pFZP5JQG7iQjIQuC4Bku",
+            "Adam" to "pNInz6obpgDQGcFmaJgB",
+            "Bill" to "pqHfZKP75CvOlQylNhV4",
         )
+
+        private fun shortName(name: String): String =
+            name.substringBefore(" -").substringBefore(" (").trim()
+
+        /**
+         * Pure voice matcher (no Android/network): raw IDs pass through,
+         * names match case-insensitively against "Name - descriptor" library
+         * entries, then fall back to prefix matching.
+         */
+        fun matchVoiceId(query: String, voices: List<VoiceRef>): String? {
+            val q = query.trim()
+            if (q.isEmpty()) return null
+            voices.firstOrNull { it.id == q }?.let { return it.id }
+            voices.firstOrNull { shortName(it.name).equals(q, ignoreCase = true) }?.let { return it.id }
+            voices.firstOrNull { shortName(it.name).startsWith(q, ignoreCase = true) }?.let { return it.id }
+            return null
+        }
     }
+
+    private var cachedVoices: List<VoiceRef>? = null
+    private var cachedVoicesAt: Long = 0L
 
     init {
         _state.value = if (apiKey.isNotBlank()) TtsEngineState.Ready else TtsEngineState.Unavailable
@@ -97,11 +133,65 @@ class ElevenLabsTtsEngine(
         }
     }
 
+    /**
+     * Resolves the stored voice setting to a live voice ID. The settings UI
+     * accepts names ("Sarah"), so resolve against the account's voice list
+     * (cached in memory) with the preset map as fallback. Never returns blank.
+     */
+    private fun resolveVoiceId(): String {
+        val query = storedVoice
+        val live = liveVoices()
+        val candidates = live + PRESET_VOICES.map { VoiceRef(it.first, it.second) }
+        matchVoiceId(query, candidates)?.let { return it }
+        live.firstOrNull()?.let { return it.id }
+        // Last resort: send the raw value so the server error names the problem.
+        return query.ifBlank { DEFAULT_VOICE_NAME }
+    }
+
+    private fun liveVoices(): List<VoiceRef> {
+        val now = System.currentTimeMillis()
+        cachedVoices?.let { if (now - cachedVoicesAt < VOICES_CACHE_TTL_MS) return it }
+        val fetched = fetchVoices()
+        if (fetched != null) {
+            cachedVoices = fetched
+            cachedVoicesAt = now
+            return fetched
+        }
+        return cachedVoices.orEmpty()
+    }
+
+    private fun fetchVoices(): List<VoiceRef>? {
+        if (apiKey.isBlank()) return null
+        val connection = (URL("$BASE_URL/voices").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("xi-api-key", apiKey)
+            setRequestProperty("Accept", "application/json")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return null
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            val voices = JSONObject(body).optJSONArray("voices") ?: return null
+            (0 until voices.length()).mapNotNull { i ->
+                val v = voices.optJSONObject(i) ?: return@mapNotNull null
+                val name = v.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val id = v.optString("voice_id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                VoiceRef(name, id)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "ElevenLabs voices fetch failed", e)
+            null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun synthesize(text: String, outputFile: File): Boolean {
-        val voiceId = currentVoice
+        val voiceId = resolveVoiceId()
         val payload = JSONObject()
             .put("text", text)
-            .put("model_id", "eleven_monolingual_v1")
+            .put("model_id", MODEL_ID)
             .put("voice_settings", JSONObject()
                 .put("stability", 0.5)
                 .put("similarity_boost", 0.75)
@@ -139,6 +229,12 @@ class ElevenLabsTtsEngine(
             } else {
                 val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 Log.w(TAG, "ElevenLabs HTTP $responseCode: $errorBody")
+                if (responseCode == 401) {
+                    // Invalid key or disabled account: remember so the voice
+                    // manager falls back to Android TTS instead of failing
+                    // every utterance until settings change.
+                    AppConfigManager.elevenlabsAuthInvalid = true
+                }
                 return false
             }
         } catch (e: Exception) {

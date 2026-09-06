@@ -221,7 +221,7 @@ fun AudioConfigScreen(onBack: () -> Unit) {
 
                 SectionTitle("Cloud TTS Engines")
                 ConfigChoice("OpenAI TTS", "Cloud voices: alloy, echo, fable, onyx, nova, shimmer. 6 distinct personalities.", ttsEngine == "openai") { ttsEngine = "openai" }
-                ConfigChoice("ElevenLabs", "Premium neural voices: Rachel, Domi, Josh, Bella. Ultra-realistic.", ttsEngine == "elevenlabs") { ttsEngine = "elevenlabs" }
+                ConfigChoice("ElevenLabs", "Premium neural voices matched by name from your account: Sarah, Roger, Adam, Bella. Ultra-realistic.", ttsEngine == "elevenlabs") { ttsEngine = "elevenlabs" }
                 ConfigChoice("Deepgram", "Fast cloud TTS: Asteria, Luna, Orion, Zeus. Low latency.", ttsEngine == "deepgram") { ttsEngine = "deepgram" }
             }
         }
@@ -232,7 +232,7 @@ fun AudioConfigScreen(onBack: () -> Unit) {
                 GlassTextField(
                     value = ttsVoice,
                     onValueChange = { ttsVoice = it },
-                    placeholder = "Voice id, e.g. onyx, nova, rachel, asteria",
+                    placeholder = "Voice name or id, e.g. Sarah, Adam, onyx, nova",
                 )
                 Text(
                     "Speech Speed: ${String.format("%.1fx", ttsSpeed)}",
@@ -294,6 +294,7 @@ fun AudioConfigScreen(onBack: () -> Unit) {
                 ConfigChoice("Android Fast", "Newer low-latency recognizer used for quick voice chat turns.", speechEngine == "system") { speechEngine = "system" }
                 ConfigChoice("Android Legacy", "Older Android recognizer behavior with fewer custom timing hints.", speechEngine == "system_legacy") { speechEngine = "system_legacy" }
                 ConfigChoice("Whisper.cpp", "Local model path and downloader for native Whisper integration.", speechEngine == "whisper") { speechEngine = "whisper" }
+                ConfigChoice("OpenAI Transcribe", "Cloud transcription via the OpenAI TTS API key. Needs network, best accuracy.", speechEngine == "openai") { speechEngine = "openai" }
                 ConfigSwitch("Prefer On-device", "Use Android on-device recognition first when the OS provides it.", speechPreferOnDevice) { speechPreferOnDevice = it }
                 ConfigSwitch("Multilingual Switch", "Enable Android language detection and switching on supported Android versions.", speechLanguageSwitch) { speechLanguageSwitch = it }
                 SectionTitle("Language")
@@ -467,7 +468,9 @@ fun AudioConfigScreen(onBack: () -> Unit) {
             AppConfigManager.ttsVoice = ttsVoice.trim()
             AppConfigManager.ttsSpeed = ttsSpeed
             AppConfigManager.openaiTtsApiKey = openaiKey.trim()
+            AppConfigManager.openaiAuthInvalid = false
             AppConfigManager.elevenlabsApiKey = elevenlabsKey.trim()
+            AppConfigManager.elevenlabsAuthInvalid = false
             AppConfigManager.deepgramApiKey = deepgramKey.trim()
             AppConfigManager.realtimeVoiceEnabled = realtimeEnabled
             AppConfigManager.realtimeVoiceModel = realtimeModel.trim()

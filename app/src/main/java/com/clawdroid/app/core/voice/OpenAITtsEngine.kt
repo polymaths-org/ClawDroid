@@ -43,6 +43,18 @@ class OpenAITtsEngine(
     companion object {
         private const val TAG = "OpenAITtsEngine"
         private const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+        val OPENAI_VOICES = setOf("alloy", "echo", "fable", "onyx", "nova", "shimmer")
+
+        /**
+         * The voice setting is shared across engines, so an ElevenLabs name
+         * ("Sarah") can leak in here. OpenAI rejects unknown voices with 400,
+         * so strictly allowlist with a safe fallback.
+         */
+        fun resolveVoice(raw: String): String {
+            val clean = raw.trim().lowercase()
+            return if (clean in OPENAI_VOICES) clean else "alloy"
+        }
     }
 
     init {
@@ -84,7 +96,11 @@ class OpenAITtsEngine(
     }
 
     private fun synthesize(text: String, outputFile: File): Boolean {
-        val voice = currentVoice
+        val requested = currentVoice
+        val voice = resolveVoice(requested)
+        if (voice != requested.trim().lowercase()) {
+            Log.w(TAG, "Unsupported OpenAI voice '$requested'; using 'alloy'")
+        }
         val payload = JSONObject()
             .put("model", "tts-1")
             .put("voice", voice)
@@ -121,6 +137,9 @@ class OpenAITtsEngine(
             } else {
                 val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 Log.w(TAG, "OpenAI TTS HTTP $responseCode: $errorBody")
+                if (responseCode == 401) {
+                    AppConfigManager.openaiAuthInvalid = true
+                }
                 return false
             }
         } catch (e: Exception) {

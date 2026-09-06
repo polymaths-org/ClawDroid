@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 import kotlin.math.sqrt
 
@@ -67,6 +69,11 @@ class SpeechRecognizerClient(
 
         if (shouldUseWhisper()) {
             startWhisperListening()
+            return
+        }
+
+        if (shouldUseOpenAiStt()) {
+            startOpenAiListening()
             return
         }
 
@@ -234,6 +241,74 @@ class SpeechRecognizerClient(
         return SpeechRecognizer.createSpeechRecognizer(context)
     }
 
+    private fun shouldUseOpenAiStt(): Boolean {
+        return !forceSystemRecognizer &&
+            AppConfigManager.speechRecognitionEngine == "openai" &&
+            openAiKey().isNotBlank()
+    }
+
+    private fun openAiKey(): String =
+        AppConfigManager.openaiTtsApiKey.takeIf { it.isNotBlank() } ?: AppConfigManager.apiKey
+
+    /**
+     * Cloud transcription via OpenAI. Records with the same pipeline as the
+     * Whisper path, then uploads the WAV for transcription instead of running
+     * local inference.
+     */
+    private fun startOpenAiListening() {
+        whisperJob = scope.launch {
+            val wavFile = File(context.cacheDir, "openai_stt_${System.currentTimeMillis()}.wav")
+            try {
+                val pcm = recordUntilSilence()
+                if (pcm.size < SAMPLE_RATE_HZ * BYTES_PER_SAMPLE / 3) {
+                    reportWhisperError("No speech detected")
+                    return@launch
+                }
+                _partialResult.value = "Transcribing..."
+                writePcm16Wav(wavFile, pcm, SAMPLE_RATE_HZ)
+                val transcript = transcribeWithOpenAi(wavFile).getOrThrow()
+                withContext(Dispatchers.Main) {
+                    _isListening.value = false
+                    _partialResult.value = ""
+                    _userVoiceAmplitude.value = 0f
+                    onResult?.invoke(transcript)
+                }
+            } catch (error: Throwable) {
+                reportWhisperError(error.message ?: "OpenAI transcription failed")
+            } finally {
+                wavFile.delete()
+                runCatching {
+                    whisperRecorder?.release()
+                }
+                whisperRecorder = null
+            }
+        }
+    }
+
+    private fun transcribeWithOpenAi(wavFile: File): Result<String> = runCatching {
+        val boundary = "ClawDroid${System.currentTimeMillis()}"
+        val body = buildTranscriptionMultipart(boundary, OPENAI_TRANSCRIBE_MODEL, wavFile.name, wavFile.readBytes())
+        val connection = (URL(OPENAI_TRANSCRIPTIONS_URL).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15_000
+            readTimeout = 120_000
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer ${openAiKey()}")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            val text = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw java.io.IOException("OpenAI STT HTTP $code: $text")
+            val transcript = org.json.JSONObject(text).optString("text").trim()
+            if (transcript.isEmpty()) throw java.io.IOException("Empty transcription")
+            transcript
+        } finally {
+            connection.disconnect()
+        }
+    }
     private fun shouldUseWhisper(): Boolean {
         return !forceSystemRecognizer &&
             AppConfigManager.speechRecognitionEngine == "whisper" &&
@@ -403,5 +478,35 @@ class SpeechRecognizerClient(
         private const val END_SILENCE_MS = 900L
         private const val MAX_RECORDING_MS = 12_000L
         private const val SPEECH_THRESHOLD = 0.025f
+        const val OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
+        const val OPENAI_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
+
+        /**
+         * Pure multipart builder for the transcription upload (no Android
+         * dependencies, unit-tested).
+         */
+        fun buildTranscriptionMultipart(
+            boundary: String,
+            model: String,
+            filename: String,
+            wavBytes: ByteArray,
+        ): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            fun field(name: String, value: String) {
+                out.write("--$boundary\r\n".toByteArray())
+                out.write("Content-Disposition: form-data; name=\"$name\"\r\n\r\n".toByteArray())
+                out.write("$value\r\n".toByteArray())
+            }
+            field("model", model)
+            field("response_format", "json")
+            out.write("--$boundary\r\n".toByteArray())
+            out.write(
+                "Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n".toByteArray()
+            )
+            out.write("Content-Type: audio/wav\r\n\r\n".toByteArray())
+            out.write(wavBytes)
+            out.write("\r\n--$boundary--\r\n".toByteArray())
+            return out.toByteArray()
+        }
     }
 }

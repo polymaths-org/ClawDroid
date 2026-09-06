@@ -5,6 +5,7 @@ import android.util.Log
 import com.clawdroid.app.core.config.AppConfigManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,16 @@ class VoiceManager(private val context: Context) {
     }
 
     private fun initCloudTts(engineId: String) {
+        if (engineId == "elevenlabs" && AppConfigManager.elevenlabsAuthInvalid) {
+            Log.w("VoiceManager", "ElevenLabs key rejected earlier; falling back to Android TTS")
+            scope.launch { initAndroidTts("device") }
+            return
+        }
+        if (engineId == "openai" && AppConfigManager.openaiAuthInvalid) {
+            Log.w("VoiceManager", "OpenAI key rejected earlier; falling back to Android TTS")
+            scope.launch { initAndroidTts("device") }
+            return
+        }
         val engine = createCloudEngine(engineId)
         if (engine?.state?.value == TtsEngineState.Ready) {
             activeEngine = engine
@@ -151,16 +162,15 @@ class VoiceManager(private val context: Context) {
      * Re-reads AppConfigManager and switches the active engine or voice profile if the
      * user changed settings since last speak.
      */
-    fun reconfigure() {
+    fun reconfigure(): Job = scope.launch {
         val desiredEngine = AppConfigManager.ttsEngine
         val desiredVoice = getDesiredVoice()
         val currentEngine = activeEngineId
 
         // Same engine, same voice — nothing to do
-        if (currentEngine == desiredEngine && activeVoice == desiredVoice && activeEngine != null) return
+        if (currentEngine == desiredEngine && activeVoice == desiredVoice && activeEngine != null) return@launch
 
-        scope.launch {
-            // Same engine type but voice changed — just update profile in-place
+        // Same engine type but voice changed — just update profile in-place
             if (currentEngine == desiredEngine && activeEngine is AndroidTtsEngine) {
                 (activeEngine as AndroidTtsEngine).setVoiceProfile(desiredVoice)
                 activeVoice = desiredVoice
@@ -175,6 +185,11 @@ class VoiceManager(private val context: Context) {
             when {
                 TtsEngineManager.isDeviceEngineId(desiredEngine) -> initAndroidTts(desiredEngine)
                 desiredEngine == "openai" -> {
+                    if (AppConfigManager.openaiAuthInvalid) {
+                        Log.w("VoiceManager", "OpenAI key rejected earlier; falling back to Android TTS")
+                        initAndroidTts("device")
+                        return@launch
+                    }
                     val engine = OpenAITtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
                         activeEngine = engine
@@ -187,6 +202,11 @@ class VoiceManager(private val context: Context) {
                     }
                 }
                 desiredEngine == "elevenlabs" -> {
+                    if (AppConfigManager.elevenlabsAuthInvalid) {
+                        Log.w("VoiceManager", "ElevenLabs key rejected earlier; falling back to Android TTS")
+                        initAndroidTts("device")
+                        return@launch
+                    }
                     val engine = ElevenLabsTtsEngine(context, scope)
                     if (engine.state.value == TtsEngineState.Ready) {
                         activeEngine = engine
@@ -213,34 +233,40 @@ class VoiceManager(private val context: Context) {
                 else -> initCloudTts("openai")
             }
             if (activeEngine != null) _state.value = State.Ready
-        }
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        reconfigure()
-        val spokenText = TextCleaningUtils.fullyCleanForTts(text)
-        if (spokenText.isBlank()) {
-            onDone?.invoke()
-            return
-        }
-        if (_muted.value) {
-            onDone?.invoke()
-            return
-        }
-        val engine = activeEngine
-        if (engine == null || _state.value != State.Ready) {
-            pendingQueue.add(spokenText to onDone)
-            return
-        }
-        var queued = false
-        synchronized(speechQueue) {
-            if (_isSpeaking.value || speechQueue.isNotEmpty()) {
-                speechQueue.addLast(spokenText to onDone)
-                queued = true
+        // Await the engine switch: previously speech proceeded with the stale
+        // engine while reconfigure() was still in flight.
+        scope.launch {
+            reconfigure().join()
+            val spokenText = TextCleaningUtils.fullyCleanForTts(text)
+            if (spokenText.isBlank()) {
+                Log.i("VoiceManager", "speak: blank after cleaning, skipping")
+                onDone?.invoke()
+                return@launch
             }
+            if (_muted.value) {
+                Log.i("VoiceManager", "speak: muted, skipping")
+                onDone?.invoke()
+                return@launch
+            }
+            val engine = activeEngine
+            if (engine == null || _state.value != State.Ready) {
+                Log.w("VoiceManager", "speak: no ready engine, queueing")
+                pendingQueue.add(spokenText to onDone)
+                return@launch
+            }
+            var queued = false
+            synchronized(speechQueue) {
+                if (_isSpeaking.value || speechQueue.isNotEmpty()) {
+                    speechQueue.addLast(spokenText to onDone)
+                    queued = true
+                }
+            }
+            if (queued) return@launch
+            doSpeak(spokenText, engine, onDone)
         }
-        if (queued) return
-        doSpeak(spokenText, engine, onDone)
     }
 
     fun speakThinkingPhrase() {

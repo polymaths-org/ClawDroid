@@ -234,6 +234,20 @@ object AppConfigManager {
         get() = p.getString(KEY_ELEVENLABS_API_KEY, "") ?: ""
         set(value) = p.edit().putString(KEY_ELEVENLABS_API_KEY, value).apply()
 
+    /**
+     * Set when ElevenLabs rejects the key (401: invalid key or disabled
+     * account). While set, the voice manager falls back to Android TTS
+     * instead of silently failing every utterance. Cleared on settings save.
+     */
+    var elevenlabsAuthInvalid: Boolean
+        get() = p.getBoolean("elevenlabs_auth_invalid", false)
+        set(value) = p.edit().putBoolean("elevenlabs_auth_invalid", value).apply()
+
+    /** Same guard as above, for the OpenAI TTS key. Cleared on settings save. */
+    var openaiAuthInvalid: Boolean
+        get() = p.getBoolean("openai_auth_invalid", false)
+        set(value) = p.edit().putBoolean("openai_auth_invalid", value).apply()
+
     var deepgramApiKey: String
         get() = p.getString(KEY_DEEPGRAM_API_KEY, "") ?: ""
         set(value) = p.edit().putString(KEY_DEEPGRAM_API_KEY, value).apply()
