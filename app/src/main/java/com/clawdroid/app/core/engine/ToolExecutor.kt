@@ -51,6 +51,103 @@ data class ToolExecutionResult(
 
 object ToolExecutor {
     /**
+     * Repeat-launch guard: small local models relaunch an already-open app
+     * instead of acting on it, ignoring written warnings. Refusing the repeat
+     * as a tool error breaks the loop where history warnings could not.
+     */
+    @Volatile internal var lastLaunchQuery: String = ""
+    @Volatile internal var lastLaunchAtMs: Long = 0L
+    const val LAUNCH_REPEAT_WINDOW_MS: Long = 120_000L
+
+    internal fun isRepeatLaunch(query: String, nowMs: Long): Boolean {
+        if (lastLaunchQuery.isBlank() || query.isBlank()) return false
+        return lastLaunchQuery.equals(query.trim(), ignoreCase = true) &&
+            (nowMs - lastLaunchAtMs) in 0..LAUNCH_REPEAT_WINDOW_MS
+    }
+
+    internal fun alreadyOpenResult(query: String): JSONObject = JSONObject()
+        .put("success", false)
+        .put("error", "already_open")
+        .put("app_name", query)
+        .put(
+            "message",
+            "'$query' is already open from your launch seconds ago. Do NOT call launch_app again. " +
+                "Your NEXT call must be get_screen {} to see the screen, then send the message.",
+        )
+
+    @Volatile internal var lastFailedLaunchQuery: String = ""
+    @Volatile internal var lastFailedLaunchAtMs: Long = 0L
+
+    internal fun isRepeatFailedLaunch(query: String, nowMs: Long): Boolean {
+        if (lastFailedLaunchQuery.isBlank() || query.isBlank()) return false
+        return lastFailedLaunchQuery.equals(query.trim(), ignoreCase = true) &&
+            (nowMs - lastFailedLaunchAtMs) in 0..LAUNCH_REPEAT_WINDOW_MS
+    }
+
+    internal fun launchFailedResult(query: String, detail: String): JSONObject = JSONObject()
+        .put("success", false)
+        .put("error", "launch_failed")
+        .put("app_name", query)
+        .put(
+            "message",
+            "Could not launch '$query' ($detail). Do NOT call launch_app for it again. " +
+                "Use the connected-service tools instead (for email use gmail_* tools).",
+        )
+
+    @Volatile internal var consecutiveScreenFailures: Int = 0
+    @Volatile internal var lastScreenError: String = ""
+    @Volatile internal var lastScreenFailureAtMs: Long = 0L
+    const val SCREEN_FAILURE_LIMIT: Int = 2
+
+    internal fun isScreenFailure(result: JSONObject): Boolean {
+        if (result.optBoolean("success", true)) return false
+        val err = result.optString("error")
+        return err == "empty_ui_tree" || err == "accessibility_service_not_running"
+    }
+
+    internal fun noteScreenResult(result: JSONObject) {
+        if (isScreenFailure(result)) {
+            consecutiveScreenFailures += 1
+            lastScreenError = result.optString("error").ifBlank { "empty_ui_tree" }
+            lastScreenFailureAtMs = System.currentTimeMillis()
+        } else if (result.optBoolean("success", false)) {
+            consecutiveScreenFailures = 0
+            lastScreenError = ""
+        }
+    }
+
+    internal fun shouldRefuseScreenRead(nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (consecutiveScreenFailures < SCREEN_FAILURE_LIMIT) return false
+        if (lastScreenFailureAtMs == 0L) return false
+        return (nowMs - lastScreenFailureAtMs) in 0..LAUNCH_REPEAT_WINDOW_MS
+    }
+
+    internal fun screenUnavailableResult(): JSONObject = JSONObject()
+        .put("success", false)
+        .put("error", "screen_unavailable")
+        .put("message", "Screen reads failed repeatedly ($lastScreenError). Do NOT call get_screen again. " +
+            "Launch the target app with launch_app, or answer in plain text with what you know and stop.")
+
+    /**
+     * Small local models copy the required-marker * into JSON keys
+     * ("to*" instead of "to"). Normalize before dispatch.
+     */
+    internal fun stripStarKeys(args: JSONObject): JSONObject {
+        var dirty = false
+        for (key in buildList { val k = args.keys(); while (k.hasNext()) add(k.next()) }) {
+            if (key.endsWith("*") && key.length > 1) { dirty = true; break }
+        }
+        if (!dirty) return args
+        val out = JSONObject()
+        val keys = args.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val clean = if (key.endsWith("*") && key.length > 1) key.dropLast(1) else key
+            out.put(clean, args.get(key))
+        }
+        return out
+    }
+    /**
      * Required-arg lookup tolerant of key-name guessing by small local models
      * (they emit file/name/filename for path, text/data for content).
      * Falls back to [primary] so the original error surfaces when absent.
@@ -68,7 +165,8 @@ object ToolExecutor {
         call: CompletedToolCall,
         onProgress: (suspend (String) -> Unit)? = null,
     ): ToolExecutionResult = runCatching {
-        val args = DefensiveJsonParser.parseObjectOrError(call.arguments).getOrThrow()
+        val rawArgs = DefensiveJsonParser.parseObjectOrError(call.arguments).getOrThrow()
+        val args = stripStarKeys(rawArgs)
         if (AndroidControlTools.isScreenControlTool(call.name)) {
             ensureExternalTaskOverlay(context, call.name)
         }
@@ -111,7 +209,13 @@ object ToolExecutor {
                 search = args.getString("search"),
                 replace = args.getString("replace"),
             )
-            "list_directory" -> ListDirectoryTool.execute(context, args.pick("path", "dir", "directory", "folder"))
+            "list_directory" -> {
+                // Small local models emit {} for "list files". Default to
+                // home (".") instead of failing with "No value for path".
+                val dirPath = runCatching { args.pick("path", "dir", "directory", "folder") }
+                    .getOrNull()?.takeIf { it.isNotBlank() } ?: "."
+                ListDirectoryTool.execute(context, dirPath)
+            }
             "browse_web" -> BrowseWebTool.execute(args.getString("url"))
             "web_search" -> WebSearchTool.execute(args.getString("query"))
             "send_notification" -> NotificationTool.execute(
@@ -341,7 +445,14 @@ object ToolExecutor {
                 body = args.getString("body"),
             )
             "interpole_batch" -> InterpoleTools.batch(args.getJSONArray("actions"))
-            "get_screen" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.getScreen(context) }
+            "get_screen" -> {
+                if (shouldRefuseScreenRead()) {
+                    screenUnavailableResult()
+                } else {
+                    withOverlayHiddenForTool(call.name) { AndroidControlTools.getScreen(context) }
+                        .also { noteScreenResult(it) }
+                }
+            }
             "tap" -> withOverlayHiddenForTool(call.name) { AndroidControlTools.tap(
                 args.getDouble("x").toFloat(),
                 args.getDouble("y").toFloat(),
@@ -371,15 +482,29 @@ object ToolExecutor {
                     .ifBlank { args.optString("app_name") }
                     .ifBlank { args.optString("name") }
                     .ifBlank { args.optString("query") }
-                AssistantOverlayCoordinator.updateStatus("Opening app")
-                AssistantOverlayCoordinator.updateProgress("Opening $appQuery")
-                AndroidControlTools.launchApp(appQuery, context).also { result ->
-                    if (result.optBoolean("success", false)) {
-                        val launchedName = result.optString("app_name").ifBlank { appQuery }
-                        AssistantOverlayCoordinator.updateStatus("App opened")
-                        AssistantOverlayCoordinator.updateProgress("Opened $launchedName")
-                    } else {
-                        AssistantOverlayCoordinator.showError(result.optString("message").ifBlank { "Could not launch $appQuery" })
+                if (isRepeatLaunch(appQuery, System.currentTimeMillis())) {
+                    AssistantOverlayCoordinator.updateStatus("App already open")
+                    AssistantOverlayCoordinator.showError("$appQuery is already open")
+                    alreadyOpenResult(appQuery)
+                } else if (isRepeatFailedLaunch(appQuery, System.currentTimeMillis())) {
+                    AssistantOverlayCoordinator.updateStatus("Launch failed")
+                    AssistantOverlayCoordinator.showError("Could not launch $appQuery")
+                    launchFailedResult(appQuery, "already tried and failed")
+                } else {
+                    AssistantOverlayCoordinator.updateStatus("Opening app")
+                    AssistantOverlayCoordinator.updateProgress("Opening $appQuery")
+                    AndroidControlTools.launchApp(appQuery, context).also { result ->
+                        if (result.optBoolean("success", false)) {
+                            lastLaunchQuery = appQuery
+                            lastLaunchAtMs = System.currentTimeMillis()
+                            val launchedName = result.optString("app_name").ifBlank { appQuery }
+                            AssistantOverlayCoordinator.updateStatus("App opened")
+                            AssistantOverlayCoordinator.updateProgress("Opened $launchedName")
+                        } else {
+                            lastFailedLaunchQuery = appQuery
+                            lastFailedLaunchAtMs = System.currentTimeMillis()
+                            AssistantOverlayCoordinator.showError(result.optString("message").ifBlank { "Could not launch $appQuery" })
+                        }
                     }
                 }
             }
